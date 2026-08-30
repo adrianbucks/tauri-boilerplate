@@ -1,0 +1,26 @@
+{
+  "name": "@tests/integration",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@platform/core": "workspace:*",
+    "@platform/database": "workspace:*",
+    "@platform/identity": "workspace:*",
+    "@platform/authorization": "workspace:*",
+    "@platform/audit": "workspace:*",
+    "@platform/sync-protocol": "workspace:*",
+    "@platform/sync": "workspace:*",
+    "@platform/feature-system": "workspace:*",
+    "@platform/import-export": "workspace:*",
+    "@platform/hardware": "workspace:*",
+    "@platform/platform": "workspace:*",
+    "@features/example-feature": "workspace:*",
+    "@features/organisations": "workspace:*",
+    "@features/identity-admin": "workspace:*"
+  }
+}

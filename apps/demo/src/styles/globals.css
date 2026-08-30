@@ -1,0 +1,8 @@
+@import "tailwindcss";
+@import "@platform/ui/styles.css";
+
+@layer base {
+  html {
+    font-family: "Inter", system-ui, sans-serif;
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "name": "@apps/demo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
+  },
+  "dependencies": {
+    "@features/example-feature": "workspace:*",
+    "@features/identity-admin": "workspace:*",
+    "@features/organisations": "workspace:*",
+    "@platform/audit": "workspace:*",
+    "@platform/authorization": "workspace:*",
+    "@platform/core": "workspace:*",
+    "@platform/database": "workspace:*",
+    "@platform/feature-system": "workspace:*",
+    "@platform/hardware": "workspace:*",
+    "@platform/identity": "workspace:*",
+    "@platform/import-export": "workspace:*",
+    "@platform/platform": "workspace:*",
+    "@platform/sync": "workspace:*",
+    "@platform/sync-protocol": "workspace:*",
+    "@platform/ui": "workspace:*",
+    "lucide-react": "^0.475.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.0.9",
+    "@tauri-apps/cli": "^2.11.4",
+    "@types/react": "^19.0.10",
+    "@types/react-dom": "^19.0.4",
+    "@vitejs/plugin-react": "^4.3.4",
+    "tailwindcss": "^4.0.9",
+    "vite": "^6.2.0"
+  }
+}

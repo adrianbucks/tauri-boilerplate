@@ -1,0 +1,21 @@
+{
+  "name": "@tooling/feature-validator",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "feature-validator": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "validate": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@platform/core": "workspace:*",
+    "@platform/feature-system": "workspace:*"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.3"
+  }
+}

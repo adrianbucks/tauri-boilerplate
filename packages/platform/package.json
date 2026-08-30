@@ -1,0 +1,27 @@
+{
+  "name": "@platform/platform",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@platform/core": "workspace:*",
+    "@platform/database": "workspace:*",
+    "@platform/identity": "workspace:*",
+    "@platform/authorization": "workspace:*",
+    "@platform/audit": "workspace:*",
+    "@platform/sync-protocol": "workspace:*",
+    "@platform/sync": "workspace:*",
+    "@platform/import-export": "workspace:*",
+    "@platform/feature-system": "workspace:*"
+  }
+}
