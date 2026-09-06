@@ -3,6 +3,7 @@ import {
   generateCorrelationId,
   AuthenticationError,
   AuthorizationError,
+  type TrustedOperationContext,
 } from "@platform/core";
 import type { DatabaseConnection, TransactionClient } from "@platform/database";
 import { DeviceIdentityService } from "../device/DeviceIdentityService.js";
@@ -11,7 +12,8 @@ import type { Session, UserIdentity } from "../types.js";
 export interface CreateSessionOptions {
   userId: string;
   organisationId: string;
-  roles: string[];
+  /** Retained for source compatibility; persisted role bindings are authoritative. */
+  roles?: readonly string[] | undefined;
   expiresAt?: string | null | undefined;
 }
 
@@ -61,6 +63,14 @@ export class UserSessionService {
       });
     }
 
+    if (device.status !== "APPROVED" && device.status !== "ACTIVE") {
+      throw new AuthorizationError({
+        message: `Device is not approved for sessions (state '${device.status}')`,
+        userMessage: "This device has not been approved for sign-in.",
+        correlationId: "sess_dev_unapproved",
+      });
+    }
+
     // Verify User Status
     const userRows = await executor.query<{
       id: string;
@@ -70,13 +80,29 @@ export class UserSessionService {
     }>("SELECT * FROM core_users WHERE id = ? LIMIT 1", [options.userId]);
 
     const user = userRows[0];
-    if (!user || user.status === "REVOKED") {
+    if (!user || user.status === "REVOKED" || user.status === "SUSPENDED") {
       throw new AuthenticationError({
         message: `User '${options.userId}' is inactive or revoked`,
         userMessage: "User account is inactive",
         correlationId: "sess_user_inactive",
       });
     }
+
+    if (user.organisation_id !== options.organisationId) {
+      throw new AuthorizationError({
+        message: `User '${options.userId}' does not belong to organisation '${options.organisationId}'`,
+        userMessage: "You are not a member of the selected organisation.",
+        correlationId: "sess_org_mismatch",
+      });
+    }
+
+    const roleRows = await executor.query<{ role_id: string }>(
+      `SELECT role_id
+       FROM core_user_roles
+       WHERE user_id = ? AND organisation_id = ?
+       ORDER BY role_id ASC`,
+      [user.id, user.organisation_id],
+    );
 
     const sessionId = generateCorrelationId("sess");
     const now = getUtcIsoTimestamp();
@@ -85,8 +111,8 @@ export class UserSessionService {
       sessionId,
       userId: options.userId,
       deviceId: device.deviceId,
-      organisationId: options.organisationId,
-      roles: Object.freeze([...options.roles]),
+      organisationId: user.organisation_id,
+      roles: Object.freeze(roleRows.map((row) => row.role_id)),
       establishedAt: now,
       expiresAt: options.expiresAt ?? null,
     };
@@ -132,6 +158,23 @@ export class UserSessionService {
     }
 
     return this.currentSession;
+  }
+
+  async getTrustedOperationContext(
+    tx?: TransactionClient,
+  ): Promise<TrustedOperationContext> {
+    const session = await this.validateCurrentSession(tx);
+    return Object.freeze({
+      correlationId: generateCorrelationId("op"),
+      principal: Object.freeze({
+        sessionId: session.sessionId,
+        userId: session.userId,
+        deviceId: session.deviceId,
+        organisationId: session.organisationId,
+        roles: session.roles,
+        authStrength: "offline-session" as const,
+      }),
+    });
   }
 
   invalidateSession(): void {

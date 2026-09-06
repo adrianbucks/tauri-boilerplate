@@ -1,17 +1,28 @@
 # Tauri Local-First Platform Boilerplate
 
-A production-grade **GitHub Template Repository** for building cross-platform (Windows & Android), local-first business applications using **Tauri 2**, **React**, **TypeScript**, **SQLite**, **Drizzle ORM**, and **iroh** peer-to-peer data synchronisation.
+A development-grade **GitHub Template Repository and platform scaffold** for building cross-platform (Windows & Android), local-first business applications using **Tauri 2**, **React**, **TypeScript**, **SQLite**, **Drizzle ORM**, and **iroh** peer-to-peer data synchronisation.
+
+The repository is not yet production-ready. The architecture and platform slices are being built incrementally; durable native persistence, secure identity storage, real P2P replication, complete native command governance, signing, and other production gates remain tracked in the [implementation status](docs/verification/status.md).
 
 ---
 
-## Key Features
+## Current capabilities
 
-- **Local-First Architecture**: Immediate local database operations via SQLite; no blocking network calls during business operations.
-- **P2P Synchronization**: Decentralized peer-to-peer data replication powered by iroh with no central server required.
-- **7-Layer Pre-Sync Security Stack**: Peer verification, application handshake, organization isolation, device auth, sync group access, and data-scoped permissions before any sync occurs.
-- **Modular Feature Architecture**: Domain business features are isolated inside `features/` with declarative manifests, migrations, and permission registries.
-- **Cross-Platform**: Targets modern Windows (Windows 10/11) and modern Android (API 35+) from one unified codebase.
-- **Production Build Pipeline**: Automated CI workflows producing signed Windows installers (`.msi`, NSIS `.exe`) and Android APKs (`.apk`).
+- **Monorepo platform scaffold**: TypeScript packages, Rust crates, feature registry, and a demo app that consumes public platform APIs.
+- **Local data abstractions**: Repository and migration engines exist; the demo still uses an in-memory `sql.js` connection rather than durable native SQLite.
+- **RBAC and session types**: Scoped `can()` / `require()` and in-memory sessions; trusted session context and cryptographic device identity are incomplete.
+- **Feature manifests**: Registration, dependency ordering, permissions, and declared sync policies.
+- **Native packaging**: Local unsigned Windows MSI/NSIS and Android APK builds; CI workflows exist. Signing is not configured.
+
+## Target platform capabilities
+
+These remain the product goals. They are not present as production behavior yet. See [implementation status](docs/verification/status.md).
+
+- **Durable local-first SQLite** with native startup migrations.
+- **P2P synchronization** over iroh, with a durable operation log and multi-device convergence.
+- **Seven-layer pre-sync authorization** enforced on real transport, not only in-process simulations.
+- **OS-backed private-key storage** with Ed25519 device identity that never crosses into TypeScript.
+- **Signed Windows and Android release artifacts** with updater metadata and checksums.
 
 ---
 
@@ -23,31 +34,34 @@ tauri-boilerplate/
 │   └── demo/                     # Showcase application (Locations & Warehouses)
 ├── packages/                     # Core platform packages (TypeScript)
 │   ├── core/                     # Errors, logging, correlation IDs, config
-│   ├── database/                 # SQLite connection, Drizzle ORM, migrations
-│   ├── identity/                 # Cryptographic device identity, session types
+│   ├── database/                 # Connection abstraction, sql.js test adapter, migrations
+│   ├── identity/                 # Device and session types (native identity is still a placeholder)
 │   ├── authorization/            # Scoped RBAC engine (can / require)
 │   ├── audit/                    # Append-only audit logging
 │   ├── sync/                     # SyncManager & sync state machine
 │   ├── sync-protocol/            # Sync operation formats, HLC timestamps, conflict policies
 │   ├── feature-system/           # Feature manifests & dependency resolution
 │   ├── ui/                       # shadcn/ui components, AppShell, DataTable
-│   ├── import-export/            # Spreadsheet import/export & native file dialogs
-│   ├── hardware/                 # Barcode scanner (keyboard wedge & Android plugin)
+│   ├── import-export/            # SheetJS CSV/XLSX import and export engines
+│   ├── hardware/                 # Keyboard-wedge scanner (camera/plugin path is future work)
 │   └── platform/                 # Bootstrap and package assembly
 ├── crates/                       # Rust library crates
-│   ├── native-core/              # Tauri command bridges & error serialization
-│   ├── identity-core/            # Secure key storage & keypair generation
-│   ├── sync-core/                # iroh P2P transport & replication adapter
-│   └── crypto-core/              # Signing, verification & HLC clock
+│   ├── native-core/              # Tauri command helpers and error serialization
+│   ├── identity-core/            # Placeholder device identifiers (secure storage is future work)
+│   ├── sync-core/                # Transport types; iroh node is not implemented
+│   └── crypto-core/              # HLC helpers; production signing is future work
 ├── features/                     # Reusable platform features
 │   ├── identity-admin/           # User, device, role, and sync-group admin UI
 │   ├── organisations/            # Organization management & membership lifecycle
 │   └── example-feature/          # Reference feature implementation (template)
 ├── docs/                         # Comprehensive documentation suite & ADRs
-│   ├── architecture/             # Subsystem design & architecture specifications
+│   ├── architecture/             # Target architecture plus current-status notes
+│   ├── specifications/           # S-01–S-12 implementation contracts
+│   ├── verification/             # Evidence-backed implementation status
+│   ├── research/                 # Open technology spikes
 │   ├── development/              # Developer guides, testing & agent invariants
 │   ├── security/                 # Threat model & capability governance
-│   ├── protocols/                # P2P handshake & sync wire format
+│   ├── protocols/                # Handshake & sync wire format (target)
 │   └── decisions/                # Architecture Decision Records (ADRs)
 └── dist/                         # Generated installer and APK outputs
 ```
@@ -58,7 +72,7 @@ tauri-boilerplate/
 
 ### Prerequisites
 
-- **Node.js**: `v20+` LTS
+- **Node.js**: `v24+` LTS
 - **pnpm**: `v9+` or `v10+` (`npm install -g pnpm`)
 - **Rust & Cargo**: Latest stable Rust toolchain (`curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`)
 - **Tauri Prerequisites**: Follow official [Tauri 2 system dependencies guide](https://v2.tauri.app/start/prerequisites/) for Windows/Linux/macOS
@@ -128,7 +142,7 @@ pnpm preview
 
 #### Native Desktop Release Bundle (Windows / macOS / Linux)
 
-Compile the Rust binary in release mode and generate signed installers (`.msi`, NSIS `.exe` on Windows):
+Compile the Rust binary in release mode and generate unsigned installers (`.msi`, NSIS `.exe` on Windows). Production signing is not configured:
 
 ```bash
 # Build the native desktop installer and binaries
@@ -155,8 +169,8 @@ pnpm test
 
 # Run specific test suites
 pnpm test:integration   # End-to-end platform workflows
-pnpm test:security      # 7-layer sync and RBAC security regression tests
-pnpm test:sync          # P2P sync harness and conflict tests
+pnpm test:security      # RBAC, pairing, and sync-authorization regression tests
+pnpm test:sync          # In-process sync harness and conflict-policy tests
 
 # Typecheck and lint across all packages
 pnpm typecheck
@@ -178,13 +192,13 @@ pnpm format:check
 | `pnpm dev:tauri`        | Compiles Rust backend and launches native Tauri desktop application in dev mode  |
 | `pnpm build`            | Builds all packages and compiles the production web bundle into `apps/demo/dist` |
 | `pnpm build:web`        | Builds the `@apps/demo` web application bundle                                   |
-| `pnpm build:tauri`      | Compiles the production Tauri desktop release installer (`.msi`, `.exe`)         |
+| `pnpm build:tauri`      | Compiles the unsigned Tauri desktop installer (`.msi`, `.exe`)                   |
 | `pnpm preview`          | Previews the compiled production web bundle locally (`http://localhost:4173`)    |
 | `pnpm tauri <cmd>`      | Executes Tauri CLI commands directly against `@apps/demo`                        |
 | `pnpm test`             | Runs all unit test suites across all packages                                    |
-| `pnpm test:security`    | Executes the 7-layer security and RBAC regression suite                          |
-| `pnpm test:integration` | Runs full platform integration tests                                             |
-| `pnpm test:sync`        | Runs P2P sync convergence tests                                                  |
+| `pnpm test:security`    | Executes RBAC and sync-authorization regression tests                            |
+| `pnpm test:integration` | Runs cross-package platform integration tests                                    |
+| `pnpm test:sync`        | Runs the in-process sync harness                                                 |
 | `pnpm typecheck`        | Validates TypeScript types across all workspace packages                         |
 | `pnpm lint`             | Runs Turborepo linter across all packages                                        |
 | `pnpm clean`            | Cleans build artifacts and `node_modules`                                        |
@@ -194,15 +208,15 @@ pnpm format:check
 
 ## Documentation
 
-Full architectural documentation and implementation specifications are located in [`docs/`](./docs/README.md):
+Documentation is in [`docs/`](./docs/README.md). Architecture pages keep target patterns; [implementation status](./docs/verification/status.md) is the evidence-backed current view.
 
-1. [Documentation Hub & Master Index](./docs/README.md)
-2. [Architecture Overview & Principles](./docs/architecture/02-architecture-principles.md)
-3. [Repository Structure & Boundary Rules](./docs/development/01-repository-structure.md)
-4. [Database & Schema Specifications](./docs/architecture/03-database-and-schema.md)
-5. [Build, Release and Versioning](./docs/development/05-build-release-and-versioning.md)
-6. [Agent & Developer Guidelines (10 Critical Invariants)](./docs/development/06-agent-and-developer-guidelines.md)
-7. [Architecture Decision Records (ADRs)](./docs/decisions/ADR-001-repository-and-monorepo.md)
+1. [Documentation hub](./docs/README.md)
+2. [Implementation status](./docs/verification/status.md)
+3. [Development roadmap](./docs/development/roadmap.md)
+4. [Architecture principles](./docs/architecture/02-architecture-principles.md)
+5. [Repository structure](./docs/development/01-repository-structure.md)
+6. [Agent and developer guidelines](./docs/development/06-agent-and-developer-guidelines.md)
+7. [Architecture Decision Records](./docs/decisions/ADR-001-repository-and-monorepo.md)
 
 ---
 

@@ -1,6 +1,8 @@
 # Platform Architecture Summary
 
-For the complete documentation suite, please refer to [`docs/README.md`](./docs/README.md).
+For the complete documentation suite, see [`docs/README.md`](./docs/README.md). For what is implemented today, see [`docs/verification/status.md`](./docs/verification/status.md).
+
+The diagrams below are the **target architecture and coding standard**. They are not a claim that durable SQLite, cryptographic identity, iroh transport, or seven-layer admission already run in production.
 
 ---
 
@@ -63,7 +65,9 @@ Replication / Synchronisation begins
 
 ## Key Invariants
 
+These remain mandatory for new work. Several are only partially enforced today.
+
 1. **Local-First Writes**: Business mutations commit locally in SQLite first alongside audit and replication metadata. The network is never in the critical path of local CRUD.
 2. **Authorisation Before Replication**: The sync layer is never the security layer. Authorised namespaces are computed before data is transmitted.
-3. **No Direct Database Access in UI**: UI $\to$ Service $\to$ Repository $\to$ Database Package $\to$ SQLite.
+3. **No Direct Database Access in UI**: UI → Service → Repository → Database Package → SQLite.
 4. **Hardware Key Isolation**: Cryptographic private keys reside in secure storage in Rust and never cross into JavaScript memory.

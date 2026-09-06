@@ -21,9 +21,8 @@ import {
   Download,
   FileSpreadsheet,
 } from "lucide-react";
-import { WidgetService, type WidgetRecord } from "@features/example-feature";
+import type { WidgetRecord } from "@features/example-feature";
 import {
-  ImportEngine,
   ExportEngine,
   type ImportDefinition,
   type ExportDefinition,
@@ -32,16 +31,17 @@ import {
   KeyboardWedgeScanner,
   type BarcodeScanResult,
 } from "@platform/hardware";
-import { MemoryDatabaseConnection } from "@platform/database";
 import { createOperationContext } from "@platform/core";
-
-const ctx = createOperationContext({
-  deviceId: "demo_device",
-  organisationId: "org_demo",
-  userId: "user_demo",
-});
+import { usePlatform } from "../hooks/usePlatform.js";
 
 const DEMO_SYNC_GROUP = "grp_demo";
+
+interface WidgetImportRecord {
+  sku: string;
+  name: string;
+  quantity: number;
+  description: string;
+}
 
 const widgetExportDef: ExportDefinition<WidgetRecord> = {
   sheetName: "Widgets",
@@ -102,9 +102,8 @@ function WidgetRow({
 }
 
 export function WidgetsPage() {
+  const { importEngine, nativeGateway, nativeSession } = usePlatform();
   const [widgets, setWidgets] = useState<WidgetRecord[]>([]);
-  const [service, setService] = useState<WidgetService | null>(null);
-  const [dbConn, setDbConn] = useState<MemoryDatabaseConnection | null>(null);
   const [name, setName] = useState("");
   const [sku, setSku] = useState("");
   const [quantity, setQuantity] = useState("0");
@@ -119,60 +118,44 @@ export function WidgetsPage() {
   const [highlightedSku, setHighlightedSku] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const initService = useCallback(async () => {
-    if (service) return;
-    const db = new MemoryDatabaseConnection(":memory:");
-    await db.init();
-    await db.execute(`
-      CREATE TABLE widgets (
-        id TEXT PRIMARY KEY,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        created_by TEXT,
-        updated_by TEXT,
-        entity_id TEXT NOT NULL UNIQUE,
-        organisation_id TEXT NOT NULL,
-        sync_group_id TEXT NOT NULL,
-        schema_version INTEGER NOT NULL DEFAULT 1,
-        sync_version INTEGER NOT NULL DEFAULT 0,
-        deleted_at TEXT,
-        deleted_by TEXT,
-        delete_operation_id TEXT,
-        data_classification TEXT DEFAULT 'INTERNAL',
-        name TEXT NOT NULL,
-        sku TEXT NOT NULL UNIQUE,
-        quantity INTEGER NOT NULL DEFAULT 0,
-        description TEXT
-      );
-      CREATE TABLE core_audit_events (
-        id TEXT PRIMARY KEY,
-        event_type TEXT NOT NULL,
-        user_id TEXT,
-        device_id TEXT NOT NULL,
-        organisation_id TEXT NOT NULL,
-        correlation_id TEXT NOT NULL,
-        timestamp TEXT NOT NULL,
-        metadata_json TEXT
-      );
-    `);
-    const svc = new WidgetService(db);
-    setDbConn(db);
-    setService(svc);
-  }, [service]);
-
-  useEffect(() => {
-    initService();
-  }, [initService]);
-
   const loadWidgets = useCallback(async () => {
-    if (!service) return;
-    const list = await service.listWidgets(DEMO_SYNC_GROUP);
-    setWidgets(list);
-  }, [service]);
+    if (nativeGateway && nativeSession) {
+      const nativeWidgets = await nativeGateway.listWidgets(
+        nativeSession.organisation_id,
+      );
+      setWidgets(
+        nativeWidgets.map((widget) => ({
+          id: widget.id,
+          createdAt: "",
+          updatedAt: "",
+          createdBy: null,
+          updatedBy: null,
+          entityId: "",
+          organisationId: widget.organisation_id,
+          syncGroupId: DEMO_SYNC_GROUP,
+          schemaVersion: 1,
+          syncVersion: 0,
+          deletedAt: widget.deleted_at,
+          deletedBy: null,
+          deleteOperationId: null,
+          dataClassification: "INTERNAL",
+          name: widget.name,
+          sku: widget.sku,
+          quantity: widget.quantity,
+          description: null,
+        })),
+      );
+      return;
+    }
+  }, [nativeGateway, nativeSession]);
 
   useEffect(() => {
-    if (service) loadWidgets();
-  }, [service, loadWidgets]);
+    if (nativeGateway && nativeSession) {
+      loadWidgets().catch((cause) => {
+        setError(cause instanceof Error ? cause.message : String(cause));
+      });
+    }
+  }, [nativeGateway, nativeSession, loadWidgets]);
 
   // Connect Keyboard Wedge Barcode Scanner
   useEffect(() => {
@@ -201,20 +184,23 @@ export function WidgetsPage() {
   }, []);
 
   const handleCreate = useCallback(async () => {
-    if (!service || !name.trim() || !sku.trim()) return;
+    if (!nativeGateway || !nativeSession || !name.trim() || !sku.trim()) return;
     setLoading(true);
     setError(null);
     setSuccess(null);
     try {
-      const w = await service.createWidget(
-        {
-          name: name.trim(),
-          sku: sku.trim().toUpperCase(),
-          quantity: Math.max(0, parseInt(quantity, 10) || 0),
-          syncGroupId: DEMO_SYNC_GROUP,
-        },
-        ctx,
-      );
+      const w = await nativeGateway.createWidget({
+        organisation_id: nativeSession.organisation_id,
+        sync_group_id: DEMO_SYNC_GROUP,
+        name: name.trim(),
+        sku: sku.trim().toUpperCase(),
+        quantity: Math.max(0, parseInt(quantity, 10) || 0),
+        correlation_id: createOperationContext({
+          deviceId: "native",
+          organisationId: nativeSession.organisation_id,
+          userId: nativeSession.user_id,
+        }).correlationId,
+      });
       setSuccess(`Created widget "${w.name}" (SKU: ${w.sku})`);
       setName("");
       setSku("");
@@ -225,12 +211,12 @@ export function WidgetsPage() {
     } finally {
       setLoading(false);
     }
-  }, [service, name, sku, quantity, loadWidgets]);
+  }, [nativeGateway, nativeSession, name, sku, quantity, loadWidgets]);
 
   // Bulk Import handler using @platform/import-export
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !dbConn || !service) return;
+    if (!file || !importEngine || !nativeGateway || !nativeSession) return;
 
     setLoading(true);
     setError(null);
@@ -238,22 +224,10 @@ export function WidgetsPage() {
 
     try {
       const buffer = await file.arrayBuffer();
-      const importEngine = new ImportEngine(dbConn);
-
-      const widgetImportDef: ImportDefinition<any> = {
-        id: "import_widgets",
-        entityName: "Widgets",
-        acceptedFormats: ["csv", "xlsx"],
-        columns: [
-          { key: "sku", label: "SKU", type: "string", required: true },
-          { key: "name", label: "Name", type: "string", required: true },
-          {
-            key: "quantity",
-            label: "Quantity",
-            type: "number",
-            required: true,
-          },
-        ],
+      const widgetImportDef: Pick<
+        ImportDefinition<WidgetImportRecord>,
+        "validateRow"
+      > = {
         validateRow: (rawRow, rowIndex) => {
           const rawSku = String(rawRow["sku"] ?? rawRow["SKU"] ?? "").trim();
           const rawName = String(rawRow["name"] ?? rawRow["Name"] ?? "").trim();
@@ -301,35 +275,27 @@ export function WidgetsPage() {
             },
           };
         },
-        commit: async (records, dbConnection, opCtx) => {
-          for (const item of records) {
-            await service.createWidget(
-              {
-                sku: item.sku,
-                name: item.name,
-                quantity: item.quantity,
-                description: item.description || undefined,
-                syncGroupId: DEMO_SYNC_GROUP,
-              },
-              opCtx,
-            );
-          }
-          return { importedCount: records.length };
-        },
       };
 
-      const summary = await importEngine.executeImport(
-        buffer,
-        widgetImportDef,
-        ctx,
-      );
-      if (summary.errors.length > 0) {
+      const validation = importEngine.validateBuffer(buffer, widgetImportDef);
+      if (validation.errors.length > 0) {
         setError(
-          `Import failed: ${summary.errors[0]?.message} (Row ${summary.errors[0]?.rowIndex})`,
+          `Import failed: ${validation.errors[0]?.message} (Row ${validation.errors[0]?.rowIndex})`,
         );
       } else {
+        const importStartedAt = Date.now();
+        await nativeGateway.createWidgets({
+          organisation_id: nativeSession.organisation_id,
+          sync_group_id: DEMO_SYNC_GROUP,
+          correlation_id: createOperationContext({
+            deviceId: "native",
+            organisationId: nativeSession.organisation_id,
+            userId: nativeSession.user_id,
+          }).correlationId,
+          widgets: validation.validRows,
+        });
         setSuccess(
-          `Bulk imported ${summary.successfulRows} widgets successfully in ${summary.durationMs}ms`,
+          `Bulk imported ${validation.validRows.length} widgets successfully in ${Date.now() - importStartedAt}ms`,
         );
         await loadWidgets();
       }
@@ -449,13 +415,12 @@ export function WidgetsPage() {
         <CardHeader>
           <CardTitle>Create Widget</CardTitle>
           <CardDescription>
-            Add a new widget to SQLite store via{" "}
-            <code>WidgetService.createWidget()</code>
+            Add a widget to the authenticated native database.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex flex-wrap gap-3 max-w-3xl">
-            <div className="flex-[2] min-w-[160px]">
+            <div className="flex-2 min-w-40">
               <Input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
@@ -463,7 +428,7 @@ export function WidgetsPage() {
                 label="Widget Name *"
               />
             </div>
-            <div className="flex-1 min-w-[120px]">
+            <div className="flex-1 min-w-30">
               <Input
                 value={sku}
                 onChange={(e) => setSku(e.target.value)}
@@ -484,7 +449,12 @@ export function WidgetsPage() {
               <Button
                 onClick={handleCreate}
                 isLoading={loading}
-                disabled={!service || !name.trim() || !sku.trim()}
+                disabled={
+                  !nativeGateway ||
+                  !nativeSession ||
+                  !name.trim() ||
+                  !sku.trim()
+                }
               >
                 <Plus className="h-4 w-4 mr-1" />
                 Create

@@ -15,7 +15,7 @@ This repository is a **GitHub Template Repository** designed to serve as the pla
 
 ## Development Workflow
 
-1. Read [`docs/README.md`](./docs/README.md) for the full documentation hub and [`docs/development/06-agent-and-developer-guidelines.md`](./docs/development/06-agent-and-developer-guidelines.md) for the 10 critical invariants.
+1. Read [`docs/README.md`](./docs/README.md) and [`docs/verification/status.md`](./docs/verification/status.md). Architecture docs keep target patterns; status.md is the evidence-backed current view. Then read [`docs/development/06-agent-and-developer-guidelines.md`](./docs/development/06-agent-and-developer-guidelines.md).
 2. Install dependencies: `pnpm install`.
 3. Ensure all tests pass: `pnpm test`, `pnpm typecheck`, `pnpm lint`.
 4. If adding new architecture decisions or changing protocols, document them in an ADR in `docs/decisions/`.

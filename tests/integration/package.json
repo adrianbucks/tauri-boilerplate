@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "test": "vitest run",
+    "test:integration": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

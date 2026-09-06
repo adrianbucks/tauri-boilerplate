@@ -38,6 +38,14 @@ describe("@platform/authorization", () => {
         permission_id TEXT NOT NULL,
         scope_constraints_json TEXT
       );
+      CREATE TABLE core_user_roles (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        role_id TEXT NOT NULL,
+        organisation_id TEXT NOT NULL,
+        granted_by TEXT,
+        granted_at TEXT NOT NULL
+      );
       CREATE TABLE core_sync_groups (
         id TEXT PRIMARY KEY,
         created_at TEXT NOT NULL,
@@ -131,6 +139,9 @@ describe("@platform/authorization", () => {
       await db.execute(
         `INSERT INTO core_role_permissions (id, role_id, permission_id, scope_constraints_json) VALUES ('rp1', 'r1', 'p1', '{"warehouseId":"COV"}');`,
       );
+      await db.execute(
+        "INSERT INTO core_user_roles (id, user_id, role_id, organisation_id, granted_at) VALUES ('ur1', 'u1', 'r1', 'org_1', '2026-08-30T10:00:00Z');",
+      );
 
       const subject = {
         userId: "u1",
@@ -163,6 +174,42 @@ describe("@platform/authorization", () => {
       // require() throws on denial
       await expect(
         authEngine.require(subject, "inventory.create"),
+      ).rejects.toThrow("Authorization failed");
+
+      await expect(
+        authEngine.requireTrusted(
+          {
+            correlationId: "op_trusted_test",
+            principal: {
+              sessionId: "sess_1",
+              userId: "u1",
+              deviceId: "dev_1",
+              organisationId: "org_1",
+              roles: ["r1"],
+              authStrength: "offline-session",
+            },
+          },
+          "inventory.read",
+          { warehouseId: "COV" },
+        ),
+      ).resolves.toBeUndefined();
+
+      await expect(
+        authEngine.requireTrusted(
+          {
+            correlationId: "op_trusted_denied",
+            principal: {
+              sessionId: "sess_1",
+              userId: "u1",
+              deviceId: "dev_1",
+              organisationId: "org_1",
+              roles: ["r1"],
+              authStrength: "offline-session",
+            },
+          },
+          "inventory.read",
+          { warehouseId: "BHM" },
+        ),
       ).rejects.toThrow("Authorization failed");
     });
   });

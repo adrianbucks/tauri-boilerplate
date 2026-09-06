@@ -35,6 +35,14 @@ describe("@platform/identity", () => {
         email TEXT,
         status TEXT NOT NULL DEFAULT 'ACTIVE'
       );
+      CREATE TABLE core_user_roles (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        role_id TEXT NOT NULL,
+        organisation_id TEXT NOT NULL,
+        granted_by TEXT,
+        granted_at TEXT NOT NULL
+      );
     `);
 
     deviceService = new DeviceIdentityService(db);
@@ -77,7 +85,7 @@ describe("@platform/identity", () => {
 
   describe("UserSessionService", () => {
     it("creates and validates session for an active user and approved device", async () => {
-      await deviceService.registerDevice({
+      const device = await deviceService.registerDevice({
         publicKey: "pub_key_123",
         platform: "windows",
         applicationId: "demo",
@@ -86,6 +94,12 @@ describe("@platform/identity", () => {
       // Insert active user
       await db.execute(
         "INSERT INTO core_users (id, created_at, updated_at, organisation_id, display_name, status) VALUES ('u_alice', '2026-08-30T10:00:00Z', '2026-08-30T10:00:00Z', 'org_1', 'Alice', 'ACTIVE');",
+      );
+      await db.execute(
+        "UPDATE core_devices SET status = 'ACTIVE' WHERE device_id = (SELECT device_id FROM core_devices LIMIT 1);",
+      );
+      await db.execute(
+        "INSERT INTO core_user_roles (id, user_id, role_id, organisation_id, granted_at) VALUES ('ur1', 'u_alice', 'role_admin', 'org_1', '2026-08-30T10:00:00Z');",
       );
 
       const session = await sessionService.createSession({
@@ -100,6 +114,58 @@ describe("@platform/identity", () => {
 
       const validated = await sessionService.validateCurrentSession();
       expect(validated.sessionId).toBe(session.sessionId);
+
+      const trustedContext = await sessionService.getTrustedOperationContext();
+      expect(trustedContext.principal).toMatchObject({
+        sessionId: session.sessionId,
+        userId: "u_alice",
+        deviceId: device.deviceId,
+        organisationId: "org_1",
+        authStrength: "offline-session",
+      });
+    });
+
+    it("ignores caller-provided roles and uses persisted bindings", async () => {
+      const device = await deviceService.registerDevice({
+        publicKey: "pub_key_roles",
+        platform: "windows",
+        applicationId: "demo",
+      });
+      await deviceService.updateDeviceStatus(device.deviceId, "APPROVED");
+      await db.execute(
+        "INSERT INTO core_users (id, created_at, updated_at, organisation_id, display_name, status) VALUES ('u_roles', '2026-08-30T10:00:00Z', '2026-08-30T10:00:00Z', 'org_1', 'Roles', 'ACTIVE');",
+      );
+      await db.execute(
+        "INSERT INTO core_user_roles (id, user_id, role_id, organisation_id, granted_at) VALUES ('ur2', 'u_roles', 'role_reader', 'org_1', '2026-08-30T10:00:00Z');",
+      );
+
+      const session = await sessionService.createSession({
+        userId: "u_roles",
+        organisationId: "org_1",
+        roles: ["role_admin"],
+      });
+
+      expect(session.roles).toEqual(["role_reader"]);
+    });
+
+    it("rejects a caller-supplied organisation that differs from the user", async () => {
+      const device = await deviceService.registerDevice({
+        publicKey: "pub_key_org",
+        platform: "windows",
+        applicationId: "demo",
+      });
+      await deviceService.updateDeviceStatus(device.deviceId, "ACTIVE");
+      await db.execute(
+        "INSERT INTO core_users (id, created_at, updated_at, organisation_id, display_name, status) VALUES ('u_org', '2026-08-30T10:00:00Z', '2026-08-30T10:00:00Z', 'org_1', 'Tenant', 'ACTIVE');",
+      );
+
+      await expect(
+        sessionService.createSession({
+          userId: "u_org",
+          organisationId: "org_attacker",
+          roles: ["role_admin"],
+        }),
+      ).rejects.toThrow("does not belong to organisation");
     });
 
     it("rejects session if device is REVOKED", async () => {

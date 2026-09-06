@@ -11,9 +11,12 @@
     "test": "vitest run",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "artifacts:collect": "node scripts/collect-artifacts.js",
+    "artifacts:open": "node scripts/open-artifacts.js"
   },
   "dependencies": {
+    "@tauri-apps/api": "^2.5.0",
     "@features/example-feature": "workspace:*",
     "@features/identity-admin": "workspace:*",
     "@features/organisations": "workspace:*",

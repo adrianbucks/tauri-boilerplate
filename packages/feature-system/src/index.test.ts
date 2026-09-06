@@ -88,6 +88,17 @@ describe("@platform/feature-system", () => {
         "Duplicate migration version",
       );
     });
+
+    it("rejects duplicate permission names across features", () => {
+      const duplicate = {
+        ...inventoryManifest,
+        permissions: [{ name: "organisations.read", description: "Duplicate" }],
+      };
+
+      expect(() =>
+        DependencyResolver.resolve([orgManifest, duplicate]),
+      ).toThrow("declared by both");
+    });
   });
 
   describe("DependencyResolver", () => {
@@ -106,6 +117,12 @@ describe("@platform/feature-system", () => {
       expect(() => DependencyResolver.resolve([inventoryManifest])).toThrow(
         "requires missing dependency 'organisations'",
       );
+    });
+
+    it("rejects duplicate feature IDs", () => {
+      expect(() =>
+        DependencyResolver.resolve([orgManifest, { ...orgManifest }]),
+      ).toThrow("Duplicate feature ID");
     });
 
     it("detects and reports circular dependencies", () => {
@@ -150,6 +167,15 @@ describe("@platform/feature-system", () => {
       const syncPolicies = registry.getAllSyncPolicies();
       expect(syncPolicies).toHaveLength(1);
       expect(syncPolicies[0]?.entityType).toBe("inventory_item");
+    });
+
+    it("rejects duplicate feature registration", () => {
+      const registry = new FeatureRegistry();
+      registry.registerFeature({ manifest: orgManifest });
+
+      expect(() => registry.registerFeature({ manifest: orgManifest })).toThrow(
+        "already been registered",
+      );
     });
   });
 });

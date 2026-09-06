@@ -1,4 +1,7 @@
-import { AuthorizationError } from "@platform/core";
+import {
+  AuthorizationError,
+  type TrustedOperationContext,
+} from "@platform/core";
 import type { DatabaseConnection, TransactionClient } from "@platform/database";
 import { ScopeEvaluator } from "./ScopeEvaluator.js";
 import type {
@@ -23,22 +26,22 @@ export class AuthorizationEngine {
   ): Promise<EffectivePermissions> {
     const executor = tx ?? this.db;
 
-    if (subject.roles.length === 0) {
-      return { permissions: [], organisationId: subject.organisationId };
-    }
-
-    const placeholders = subject.roles.map(() => "?").join(", ");
     const sql = `
       SELECT p.name AS permission_name, rp.scope_constraints_json
-      FROM core_role_permissions rp
+      FROM core_user_roles ur
+      JOIN core_roles r
+        ON r.id = ur.role_id
+       AND r.organisation_id = ur.organisation_id
+      JOIN core_role_permissions rp ON rp.role_id = r.id
       JOIN core_permissions p ON rp.permission_id = p.id
-      WHERE rp.role_id IN (${placeholders})
+      WHERE ur.user_id = ?
+        AND ur.organisation_id = ?
     `;
 
     const rows = await executor.query<{
       permission_name: string;
       scope_constraints_json: string | null;
-    }>(sql, [...subject.roles]);
+    }>(sql, [subject.userId, subject.organisationId]);
 
     const permissions: GrantedPermission[] = rows.map((r) => {
       let scopeConstraints: ResourceScope | undefined = undefined;
@@ -119,5 +122,23 @@ export class AuthorizationEngine {
         technicalDetails: `Subject: ${subject.userId}, Perm: ${permission}, Code: ${decision.code}`,
       });
     }
+  }
+
+  async requireTrusted(
+    context: TrustedOperationContext,
+    permission: PermissionName,
+    resource?: ResourceScope,
+    tx?: TransactionClient,
+  ): Promise<void> {
+    await this.require(
+      {
+        userId: context.principal.userId,
+        organisationId: context.principal.organisationId,
+        roles: context.principal.roles,
+      },
+      permission,
+      resource,
+      tx,
+    );
   }
 }

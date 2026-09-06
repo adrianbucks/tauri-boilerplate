@@ -7,14 +7,18 @@ export class ExportEngine {
    */
   static toCsv<T>(records: T[], definition: ExportDefinition<T>): string {
     const headerRow = definition.columns
-      .map((c) => this.escapeCsv(c.header))
+      .map((c) => this.escapeCsv(this.sanitizeSpreadsheetString(c.header)))
       .join(",");
     const dataRows = records.map((record) =>
       definition.columns
         .map((col) => {
           const val = col.accessor(record);
           return this.escapeCsv(
-            val === null || val === undefined ? "" : String(val),
+            val === null || val === undefined
+              ? ""
+              : typeof val === "string"
+                ? this.sanitizeSpreadsheetString(val)
+                : String(val),
           );
         })
         .join(","),
@@ -30,7 +34,11 @@ export class ExportEngine {
     const rawData = records.map((record) => {
       const rowObj: Record<string, unknown> = {};
       definition.columns.forEach((col) => {
-        rowObj[col.header] = col.accessor(record) ?? "";
+        const value = col.accessor(record);
+        rowObj[this.sanitizeSpreadsheetString(col.header)] =
+          typeof value === "string"
+            ? this.sanitizeSpreadsheetString(value)
+            : (value ?? "");
       });
       return rowObj;
     });
@@ -54,5 +62,9 @@ export class ExportEngine {
       return `"${value.replace(/"/g, '""')}"`;
     }
     return value;
+  }
+
+  private static sanitizeSpreadsheetString(value: string): string {
+    return /^[=+\-@]/.test(value) ? `'${value}` : value;
   }
 }

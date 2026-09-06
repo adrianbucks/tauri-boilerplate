@@ -12,6 +12,11 @@ describe("@features/example-feature", () => {
     organisationId: "org_acme",
     userId: "user_alice",
   });
+  const otherOrganisationCtx = createOperationContext({
+    deviceId: "dev_laptop_2",
+    organisationId: "org_other",
+    userId: "user_bob",
+  });
 
   beforeEach(async () => {
     db = new MemoryDatabaseConnection(":memory:");
@@ -98,13 +103,36 @@ describe("@features/example-feature", () => {
       );
 
       await service.updateWidget(widget.id, { quantity: 30 }, ctx);
-      const updated = await service.getWidgetById(widget.id);
+      const updated = await service.getWidgetById(widget.id, ctx);
       expect(updated?.quantity).toBe(30);
 
       // Soft delete
       await service.deleteWidget(widget.id, ctx);
-      const list = await service.listWidgets("grp_coventry");
+      const list = await service.listWidgets("grp_coventry", ctx);
       expect(list).toHaveLength(0); // Excluded from active list
+    });
+
+    it("does not read or mutate another organisation's widget", async () => {
+      const widget = await service.createWidget(
+        {
+          name: "Other Organisation Widget",
+          sku: "OTHER-01",
+          quantity: 5,
+          syncGroupId: "grp_other",
+        },
+        otherOrganisationCtx,
+      );
+
+      await expect(service.getWidgetById(widget.id, ctx)).resolves.toBeNull();
+      await expect(
+        service.updateWidget(widget.id, { quantity: 10 }, ctx),
+      ).rejects.toThrow("not found");
+      await service.deleteWidget(widget.id, ctx);
+      await expect(
+        service.getWidgetById(widget.id, otherOrganisationCtx),
+      ).resolves.toEqual(
+        expect.objectContaining({ quantity: 5, deleted_at: null }),
+      );
     });
   });
 });

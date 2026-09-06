@@ -110,6 +110,80 @@ describe("@platform/database", () => {
       const reRun = await engine.applyMigrations(migrations);
       expect(reRun.appliedCount).toBe(0);
     });
+
+    it("executes semicolons inside SQL string literals", async () => {
+      const engine = new MigrationEngine(db);
+
+      await engine.applyMigrations([
+        {
+          version: 1,
+          name: "create_message",
+          sql: `
+            CREATE TABLE messages (id TEXT PRIMARY KEY, body TEXT NOT NULL);
+            INSERT INTO messages (id, body) VALUES ('m1', 'wait; then continue');
+          `,
+          checksum: "chk_message",
+        },
+      ]);
+
+      const rows = await db.query<{ body: string }>(
+        "SELECT body FROM messages WHERE id = ?",
+        ["m1"],
+      );
+      expect(rows[0]?.body).toBe("wait; then continue");
+    });
+
+    it("rejects an applied migration when its checksum changes", async () => {
+      const engine = new MigrationEngine(db);
+      const migration: MigrationScript = {
+        version: 1,
+        name: "create_checksum_test",
+        sql: "CREATE TABLE checksum_test (id TEXT PRIMARY KEY);",
+        checksum: "original_checksum",
+      };
+
+      await engine.applyMigrations([migration]);
+
+      await expect(
+        engine.applyMigrations([
+          { ...migration, checksum: "changed_checksum" },
+        ]),
+      ).rejects.toMatchObject({
+        code: "MIGRATION_ERROR",
+        message:
+          "Migration checksum mismatch for platform:v1 ('create_checksum_test')",
+      });
+    });
+
+    it("allows the same version for different owners", async () => {
+      const engine = new MigrationEngine(db);
+
+      const result = await engine.applyMigrations([
+        {
+          owner: "feature.organisations",
+          version: 1,
+          name: "create_organisations",
+          sql: "CREATE TABLE organisations (id TEXT PRIMARY KEY);",
+          checksum: "chk_org_1",
+        },
+        {
+          owner: "feature.inventory",
+          version: 1,
+          name: "create_inventory",
+          sql: "CREATE TABLE inventory (id TEXT PRIMARY KEY);",
+          checksum: "chk_inventory_1",
+        },
+      ]);
+
+      expect(result.appliedCount).toBe(2);
+      const applied = await db.query<{ owner: string; version: number }>(
+        "SELECT owner, version FROM core_migrations ORDER BY owner",
+      );
+      expect(applied).toEqual([
+        { owner: "feature.inventory", version: 1 },
+        { owner: "feature.organisations", version: 1 },
+      ]);
+    });
   });
 
   describe("BaseRepository", () => {

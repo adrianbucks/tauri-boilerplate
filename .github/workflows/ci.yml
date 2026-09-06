@@ -17,7 +17,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v3
@@ -36,6 +36,15 @@ jobs:
       - name: Unit & Security Tests
         run: pnpm turbo test
 
+      - name: Integration Tests
+        run: pnpm test:integration
+
+      - name: Security Regression Tests
+        run: pnpm test:security
+
+      - name: Sync Tests
+        run: pnpm test:sync
+
   rust-check:
     name: Rust Crates Check
     runs-on: windows-latest
@@ -46,6 +55,7 @@ jobs:
       - name: Setup Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
+          toolchain: 1.98.1
           components: clippy, rustfmt
 
       - name: Rust Formatting Check

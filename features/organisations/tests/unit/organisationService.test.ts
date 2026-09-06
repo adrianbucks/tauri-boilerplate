@@ -11,6 +11,11 @@ describe("@features/organisations", () => {
     organisationId: "org_root",
     userId: "user_admin",
   });
+  const otherOrganisationCtx = createOperationContext({
+    deviceId: "dev_2",
+    organisationId: "org_other",
+    userId: "user_other",
+  });
 
   beforeEach(async () => {
     db = new MemoryDatabaseConnection(":memory:");
@@ -65,25 +70,49 @@ describe("@features/organisations", () => {
       { name: "Beta Corp", domain: "beta.com" },
       ctx,
     );
+    const organisationCtx = createOperationContext({
+      deviceId: ctx.deviceId,
+      organisationId: org.id,
+      userId: ctx.userId,
+    });
 
     const updated = await service.updateOrganisation(
       org.id,
       { name: "Beta Holdings Ltd" },
-      ctx,
+      organisationCtx,
     );
 
     expect(updated.name).toBe("Beta Holdings Ltd");
     expect(updated.domain).toBe("beta.com");
   });
 
-  it("lists all active organisations", async () => {
-    await service.createOrganisation({ name: "Org A", domain: "a.com" }, ctx);
-    await service.createOrganisation({ name: "Org B", domain: "b.com" }, ctx);
+  it("scopes organisation reads and updates to the operation context", async () => {
+    const own = await service.createOrganisation(
+      { name: "Org A", domain: "a.com" },
+      ctx,
+    );
+    const other = await service.createOrganisation(
+      { name: "Org B", domain: "b.com" },
+      otherOrganisationCtx,
+    );
+    const ownOrganisationCtx = createOperationContext({
+      deviceId: ctx.deviceId,
+      organisationId: own.id,
+      userId: ctx.userId,
+    });
 
-    const orgs = await service.listOrganisations();
-    expect(orgs.length).toBeGreaterThanOrEqual(2);
-    const names = orgs.map((o) => o.name);
-    expect(names).toContain("Org A");
-    expect(names).toContain("Org B");
+    const orgs = await service.listOrganisations(ownOrganisationCtx);
+    expect(orgs).toHaveLength(1);
+    expect(orgs[0]?.id).toBe(own.id);
+    await expect(
+      service.getOrganisationById(other.id, ownOrganisationCtx),
+    ).resolves.toBeNull();
+    await expect(
+      service.updateOrganisation(
+        other.id,
+        { name: "Tampered" },
+        ownOrganisationCtx,
+      ),
+    ).rejects.toThrow("not found");
   });
 });

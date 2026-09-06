@@ -33,6 +33,14 @@ describe("Security Regression Suite — RBAC & Scope Enforcement", () => {
         permission_id TEXT NOT NULL,
         scope_constraints_json TEXT
       );
+      CREATE TABLE core_user_roles (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        role_id TEXT NOT NULL,
+        organisation_id TEXT NOT NULL,
+        granted_by TEXT,
+        granted_at TEXT NOT NULL
+      );
 
       -- Seed Permissions
       INSERT INTO core_permissions (id, name, description) VALUES 
@@ -46,6 +54,9 @@ describe("Security Regression Suite — RBAC & Scope Enforcement", () => {
       INSERT INTO core_role_permissions (id, role_id, permission_id, scope_constraints_json) VALUES 
         ('rp1', 'role_cov_operator', 'p_read', '{"warehouseId":"COV"}'),
         ('rp2', 'role_cov_operator', 'p_update', '{"warehouseId":"COV"}');
+
+      INSERT INTO core_user_roles (id, user_id, role_id, organisation_id, granted_at)
+      VALUES ('ur_cov_worker', 'usr_cov_worker', 'role_cov_operator', 'org_acme', '2026-08-30T10:00:00Z');
     `);
 
     auth = new AuthorizationEngine(db);
@@ -105,6 +116,23 @@ describe("Security Regression Suite — RBAC & Scope Enforcement", () => {
     expect(decision.granted).toBe(false);
     if (!decision.granted) {
       expect(decision.code).toBe("NO_MATCHING_ROLE");
+    }
+  });
+
+  it("denies a role injected from another organisation", async () => {
+    const subject = {
+      userId: "usr_attacker",
+      organisationId: "org_malicious",
+      roles: ["role_cov_operator"],
+    };
+
+    const decision = await auth.can(subject, "inventory.read", {
+      warehouseId: "COV",
+    });
+
+    expect(decision.granted).toBe(false);
+    if (!decision.granted) {
+      expect(decision.code).toBe("PERMISSION_NOT_GRANTED");
     }
   });
 });

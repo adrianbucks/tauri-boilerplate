@@ -16,7 +16,29 @@ export class DependencyResolver {
   static resolve(manifests: FeatureManifest[]): ResolvedFeatureGraph {
     const manifestMap = new Map<string, FeatureManifest>();
     for (const m of manifests) {
+      if (manifestMap.has(m.id)) {
+        throw new ValidationError({
+          message: `Duplicate feature ID '${m.id}' detected.`,
+          userMessage: "Duplicate feature configuration",
+          correlationId: `dep_duplicate_${m.id}`,
+        });
+      }
       manifestMap.set(m.id, m);
+    }
+
+    const permissionOwners = new Map<string, string>();
+    for (const manifest of manifests) {
+      for (const permission of manifest.permissions) {
+        const owner = permissionOwners.get(permission.name);
+        if (owner) {
+          throw new ValidationError({
+            message: `Permission '${permission.name}' is declared by both '${owner}' and '${manifest.id}'.`,
+            userMessage: "Duplicate feature permission",
+            correlationId: `dep_permission_collision_${permission.name}`,
+          });
+        }
+        permissionOwners.set(permission.name, manifest.id);
+      }
     }
 
     // Check for missing hard dependencies

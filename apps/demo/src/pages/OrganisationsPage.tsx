@@ -13,18 +13,9 @@ import {
   AlertDescription,
 } from "@platform/ui";
 import { Building2, Plus, CheckCircle, Globe } from "lucide-react";
-import {
-  OrganisationService,
-  type OrganisationRecord,
-} from "@features/organisations";
-import { MemoryDatabaseConnection } from "@platform/database";
+import type { OrganisationRecord } from "@features/organisations";
 import { createOperationContext } from "@platform/core";
-
-const ctx = createOperationContext({
-  deviceId: "demo_device",
-  organisationId: "org_demo",
-  userId: "user_demo",
-});
+import { usePlatform } from "../hooks/usePlatform.js";
 
 interface OrgRowProps {
   org: OrganisationRecord;
@@ -70,8 +61,8 @@ function OrgRow({ org }: OrgRowProps) {
 }
 
 export function OrganisationsPage() {
+  const { nativeGateway, nativeSession } = usePlatform();
   const [orgs, setOrgs] = useState<OrganisationRecord[]>([]);
-  const [service, setService] = useState<OrganisationService | null>(null);
   const [name, setName] = useState("");
   const [domain, setDomain] = useState("");
   const [loading, setLoading] = useState(false);
@@ -80,42 +71,52 @@ export function OrganisationsPage() {
 
   useEffect(() => {
     (async () => {
-      const db = new MemoryDatabaseConnection(":memory:");
-      await db.init();
-      await db.execute(`
-        CREATE TABLE core_organisations (
-          id TEXT PRIMARY KEY,
-          created_at TEXT NOT NULL,
-          updated_at TEXT NOT NULL,
-          created_by TEXT,
-          updated_by TEXT,
-          name TEXT NOT NULL,
-          domain TEXT,
-          status TEXT NOT NULL DEFAULT 'ACTIVE',
-          settings_json TEXT
+      if (nativeGateway && nativeSession) {
+        const nativeOrgs = await nativeGateway.listOrganisations();
+        setOrgs(
+          nativeOrgs.map((organisation) => ({
+            ...organisation,
+            created_by: null,
+            updated_by: null,
+            settings_json: null,
+          })),
         );
-      `);
-      const svc = new OrganisationService(db);
-      setService(svc);
-      setOrgs(await svc.listOrganisations());
+      }
     })();
-  }, []);
+  }, [nativeGateway, nativeSession]);
 
   const loadOrgs = useCallback(async () => {
-    if (!service) return;
-    setOrgs(await service.listOrganisations());
-  }, [service]);
+    if (!nativeGateway || !nativeSession) return;
+    const nativeOrgs = await nativeGateway.listOrganisations();
+    setOrgs(
+      nativeOrgs.map((organisation) => ({
+        ...organisation,
+        created_by: null,
+        updated_by: null,
+        settings_json: null,
+      })),
+    );
+  }, [nativeGateway, nativeSession]);
 
   const handleCreate = useCallback(async () => {
-    if (!service || !name.trim()) return;
+    if (!nativeGateway || !nativeSession || !name.trim()) return;
     setLoading(true);
     setError(null);
     setSuccess(null);
     try {
-      const org = await service.createOrganisation(
-        { name: name.trim(), domain: domain.trim() || undefined },
-        ctx,
-      );
+      const createRequest = { name: name.trim() };
+      const normalizedDomain = domain.trim();
+      if (normalizedDomain) {
+        Object.assign(createRequest, { domain: normalizedDomain });
+      }
+      const org = await nativeGateway.createOrganisation({
+        ...createRequest,
+        correlation_id: createOperationContext({
+          deviceId: "native",
+          organisationId: nativeSession.organisation_id,
+          userId: nativeSession.user_id,
+        }).correlationId,
+      });
       setSuccess(`Organisation "${org.name}" created successfully`);
       setName("");
       setDomain("");
@@ -125,7 +126,7 @@ export function OrganisationsPage() {
     } finally {
       setLoading(false);
     }
-  }, [service, name, domain, loadOrgs]);
+  }, [nativeGateway, nativeSession, name, domain, loadOrgs]);
 
   return (
     <div className="space-y-8">
@@ -160,7 +161,7 @@ export function OrganisationsPage() {
         </CardHeader>
         <CardContent>
           <div className="flex flex-wrap gap-3 max-w-2xl">
-            <div className="flex-1 min-w-[200px]">
+            <div className="flex-1 min-w-50">
               <Input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
@@ -168,7 +169,7 @@ export function OrganisationsPage() {
                 label="Organisation Name *"
               />
             </div>
-            <div className="flex-1 min-w-[200px]">
+            <div className="flex-1 min-w-50">
               <Input
                 value={domain}
                 onChange={(e) => setDomain(e.target.value)}
@@ -180,7 +181,7 @@ export function OrganisationsPage() {
               <Button
                 onClick={handleCreate}
                 isLoading={loading}
-                disabled={!service || !name.trim()}
+                disabled={!nativeGateway || !nativeSession || !name.trim()}
               >
                 <Plus className="h-4 w-4 mr-1" />
                 Create

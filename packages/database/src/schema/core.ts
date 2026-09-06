@@ -1,4 +1,9 @@
-import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
+import {
+  sqliteTable,
+  text,
+  integer,
+  primaryKey,
+} from "drizzle-orm/sqlite-core";
 import { baseEntityColumns } from "./base.js";
 
 // Applications registry
@@ -244,12 +249,19 @@ export const coreSyncConflicts = sqliteTable("core_sync_conflicts", {
 });
 
 // Platform Migrations
-export const coreMigrations = sqliteTable("core_migrations", {
-  version: integer("version").primaryKey(),
-  name: text("name").notNull(),
-  appliedAt: text("applied_at").notNull(),
-  checksum: text("checksum").notNull(),
-});
+export const coreMigrations = sqliteTable(
+  "core_migrations",
+  {
+    owner: text("owner").notNull(),
+    version: integer("version").notNull(),
+    name: text("name").notNull(),
+    appliedAt: text("applied_at").notNull(),
+    checksum: text("checksum").notNull(),
+  },
+  (table) => ({
+    primaryKey: primaryKey({ columns: [table.owner, table.version] }),
+  }),
+);
 
 // Feature Migrations
 export const coreFeatureMigrations = sqliteTable("core_feature_migrations", {

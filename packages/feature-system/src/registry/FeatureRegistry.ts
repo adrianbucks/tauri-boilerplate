@@ -1,4 +1,5 @@
 import { ManifestValidator } from "../manifest/ManifestValidator.js";
+import { ValidationError } from "@platform/core";
 import {
   DependencyResolver,
   type ResolvedFeatureGraph,
@@ -23,6 +24,14 @@ export class FeatureRegistry {
   registerFeature(options: RegisterFeatureOptions): void {
     const { manifest } = options;
     ManifestValidator.validate(manifest);
+
+    if (this.registeredFeatures.has(manifest.id)) {
+      throw new ValidationError({
+        message: `Feature '${manifest.id}' has already been registered.`,
+        userMessage: "A feature was registered more than once",
+        correlationId: `feat_duplicate_${manifest.id}`,
+      });
+    }
 
     this.registeredFeatures.set(manifest.id, manifest);
     this.resolvedGraph = null; // Invalidate cached graph

@@ -13,6 +13,13 @@ import type {
   ImportValidationResult,
 } from "../types.js";
 
+export const MAX_IMPORT_FILE_BYTES = 10 * 1024 * 1024;
+export const MAX_IMPORT_SHEETS = 8;
+export const MAX_IMPORT_ROWS = 10_000;
+export const MAX_IMPORT_CELLS = 100_000;
+export const MAX_IMPORT_CELL_STRING_LENGTH = 64 * 1024;
+export const MAX_IMPORT_PARSE_MS = 5_000;
+
 export class ImportEngine {
   private readonly db: DatabaseConnection;
   private readonly audit: AuditService;
@@ -26,7 +33,27 @@ export class ImportEngine {
    * Parses raw file buffer (CSV or XLSX) into an array of object records.
    */
   parseBuffer(buffer: ArrayBuffer | Uint8Array): Record<string, unknown>[] {
-    const workbook = XLSX.read(buffer, { type: "array" });
+    const parseStartedAt = Date.now();
+    if (buffer.byteLength > MAX_IMPORT_FILE_BYTES) {
+      throw new ValidationError({
+        message: "Import file exceeds the maximum allowed size",
+        userMessage: "The uploaded file is too large",
+        correlationId: "imp_file_size_limit",
+      });
+    }
+
+    const workbook = XLSX.read(buffer, {
+      type: "array",
+      sheetRows: MAX_IMPORT_ROWS + 2,
+    });
+    this.assertParseBudget(parseStartedAt);
+    if (workbook.SheetNames.length > MAX_IMPORT_SHEETS) {
+      throw new ValidationError({
+        message: "Workbook exceeds the maximum sheet count",
+        userMessage: "The uploaded workbook has too many sheets",
+        correlationId: "imp_sheet_limit",
+      });
+    }
     const firstSheetName = workbook.SheetNames[0];
     if (!firstSheetName) {
       throw new ValidationError({
@@ -39,10 +66,54 @@ export class ImportEngine {
     const worksheet = workbook.Sheets[firstSheetName];
     if (!worksheet) return [];
 
-    return XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, {
+    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, {
       defval: null,
       raw: false,
     });
+    if (rows.length > MAX_IMPORT_ROWS) {
+      throw new ValidationError({
+        message: "Worksheet exceeds the maximum row count",
+        userMessage: "The uploaded worksheet has too many rows",
+        correlationId: "imp_row_limit",
+      });
+    }
+
+    let cellCount = 0;
+    for (const row of rows) {
+      cellCount += Object.keys(row).length;
+      if (cellCount > MAX_IMPORT_CELLS) {
+        throw new ValidationError({
+          message: "Worksheet exceeds the maximum cell count",
+          userMessage: "The uploaded worksheet has too many cells",
+          correlationId: "imp_cell_limit",
+        });
+      }
+      for (const value of Object.values(row)) {
+        if (
+          typeof value === "string" &&
+          value.length > MAX_IMPORT_CELL_STRING_LENGTH
+        ) {
+          throw new ValidationError({
+            message: "Worksheet contains an oversized cell",
+            userMessage:
+              "The uploaded worksheet contains a value that is too large",
+            correlationId: "imp_cell_string_limit",
+          });
+        }
+      }
+    }
+    this.assertParseBudget(parseStartedAt);
+    return rows;
+  }
+
+  private assertParseBudget(parseStartedAt: number): void {
+    if (Date.now() - parseStartedAt > MAX_IMPORT_PARSE_MS) {
+      throw new ValidationError({
+        message: "Spreadsheet parsing exceeded the resource budget",
+        userMessage: "The uploaded file took too long to process",
+        correlationId: "imp_parse_budget",
+      });
+    }
   }
 
   /**
@@ -50,7 +121,7 @@ export class ImportEngine {
    */
   validate<T>(
     rows: Record<string, unknown>[],
-    definition: ImportDefinition<T>,
+    definition: Pick<ImportDefinition<T>, "validateRow">,
   ): ImportValidationResult<T> {
     const validRows: T[] = [];
     const errors: RowValidationError[] = [];
@@ -71,6 +142,13 @@ export class ImportEngine {
       errors,
       totalRows: rows.length,
     };
+  }
+
+  validateBuffer<T>(
+    buffer: ArrayBuffer | Uint8Array,
+    definition: Pick<ImportDefinition<T>, "validateRow">,
+  ): ImportValidationResult<T> {
+    return this.validate(this.parseBuffer(buffer), definition);
   }
 
   /**

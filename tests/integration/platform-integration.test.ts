@@ -297,6 +297,7 @@ describe("Cross-Package Integration Suite — End-to-End Pipeline", () => {
           "SCN-990",
         ])
       )[0]!.id,
+      ctx,
     );
     expect(matchedWidget?.name).toBe("Barcode Mount");
   });

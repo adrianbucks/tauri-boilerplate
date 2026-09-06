@@ -8,6 +8,24 @@ export interface OperationContext {
   readonly metadata?: Readonly<Record<string, unknown>> | undefined;
 }
 
+export interface RequestContext {
+  readonly correlationId: string;
+  readonly metadata?: Readonly<Record<string, unknown>> | undefined;
+}
+
+export interface TrustedPrincipal {
+  readonly sessionId: string;
+  readonly userId: string;
+  readonly deviceId: string;
+  readonly organisationId: string;
+  readonly roles: readonly string[];
+  readonly authStrength: "offline-session";
+}
+
+export interface TrustedOperationContext extends RequestContext {
+  readonly principal: TrustedPrincipal;
+}
+
 export interface CreateContextOptions {
   correlationId?: string | undefined;
   userId?: string | null | undefined;
@@ -24,6 +42,17 @@ export function createOperationContext(
     userId: options.userId ?? null,
     deviceId: options.deviceId,
     organisationId: options.organisationId,
+    metadata: options.metadata
+      ? Object.freeze({ ...options.metadata })
+      : undefined,
+  };
+}
+
+export function createRequestContext(
+  options: Pick<CreateContextOptions, "correlationId" | "metadata"> = {},
+): RequestContext {
+  return {
+    correlationId: options.correlationId ?? generateCorrelationId("req"),
     metadata: options.metadata
       ? Object.freeze({ ...options.metadata })
       : undefined,

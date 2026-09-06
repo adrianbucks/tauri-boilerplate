@@ -77,8 +77,11 @@ export class OrganisationService {
     });
   }
 
-  async getOrganisationById(id: string): Promise<OrganisationRecord | null> {
-    return this.repo.findById(id);
+  async getOrganisationById(
+    id: string,
+    ctx: OperationContext,
+  ): Promise<OrganisationRecord | null> {
+    return this.repo.findByIdWithinOrganisation(id, ctx.organisationId);
   }
 
   async updateOrganisation(
@@ -86,7 +89,10 @@ export class OrganisationService {
     input: UpdateOrganisationInput,
     ctx: OperationContext,
   ): Promise<OrganisationRecord> {
-    const existing = await this.repo.findById(id);
+    const existing = await this.repo.findByIdWithinOrganisation(
+      id,
+      ctx.organisationId,
+    );
     if (!existing) {
       throw new ValidationError({
         message: `Organisation '${id}' not found`,
@@ -104,10 +110,15 @@ export class OrganisationService {
       updates.settings_json = JSON.stringify(input.settings);
 
     await this.repo.update(id, updates);
-    return (await this.repo.findById(id))!;
+    return (await this.repo.findByIdWithinOrganisation(
+      id,
+      ctx.organisationId,
+    ))!;
   }
 
-  async listOrganisations(): Promise<OrganisationRecord[]> {
-    return this.repo.findAll({ orderBy: "name", orderDirection: "ASC" });
+  async listOrganisations(
+    ctx: OperationContext,
+  ): Promise<OrganisationRecord[]> {
+    return this.repo.findAllWithinOrganisation(ctx.organisationId);
   }
 }

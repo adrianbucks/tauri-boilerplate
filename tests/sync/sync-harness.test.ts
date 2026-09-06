@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { MemoryDatabaseConnection } from "@platform/database";
-import { createOperationContext } from "@platform/core";
+import { createOperationContext, type OperationContext } from "@platform/core";
 import {
   HybridLogicalClock,
   ConflictRegistry,
@@ -52,17 +52,21 @@ class VirtualSyncDevice {
     `);
   }
 
+  getContext(): OperationContext {
+    return createOperationContext({
+      deviceId: this.deviceId,
+      organisationId: this.orgId,
+      userId: `usr_${this.deviceId}`,
+    });
+  }
+
   async createLocalWidget(
     name: string,
     sku: string,
     quantity: number,
     syncGroupId: string,
   ): Promise<WidgetRecord> {
-    const ctx = createOperationContext({
-      deviceId: this.deviceId,
-      organisationId: this.orgId,
-      userId: `usr_${this.deviceId}`,
-    });
+    const ctx = this.getContext();
 
     const w = await this.widgets.createWidget(
       { name, sku, quantity, syncGroupId },
@@ -99,7 +103,10 @@ class VirtualSyncDevice {
     // 1. Advance local clock with remote HLC
     this.hlc.update(op.logicalTimestamp);
 
-    const existing = await this.widgets.getWidgetById(op.entityId);
+    const existing = await this.widgets.getWidgetById(
+      op.entityId,
+      this.getContext(),
+    );
     if (!existing) {
       // Direct insert
       const item = op.payload as WidgetRecord;
@@ -193,14 +200,19 @@ describe("Multi-Device Sync Harness — Simulated P2P Replication", () => {
     expect(devA.outgoingQueue).toHaveLength(1);
 
     // Device B does not have it yet
-    expect(await devB.widgets.getWidgetById(widgetA.id)).toBeNull();
+    expect(
+      await devB.widgets.getWidgetById(widgetA.id, devB.getContext()),
+    ).toBeNull();
 
     // 2. Transmit operation to Device B
     const op = devA.outgoingQueue.shift()!;
     await devB.applyRemoteOperation(op, conflicts);
 
     // 3. Device B now has the record
-    const widgetB = await devB.widgets.getWidgetById(widgetA.id);
+    const widgetB = await devB.widgets.getWidgetById(
+      widgetA.id,
+      devB.getContext(),
+    );
     expect(widgetB).not.toBeNull();
     expect(widgetB?.sku).toBe("GEAR-01");
     expect(widgetB?.quantity).toBe(10);
@@ -273,7 +285,7 @@ describe("Multi-Device Sync Harness — Simulated P2P Replication", () => {
     // Device A applies opB (which has higher timestamp tB > tA)
     await devA.applyRemoteOperation(opB, conflicts);
 
-    const finalA = await devA.widgets.getWidgetById(w1.id);
+    const finalA = await devA.widgets.getWidgetById(w1.id, devA.getContext());
     expect(finalA?.name).toBe("Edited by Device B (Winner)");
     expect(finalA?.quantity).toBe(20);
   });

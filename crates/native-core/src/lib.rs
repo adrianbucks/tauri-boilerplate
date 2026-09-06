@@ -1,6 +1,23 @@
+pub mod database;
 pub mod error;
+pub mod organisation;
+pub mod schema;
+pub mod session;
+pub mod widget;
 
+pub use database::{DatabaseHealth, DurableDatabase, NativeMigration, DbJsonOperation};
 pub use error::PlatformError;
+pub use schema::{core_migration, core_migrations};
+pub use session::{
+    create_organisation_for_session, create_widget_for_session, create_widgets_for_session,
+    list_organisations_for_session, list_widgets_for_session, AuthenticateUserRequest,
+    NativeSessionStore, NativeSessionView,
+};
+pub use widget::{
+    NativePrincipal, NativeWidgetBulkCreateRequest, NativeWidgetCreateItem,
+    NativeWidgetCreateRequest, NativeWidgetListRequest, NativeWidgetRecord,
+};
+pub use organisation::{NativeOrganisationCreateRequest, NativeOrganisationRecord};
 
 #[cfg(test)]
 mod tests {

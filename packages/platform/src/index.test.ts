@@ -63,6 +63,24 @@ describe("@platform/platform", () => {
     );
     expect(rows).toHaveLength(1);
 
+    const coreRows = await db.query<{ name: string }>(
+      'SELECT name FROM sqlite_master WHERE type="table" AND name IN ("core_organisations", "core_audit_events") ORDER BY name',
+    );
+    expect(coreRows.map((row) => row.name)).toEqual([
+      "core_audit_events",
+      "core_organisations",
+    ]);
+
+    const appliedMigrations = await db.query<{
+      owner: string;
+      version: number;
+    }>("SELECT owner, version FROM core_migrations ORDER BY rowid");
+    expect(appliedMigrations).toEqual([
+      { owner: "platform", version: 1 },
+      { owner: "platform", version: 2 },
+      { owner: "feature.sample-feature", version: 1 },
+    ]);
+
     // Verify conflict policy registered
     const policy = platform.conflicts.getPolicy("sample_table");
     expect(policy.strategy).toBe("lww");

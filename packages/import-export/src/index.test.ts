@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import * as XLSX from "xlsx";
 import { MemoryDatabaseConnection } from "@platform/database";
 import { createOperationContext } from "@platform/core";
 import {
@@ -133,6 +134,24 @@ describe("@platform/import-export", () => {
     expect(buffer.length).toBeGreaterThan(0);
   });
 
+  it("neutralizes formula-triggering strings in CSV and XLSX exports", () => {
+    const definition: ExportDefinition<{ value: string }> = {
+      columns: [{ header: "Value", accessor: (record) => record.value }],
+    };
+    const records = [{ value: "=SUM(A1:A2)" }];
+
+    expect(ExportEngine.toCsv(records, definition)).toContain("'=SUM(A1:A2)");
+
+    const workbook = XLSX.read(ExportEngine.toXlsx(records, definition), {
+      type: "array",
+      raw: false,
+    });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]!]!;
+    expect(XLSX.utils.sheet_to_json<{ Value: string }>(sheet)[0]?.Value).toBe(
+      "'=SUM(A1:A2)",
+    );
+  });
+
   it("imports valid CSV buffer, commits atomically, and emits audit events", async () => {
     const csvContent =
       "SKU,Item Name,Quantity\r\nSKU-A1,Widget Alpha,25\r\nSKU-B2,Widget Beta,40";
@@ -160,6 +179,66 @@ describe("@platform/import-export", () => {
     expect(auditEvents.some((e) => e.event_type === "IMPORT_COMPLETED")).toBe(
       true,
     );
+  });
+
+  it("validates a buffer without opening a transaction or emitting audit events", () => {
+    const csvContent = "SKU,Item Name,Quantity\r\nSKU-C3,Widget Gamma,12";
+    const validation = importEngine.validateBuffer(
+      new TextEncoder().encode(csvContent),
+      testImportDef,
+    );
+
+    expect(validation.errors).toHaveLength(0);
+    expect(validation.validRows).toEqual([
+      { id: "item_sku-c3", sku: "SKU-C3", name: "Widget Gamma", quantity: 12 },
+    ]);
+  });
+
+  it("rejects files above the configured size limit before parsing", () => {
+    const oversized = new Uint8Array(10 * 1024 * 1024 + 1);
+
+    expect(() => importEngine.parseBuffer(oversized)).toThrow(
+      "Import file exceeds the maximum allowed size",
+    );
+  });
+
+  it("rejects worksheets above the configured row limit", () => {
+    const csvContent = [
+      "SKU,Item Name,Quantity",
+      ...Array.from(
+        { length: 10_001 },
+        (_, index) => `SKU-${index},Widget ${index},1`,
+      ),
+    ].join("\r\n");
+
+    expect(() =>
+      importEngine.parseBuffer(new TextEncoder().encode(csvContent)),
+    ).toThrow("Worksheet exceeds the maximum row count");
+  });
+
+  it("rejects workbooks above the configured sheet limit", () => {
+    const workbook = XLSX.utils.book_new();
+    for (let index = 0; index < 9; index += 1) {
+      XLSX.utils.book_append_sheet(
+        workbook,
+        XLSX.utils.aoa_to_sheet([["value"], [index]]),
+        `Sheet${index}`,
+      );
+    }
+
+    const buffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+    expect(() => importEngine.parseBuffer(buffer)).toThrow(
+      "Workbook exceeds the maximum sheet count",
+    );
+  });
+
+  it("rejects oversized string cells", () => {
+    const oversizedCell = "x".repeat(64 * 1024 + 1);
+    const csvContent = `Value\r\n${oversizedCell}`;
+
+    expect(() =>
+      importEngine.parseBuffer(new TextEncoder().encode(csvContent)),
+    ).toThrow("Worksheet contains an oversized cell");
   });
 
   it("aborts import transaction on validation failure with error report", async () => {

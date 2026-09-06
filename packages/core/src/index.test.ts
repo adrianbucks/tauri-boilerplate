@@ -7,6 +7,7 @@ import {
   getUtcIsoTimestamp,
   isValidUtcIsoTimestamp,
   createOperationContext,
+  createRequestContext,
   createDefaultConfig,
 } from "./index.js";
 
@@ -86,6 +87,14 @@ describe("@platform/core", () => {
       expect(ctx.organisationId).toBe("org_1");
       expect(ctx.userId).toBeNull();
       expect(ctx.correlationId.startsWith("op_")).toBe(true);
+    });
+
+    it("creates request context without caller-controlled identity", () => {
+      const ctx = createRequestContext();
+      expect(ctx.correlationId.startsWith("req_")).toBe(true);
+      expect(ctx).not.toHaveProperty("userId");
+      expect(ctx).not.toHaveProperty("deviceId");
+      expect(ctx).not.toHaveProperty("organisationId");
     });
   });
 

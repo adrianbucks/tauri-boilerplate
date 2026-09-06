@@ -1,6 +1,8 @@
+pub mod password;
 pub mod hlc;
 
 pub use hlc::{HlcTimestamp, HybridLogicalClock};
+pub use password::{PasswordHashError, PasswordVerifier};
 
 #[cfg(test)]
 mod tests {

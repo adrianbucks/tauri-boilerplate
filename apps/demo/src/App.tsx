@@ -13,13 +13,18 @@ import { WidgetsPage } from "./pages/WidgetsPage.js";
 import { OrganisationsPage } from "./pages/OrganisationsPage.js";
 import { AdminPage } from "./pages/AdminPage.js";
 import { DiagnosticsPage } from "./pages/DiagnosticsPage.js";
+import { LoginPage } from "./pages/LoginPage.js";
 
 type Route =
   "/dashboard" | "/widgets" | "/organisations" | "/admin" | "/diagnostics";
 
 function AppContent() {
   const [route, setRoute] = useState<Route>("/dashboard");
-  const { syncState, isReady } = usePlatform();
+  const { syncState, isReady, nativeSession } = usePlatform();
+
+  if (!nativeSession) {
+    return <LoginPage />;
+  }
 
   const navGroups = [
     {
@@ -100,8 +105,8 @@ function AppContent() {
       currentPath={route}
       onNavigate={(path) => setRoute(path as Route)}
       syncState={isReady ? syncState : "DISCONNECTED"}
-      userDisplayName="Demo User"
-      organisationName="Acme Demo Org"
+      userDisplayName={nativeSession.user_id}
+      organisationName={nativeSession.organisation_id}
     >
       {renderPage()}
     </AppShell>

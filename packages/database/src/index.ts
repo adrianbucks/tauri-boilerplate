@@ -1,6 +1,7 @@
 // Connection
 export * from "./connection/DatabaseConnection.js";
 export * from "./connection/MemoryDatabaseConnection.js";
+export * from "./connection/NativeDatabaseConnection.js";
 
 // Schema
 export * from "./schema/base.js";

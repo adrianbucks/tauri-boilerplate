@@ -32,4 +32,27 @@ export class OrganisationRepository extends BaseRepository<OrganisationRecord> {
     const rows = await executor.query<OrganisationRecord>(sql, [domain]);
     return rows[0] ?? null;
   }
+
+  async findByIdWithinOrganisation(
+    id: string,
+    organisationId: string,
+    tx?: TransactionClient,
+  ): Promise<OrganisationRecord | null> {
+    const executor = this.getExecutor(tx);
+    const sql = `SELECT * FROM core_organisations WHERE id = ? AND id = ? LIMIT 1`;
+    const rows = await executor.query<OrganisationRecord>(sql, [
+      id,
+      organisationId,
+    ]);
+    return rows[0] ?? null;
+  }
+
+  async findAllWithinOrganisation(
+    organisationId: string,
+    tx?: TransactionClient,
+  ): Promise<OrganisationRecord[]> {
+    const executor = this.getExecutor(tx);
+    const sql = `SELECT * FROM core_organisations WHERE id = ? ORDER BY name ASC`;
+    return executor.query<OrganisationRecord>(sql, [organisationId]);
+  }
 }

@@ -1,7 +1,7 @@
 import type { AppConfig, Logger } from "@platform/core";
 import { ConsoleLogger, createDefaultConfig } from "@platform/core";
 import type { DatabaseConnection } from "@platform/database";
-import { MigrationEngine } from "@platform/database";
+import { MigrationEngine, type MigrationScript } from "@platform/database";
 import { DeviceIdentityService, UserSessionService } from "@platform/identity";
 import { AuthorizationEngine, SyncGroupService } from "@platform/authorization";
 import { AuditService } from "@platform/audit";
@@ -13,6 +13,7 @@ import {
   type RegisterFeatureOptions,
   type FeatureManifest,
 } from "@platform/feature-system";
+import { coreMigrations } from "./migrations/coreMigrations.js";
 
 export interface PlatformOptions {
   db: DatabaseConnection;
@@ -83,14 +84,23 @@ export class Platform {
     // 1. Ensure platform migrations table
     await this.migrationEngine.ensureMigrationTable();
 
-    // 2. Apply all registered feature migrations in topological dependency order
+    // 2. Apply platform schema before feature-owned migrations.
     const orderedMigrations = this.features.getAllMigrations();
-    if (orderedMigrations.length > 0) {
+    const featureMigrations: MigrationScript[] = orderedMigrations.map((m) => ({
+      ...m.migration,
+      owner: `feature.${m.featureId}`,
+    }));
+    if (coreMigrations.length > 0) {
       this.logger.info(
-        `Applying ${orderedMigrations.length} feature migrations...`,
+        `Applying ${coreMigrations.length} platform migrations...`,
       );
-      const scripts = orderedMigrations.map((m) => m.migration);
-      await this.migrationEngine.applyMigrations(scripts);
+      await this.migrationEngine.applyMigrations(coreMigrations);
+    }
+    if (featureMigrations.length > 0) {
+      this.logger.info(
+        `Applying ${featureMigrations.length} feature migrations...`,
+      );
+      await this.migrationEngine.applyMigrations(featureMigrations);
     }
 
     this.isInitialised = true;

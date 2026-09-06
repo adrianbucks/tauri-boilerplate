@@ -64,7 +64,11 @@ export class WidgetService {
 
     // 2. Transaction execution
     return this.db.transaction(async (tx) => {
-      const existing = await this.repo.findBySku(normalizedSku, tx);
+      const existing = await this.repo.findBySku(
+        normalizedSku,
+        ctx.organisationId,
+        tx,
+      );
       if (existing) {
         throw new ValidationError({
           message: `Widget with SKU '${normalizedSku}' already exists`,
@@ -102,12 +106,18 @@ export class WidgetService {
     });
   }
 
-  async getWidgetById(id: string): Promise<WidgetRecord | null> {
-    return this.repo.findById(id);
+  async getWidgetById(
+    id: string,
+    ctx: OperationContext,
+  ): Promise<WidgetRecord | null> {
+    return this.repo.findByIdWithinOrganisation(id, ctx.organisationId);
   }
 
-  async listWidgets(syncGroupId: string): Promise<WidgetRecord[]> {
-    return this.repo.findBySyncGroup(syncGroupId);
+  async listWidgets(
+    syncGroupId: string,
+    ctx: OperationContext,
+  ): Promise<WidgetRecord[]> {
+    return this.repo.findBySyncGroup(syncGroupId, ctx.organisationId);
   }
 
   async updateWidget(
@@ -115,7 +125,10 @@ export class WidgetService {
     input: UpdateWidgetInput,
     ctx: OperationContext,
   ): Promise<void> {
-    const existing = await this.repo.findById(id);
+    const existing = await this.repo.findByIdWithinOrganisation(
+      id,
+      ctx.organisationId,
+    );
     if (!existing || existing.deletedAt) {
       throw new ValidationError({
         message: `Widget with ID '${id}' not found`,
@@ -147,7 +160,10 @@ export class WidgetService {
   }
 
   async deleteWidget(id: string, ctx: OperationContext): Promise<void> {
-    const existing = await this.repo.findById(id);
+    const existing = await this.repo.findByIdWithinOrganisation(
+      id,
+      ctx.organisationId,
+    );
     if (!existing || existing.deletedAt) {
       return;
     }

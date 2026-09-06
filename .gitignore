@@ -2,15 +2,25 @@
 node_modules/
 .pnpm-store/
 
-# Build Artefacts
+# Build Artefacts & Mobile Generated Outputs
 dist/
 build/
 target/
+.gradle/
+local.properties
+*.apk
+*.aab
 apps/*/dist/
+apps/*/release/
 apps/*/src-tauri/target/
+apps/*/src-tauri/gen/**/build/
+apps/*/src-tauri/gen/**/.gradle/
+apps/*/src-tauri/gen/**/local.properties
+apps/*/src-tauri/gen/schemas/
 packages/*/dist/
 features/*/dist/
 tooling/*/dist/
+release/
 
 # Turborepo
 .turbo/
