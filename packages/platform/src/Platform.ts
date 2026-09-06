@@ -13,6 +13,7 @@ import {
   type RegisterFeatureOptions,
   type FeatureManifest,
 } from "@platform/feature-system";
+import { TaskQueueService, TaskWorker, type TaskWorkerOptions } from "@platform/tasks";
 import { coreMigrations } from "./migrations/coreMigrations.js";
 
 export interface PlatformOptions {
@@ -35,6 +36,10 @@ export class Platform {
   readonly importEngine: ImportEngine;
   readonly conflicts: ConflictRegistry;
   readonly features: FeatureRegistry;
+  /** Durable background task queue — enqueue and query tasks here. */
+  readonly tasks: TaskQueueService;
+  /** Background task execution supervisor — register handlers and call start(). */
+  readonly taskWorker: TaskWorker;
   private readonly migrationEngine: MigrationEngine;
   private isInitialised = false;
 
@@ -60,6 +65,9 @@ export class Platform {
       deviceId: "pending_init",
       organisationId: "pending_init",
     });
+
+    this.tasks = new TaskQueueService(this.db);
+    this.taskWorker = new TaskWorker(this.db, {}, this.logger);
   }
 
   registerFeature(options: RegisterFeatureOptions): void {
@@ -103,8 +111,35 @@ export class Platform {
       await this.migrationEngine.applyMigrations(featureMigrations);
     }
 
+    // 3. Crash recovery: reset any RUNNING tasks left over from a previous crash.
+    const recovered = await this.tasks.recoverHangingTasks();
+    if (recovered > 0) {
+      this.logger.warn(
+        `Platform: recovered ${recovered} hanging task(s) from previous crash.`,
+      );
+    }
+
     this.isInitialised = true;
     this.logger.info("Platform initialization complete.");
+  }
+
+  /**
+   * Convenience method: starts the background task worker after registering
+   * all task handlers.
+   *
+   * Call this AFTER `init()` and after registering all handlers via
+   * `platform.taskWorker.register(type, handler)`.
+   */
+  startTaskWorker(options?: TaskWorkerOptions): void {
+    if (options) {
+      // Re-create worker with updated options if overrides are provided
+      (this as { taskWorker: TaskWorker }).taskWorker = new TaskWorker(
+        this.db,
+        options,
+        this.logger,
+      );
+    }
+    this.taskWorker.start();
   }
 
   getRegisteredFeatures(): FeatureManifest[] {

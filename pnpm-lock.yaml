@@ -276,6 +276,9 @@ importers:
       '@platform/sync-protocol':
         specifier: workspace:*
         version: link:../sync-protocol
+      '@platform/tasks':
+        specifier: workspace:*
+        version: link:../tasks
 
   packages/sync:
     dependencies:
@@ -303,6 +306,15 @@ importers:
       '@platform/core':
         specifier: workspace:*
         version: link:../core
+
+  packages/tasks:
+    dependencies:
+      '@platform/core':
+        specifier: workspace:*
+        version: link:../core
+      '@platform/database':
+        specifier: workspace:*
+        version: link:../database
 
   packages/ui:
     dependencies:

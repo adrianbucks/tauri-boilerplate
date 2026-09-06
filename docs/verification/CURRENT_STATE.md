@@ -279,6 +279,12 @@ The focused native gateway slices were verified on 2026-09-05 with:
 - `pnpm --filter demo build` — TypeScript and Vite production build passed.
 - `cargo test -p demo-app-native` — 2 tests passed.
 
+The Phase 5 durable background task subsystem was verified on 2026-09-06 with:
+
+- `pnpm --filter @platform/tasks test` — 33 tests passed (TaskQueueService 19, TaskWorker 7, OutboxSyncWorker 7);
+- `pnpm typecheck` — 37 typecheck tasks passed across all workspace packages;
+- `pnpm test` — full monorepo test suite passed (all packages, features, security regression, integration, sync tests).
+
 The demo build reported only the existing Vite bundle-size warning. Android
 target compilation, full workspace verification and physical IPC testing remain
 unperformed.
@@ -296,6 +302,7 @@ Prioritise review of:
 - `packages/sync-protocol/src/handshake/*`
 - `packages/sync-protocol/src/conflicts/*`
 - `packages/sync/src/*`
+- `packages/tasks/src/*`
 - `packages/platform/src/*`
 - `features/*/src/services/*`
 - `apps/demo/src/hooks/usePlatform.tsx`

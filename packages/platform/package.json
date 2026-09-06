@@ -22,6 +22,7 @@
     "@platform/sync-protocol": "workspace:*",
     "@platform/sync": "workspace:*",
     "@platform/import-export": "workspace:*",
-    "@platform/feature-system": "workspace:*"
+    "@platform/feature-system": "workspace:*",
+    "@platform/tasks": "workspace:*"
   }
 }
