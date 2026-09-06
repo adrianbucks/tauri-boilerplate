@@ -2,3 +2,8 @@ export * from "./types.js";
 export * from "./manager/SyncStateMachine.js";
 export * from "./manager/SyncManager.js";
 export * from "./pairing/PairingService.js";
+export * from "./outbox/OutboxService.js";
+export * from "./inbox/InboxService.js";
+export * from "./tombstone/TombstoneService.js";
+export * from "./conflict/ConflictEngine.js";
+export * from "./transport/SyncTransport.js";

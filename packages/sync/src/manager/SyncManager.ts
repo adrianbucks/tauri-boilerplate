@@ -1,19 +1,30 @@
-import { getUtcIsoTimestamp, generateCorrelationId } from "@platform/core";
+import { getUtcIsoTimestamp } from "@platform/core";
 import type { DatabaseConnection, TransactionClient } from "@platform/database";
 import type { SyncOperation } from "@platform/sync-protocol";
+import { SyncEnvelopeBuilder, type SignFn } from "@platform/sync-protocol";
 import { SyncStateMachine } from "./SyncStateMachine.js";
+import { OutboxService, type OutboxRecord } from "../outbox/OutboxService.js";
+import type { SyncTransport } from "../transport/SyncTransport.js";
 import type { SyncState, SyncDiagnostic, PeerInfo } from "../types.js";
 
 export interface SyncManagerOptions {
   db: DatabaseConnection;
   deviceId: string;
   organisationId: string;
+  signerPublicKey?: string | undefined;
+  signFn?: SignFn | undefined;
+  outboxService?: OutboxService | undefined;
+  transport?: SyncTransport | undefined;
 }
 
 export class SyncManager {
   private readonly db: DatabaseConnection;
   private readonly deviceId: string;
   private readonly organisationId: string;
+  private readonly signerPublicKey?: string | undefined;
+  private readonly signFn?: SignFn | undefined;
+  private readonly outboxService: OutboxService;
+  private readonly transport?: SyncTransport | undefined;
   private readonly peerStates = new Map<string, SyncStateMachine>();
   private readonly diagnosticsMap = new Map<string, SyncDiagnostic>();
 
@@ -21,6 +32,10 @@ export class SyncManager {
     this.db = options.db;
     this.deviceId = options.deviceId;
     this.organisationId = options.organisationId;
+    this.signerPublicKey = options.signerPublicKey;
+    this.signFn = options.signFn;
+    this.outboxService = options.outboxService ?? new OutboxService(options.db);
+    this.transport = options.transport;
   }
 
   getPeerState(peerId: string): SyncState {
@@ -28,19 +43,44 @@ export class SyncManager {
     return sm ? sm.getState() : "DISCONNECTED";
   }
 
+  getOutboxService(): OutboxService {
+    return this.outboxService;
+  }
+
+  getTransport(): SyncTransport | undefined {
+    return this.transport;
+  }
+
+  /**
+   * Enqueues a business operation into the durable outbox.
+   *
+   * Automatically signs the operation into a canonical SyncEnvelope and
+   * writes it to core_sync_outbox atomically (using the caller's transaction
+   * if supplied).
+   */
   async enqueueOperation(
     op: SyncOperation,
     tx?: TransactionClient,
-  ): Promise<void> {
-    const executor = tx ?? this.db;
-    const now = getUtcIsoTimestamp();
-    const sessionId = generateCorrelationId("sync_op");
+  ): Promise<OutboxRecord> {
+    if (!this.signerPublicKey || !this.signFn) {
+      throw new Error(
+        "[SyncManager] Cannot enqueue operation: signerPublicKey and signFn must be configured on SyncManager.",
+      );
+    }
 
-    // Record in local sync session tracking
-    await executor.execute(
-      "INSERT INTO core_sync_sessions (id, peer_device_id, operation_id, started_at, state, bytes_exchanged, correlation_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      [sessionId, op.deviceId, op.operationId, now, "IDLE", 0, op.operationId],
+    const envelope = await SyncEnvelopeBuilder.build(
+      op,
+      this.signerPublicKey,
+      this.signFn,
     );
+
+    if (tx) {
+      return this.outboxService.enqueue(envelope, tx);
+    }
+
+    return this.db.transaction(async (trx) => {
+      return this.outboxService.enqueue(envelope, trx);
+    });
   }
 
   async connect(peer: PeerInfo): Promise<void> {

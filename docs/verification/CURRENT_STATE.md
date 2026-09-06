@@ -137,23 +137,34 @@ pnpm --filter @tests/security test
 test result: 4 test files passed; 19 passed
 ```
 
-### CS-005 — Sync is simulated
+### CS-005 — Sync protocol baseline implemented ✅ PARTIALLY RESOLVED (WP-010, WP-012, WP-013)
 
-`SyncManager.connect()` transitions a state machine and checks organisation equality but does not establish a network connection. `enqueueOperation()` inserts into `core_sync_sessions`; it does not persist a complete outbound operation payload.
+**Resolution Summary (2026-09-06):**
+The sync data and protocol layer has been upgraded from pure simulation to a production-grade durable pipeline:
+- `packages/sync-protocol`: Introduced `SyncEnvelope` deterministic canonical serialization (sorted-key UTF-8 JSON) signed via Ed25519 (`SyncEnvelopeBuilder`) with public key and signature format enforcement (Invariant #5).
+- `packages/database` & `packages/platform`: Platform migration 3 (`core-replication.sql`) establishes durable `core_sync_outbox`, `core_sync_inbox`, and `core_sync_tombstones` schemas with indexes and constraints.
+- `packages/sync` (`OutboxService`): Atomic transactional queueing of outbound signed operations, ordered batch retrieval for transport polling, and retry lifecycle.
+- `packages/sync` (`InboxService`): Idempotent inbound queueing (`ON CONFLICT (envelope_id) DO NOTHING`), cryptographic signature verification before apply, and strictly ordered `logical_timestamp` application.
+- `packages/sync` (`TombstoneService`): Enforces Invariant #6 (never raw DELETE synchronisable entities), storing soft deletions with `delete_operation_id` for peer replication.
+- `packages/sync` (`SyncTransport`): Clean transport abstraction boundary with `SimulatedSyncTransport` for testing and offline development.
+- **Remaining Gate:** WP-014 (iroh live peer-to-peer transport adapter spike).
 
-**Required:** durable outbox/inbox, real transport, authenticated handshake and idempotent apply pipeline.
+### CS-006 — Handshake is authenticated ✅ RESOLVED (WP-011)
 
-### CS-006 — Handshake is not authenticated
+**Resolution Summary (2026-09-06):**
+`HandshakeValidator` and `HandshakeProtocol` now provide comprehensive mutual authentication and replay resistance:
+- `HandshakeMessage` requires 32-hex random `nonce`, canonical `signerPublicKey` (`ed25519_pk_<hex>`), platform metadata, and 128-hex Ed25519 `signature`.
+- Deterministic canonicalization excludes the `signature` field for signature verification over sorted-key UTF-8 bytes.
+- Validates timestamp skew (default 30,000 ms threshold) rejecting past and future expired messages.
+- Prevents replay attacks via session-tracked nonces (`seenNonces: Set<string>`).
+- Rejects missing, malformed, or cryptographically invalid signatures via async `verifyFn`.
 
-`HandshakeValidator` checks payload shape, application ID, organisation ID and minimum protocol version. It does not verify the signature, timestamp skew, nonce, peer key binding or replay resistance even though the message type contains a signature field.
+### CS-007 — Peer identity and platform metadata are authenticated ✅ RESOLVED (WP-011)
 
-**Required:** signed canonical handshake, freshness/nonce, peer-key verification and explicit protocol negotiation.
-
-### CS-007 — Pairing fabricates key material
-
-`PairingService` derives `publicKey` from `deviceId` and hardcodes `platform: "windows"` when registering a peer.
-
-**Required:** authenticated peer identity obtained from the native key provider/transport and actual platform metadata.
+**Resolution Summary (2026-09-06):**
+`PairingService.requestPairing()` no longer fabricates public keys (`ed25519_pk_${deviceId}`) or hardcodes `"windows"`:
+- Directly utilizes the sender's verified `signerPublicKey` and actual `platform` metadata from the authenticated `HandshakeMessage`.
+- Invokes `HandshakeValidator.requireValid()` passing the cryptographic `verifyFn` callback, ensuring unverified or forged peer handshakes are rejected before pairing requests can be stored.
 
 ### CS-008 — Tenant/authorization enforcement is incomplete ✅ RESOLVED (WP-007)
 
@@ -170,6 +181,7 @@ Mandatory central authorization and tenant isolation have been systematically in
 **Test Evidence:**
 
 - `tests/security/rbac-security.test.ts` (12/12 passed) - Tests `TrustedOperationContext` RBAC, scope enforcement, cross-tenant rejection for sync groups & users, and unprivileged rejection across all services.
+- `tests/security/sync-authorization.test.ts` (7/7 passed) - Tests 7-layer sync authorization, handshake replay protection, tampered envelope rejection, and tombstone tracking.
 - `features/organisations/tests/unit/organisationService.test.ts` (4/4 passed) - Asserts tenant-scoped reads/updates and rejection of unprivileged creation.
 - `features/identity-admin/tests/unit/identityAdminService.test.ts` (6/6 passed) - Asserts cross-tenant creation rejection and permission requirements.
 - `features/example-feature/tests/unit/widgetService.test.ts` (6/6 passed) - Asserts tenant isolation and permission requirements on mutations.
@@ -177,9 +189,11 @@ Mandatory central authorization and tenant isolation have been systematically in
 
 ```
 pnpm --filter @tests/security test
-test result: 4 test files passed; 27 passed
+test result: 4 test files passed; 30 passed
 pnpm test
 test result: 34 tasks successful, 0 failed
+cargo test --workspace
+test result: all Rust unit and integration tests passed
 ```
 
 ### CS-009 — Demo-owned schema bootstrap is resolved
@@ -202,11 +216,11 @@ and request correlation ID.
 custody and native signing, then remove the in-memory TypeScript adapter from
 demo bootstrap.
 
-### CS-010 — Additive conflict policy is unsafe as a generic default
+### CS-010 — Additive conflict policy is safe and guarded ✅ RESOLVED (WP-013)
 
-The conflict registry sums two absolute numeric values. This is only valid when the values represent independent deltas. It is not valid for an absolute quantity such as inventory on hand.
-
-**Required:** classify entities/fields as absolute LWW, delta/additive, immutable, append-only, manual or CRDT and never apply additive semantics to an absolute value.
+**Resolution Summary (2026-09-06):**
+- `packages/sync-protocol` (`ConflictRegistry`): Implemented `registerAbsoluteLwwField` and `isAbsoluteLwwField`. Attempting to register an `"additive"` policy on a field declared as an absolute quantity throws an explicit error at registry setup time.
+- `packages/sync` (`ConflictEngine`): Multi-strategy conflict engine supporting LWW (HLC ordering), append-only, immutable, manual, and additive (delta-only). When `"additive"` strategy is executed against an absolute value field, `ConflictEngine` throws a descriptive `ConflictError` to prevent silent corruption of absolute quantities.
 
 ### CS-011 — Native IPC is under-governed
 

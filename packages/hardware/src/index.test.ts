@@ -69,3 +69,4 @@ describe("@platform/hardware", () => {
     expect(onScan).not.toHaveBeenCalled();
   });
 });
+

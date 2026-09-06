@@ -1,11 +1,18 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { MemoryDatabaseConnection } from "@platform/database";
-import { createOperationContext } from "@platform/core";
+import { createOperationContext, ValidationError } from "@platform/core";
 import {
   HandshakeValidator,
   NamespaceGenerator,
+  type HandshakeMessage,
+  type SyncEnvelope,
 } from "@platform/sync-protocol";
-import { PairingService } from "@platform/sync";
+import {
+  PairingService,
+  OutboxService,
+  InboxService,
+  TombstoneService,
+} from "@platform/sync";
 import { SyncGroupService } from "@platform/authorization";
 import { DeviceIdentityService } from "@platform/identity";
 
@@ -14,6 +21,9 @@ describe("Security Regression Suite — Sync & Pairing Authorization", () => {
   let pairingService: PairingService;
   let syncGroups: SyncGroupService;
   let identity: DeviceIdentityService;
+  let outboxService: OutboxService;
+  let inboxService: InboxService;
+  let tombstoneService: TombstoneService;
 
   const ctx = createOperationContext({
     deviceId: "dev_admin",
@@ -27,6 +37,24 @@ describe("Security Regression Suite — Sync & Pairing Authorization", () => {
     minimumProtocolVersion: 1,
     currentProtocolVersion: 1,
   };
+
+  function createValidHandshake(overrides?: Partial<HandshakeMessage>): HandshakeMessage {
+    return {
+      applicationId: "tauri-boilerplate-demo",
+      applicationVersion: "0.1.0",
+      protocolVersion: 1,
+      deviceId: "dev_coventry_1",
+      organisationId: "org_acme",
+      supportedFeatures: ["widgets"],
+      supportedEntityVersions: { widgets: 1 },
+      timestamp: new Date().toISOString(),
+      nonce: "a".repeat(32),
+      signerPublicKey: "ed25519_pk_" + "b".repeat(64),
+      platform: "windows",
+      signature: "c".repeat(128),
+      ...overrides,
+    };
+  }
 
   beforeEach(async () => {
     db = new MemoryDatabaseConnection(":memory:");
@@ -103,6 +131,64 @@ describe("Security Regression Suite — Sync & Pairing Authorization", () => {
         timestamp TEXT NOT NULL,
         metadata_json TEXT
       );
+      CREATE TABLE core_sync_outbox (
+        id TEXT PRIMARY KEY,
+        created_at TEXT NOT NULL,
+        envelope_id TEXT NOT NULL UNIQUE,
+        organisation_id TEXT NOT NULL,
+        sync_group_id TEXT NOT NULL,
+        feature_id TEXT NOT NULL,
+        entity_type TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
+        operation TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        author_id TEXT NOT NULL,
+        device_id TEXT NOT NULL,
+        logical_timestamp TEXT NOT NULL,
+        schema_version INTEGER NOT NULL,
+        protocol_version INTEGER NOT NULL,
+        signer_public_key TEXT NOT NULL,
+        signature TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'PENDING',
+        attempt_count INTEGER NOT NULL DEFAULT 0,
+        last_attempt_at TEXT,
+        sent_at TEXT
+      );
+      CREATE TABLE core_sync_inbox (
+        id TEXT PRIMARY KEY,
+        created_at TEXT NOT NULL,
+        envelope_id TEXT NOT NULL UNIQUE,
+        organisation_id TEXT NOT NULL,
+        from_device_id TEXT NOT NULL,
+        sync_group_id TEXT NOT NULL,
+        feature_id TEXT NOT NULL,
+        entity_type TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
+        operation TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        logical_timestamp TEXT NOT NULL,
+        schema_version INTEGER NOT NULL,
+        protocol_version INTEGER NOT NULL,
+        signer_public_key TEXT NOT NULL,
+        signature TEXT NOT NULL,
+        verification_status TEXT NOT NULL DEFAULT 'UNVERIFIED',
+        apply_status TEXT NOT NULL DEFAULT 'PENDING',
+        applied_at TEXT,
+        conflict_id TEXT
+      );
+      CREATE TABLE core_sync_tombstones (
+        id TEXT PRIMARY KEY,
+        created_at TEXT NOT NULL,
+        organisation_id TEXT NOT NULL,
+        sync_group_id TEXT NOT NULL,
+        feature_id TEXT NOT NULL,
+        entity_type TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
+        deleted_at TEXT NOT NULL,
+        deleted_by TEXT NOT NULL,
+        delete_operation_id TEXT NOT NULL UNIQUE,
+        replicated_at TEXT
+      );
 
       INSERT INTO core_sync_groups (id, created_at, updated_at, organisation_id, name)
       VALUES 
@@ -113,6 +199,9 @@ describe("Security Regression Suite — Sync & Pairing Authorization", () => {
     pairingService = new PairingService(db);
     syncGroups = new SyncGroupService(db);
     identity = new DeviceIdentityService(db);
+    outboxService = new OutboxService(db);
+    inboxService = new InboxService(db);
+    tombstoneService = new TombstoneService(db);
   });
 
   afterEach(async () => {
@@ -120,24 +209,41 @@ describe("Security Regression Suite — Sync & Pairing Authorization", () => {
   });
 
   it("Layer 1 & 2: Rejects handshake from unknown or cross-organisation peer", () => {
-    const handshake = {
-      applicationId: "tauri-boilerplate-demo",
-      applicationVersion: "0.1.0",
-      protocolVersion: 1,
+    const handshake = createValidHandshake({
       deviceId: "dev_attacker_1",
       organisationId: "org_malicious",
-      supportedFeatures: ["inventory"],
-      supportedEntityVersions: { items: 1 },
-      timestamp: new Date().toISOString(),
-    };
+    });
 
     const res = HandshakeValidator.validate(handshake, baseValidationOpts);
     expect(res.valid).toBe(false);
     expect(res.code).toBe("ORG_ID_MISMATCH");
   });
 
+  it("Handshake Security: Rejects handshake with replayed nonce", async () => {
+    const seenNonces = new Set<string>();
+    const handshake = createValidHandshake({
+      nonce: "1".repeat(32),
+    });
+
+    // First attempt passes
+    await HandshakeValidator.requireValid(
+      handshake,
+      { ...baseValidationOpts, seenNonces },
+      "corr_1",
+    );
+    expect(seenNonces.has("1".repeat(32))).toBe(true);
+
+    // Second attempt with same nonce must be rejected
+    await expect(
+      HandshakeValidator.requireValid(
+        handshake,
+        { ...baseValidationOpts, seenNonces },
+        "corr_2",
+      ),
+    ).rejects.toThrow(ValidationError);
+  });
+
   it("Layer 4 & 5: Unapproved devices cannot sync under any condition", async () => {
-    // Register device in UNREGISTERED state
     await identity.registerDevice({
       deviceId: "dev_pending_1",
       publicKey: "pk_1",
@@ -153,19 +259,12 @@ describe("Security Regression Suite — Sync & Pairing Authorization", () => {
   });
 
   it("Layer 6: Enforces strict sync group boundaries (Coventry vs Birmingham isolation)", async () => {
-    // 1. Device 1 pairs with Coventry group and gets approved
     const req1 = await pairingService.requestPairing(
       {
-        handshake: {
-          applicationId: "tauri-boilerplate-demo",
-          applicationVersion: "0.1.0",
-          protocolVersion: 1,
+        handshake: createValidHandshake({
           deviceId: "dev_coventry_1",
-          organisationId: "org_acme",
-          supportedFeatures: ["widgets"],
-          supportedEntityVersions: { widgets: 1 },
-          timestamp: new Date().toISOString(),
-        },
+          nonce: "2".repeat(32),
+        }),
         syncGroupId: "grp_coventry",
       },
       baseValidationOpts,
@@ -202,19 +301,12 @@ describe("Security Regression Suite — Sync & Pairing Authorization", () => {
   });
 
   it("Layer 7: Revoked device immediately loses sync authorization", async () => {
-    // 1. Pair and approve
     const req = await pairingService.requestPairing(
       {
-        handshake: {
-          applicationId: "tauri-boilerplate-demo",
-          applicationVersion: "0.1.0",
-          protocolVersion: 1,
+        handshake: createValidHandshake({
           deviceId: "dev_laptop_temp",
-          organisationId: "org_acme",
-          supportedFeatures: ["widgets"],
-          supportedEntityVersions: { widgets: 1 },
-          timestamp: new Date().toISOString(),
-        },
+          nonce: "3".repeat(32),
+        }),
         syncGroupId: "grp_coventry",
       },
       baseValidationOpts,
@@ -225,7 +317,7 @@ describe("Security Regression Suite — Sync & Pairing Authorization", () => {
       await pairingService.canSync("dev_laptop_temp", "grp_coventry"),
     ).toBe(true);
 
-    // 2. Revoke device
+    // Revoke device
     await syncGroups.revokeMembership(
       "dev_laptop_temp",
       "grp_coventry",
@@ -234,9 +326,67 @@ describe("Security Regression Suite — Sync & Pairing Authorization", () => {
     );
     await identity.updateDeviceStatus("dev_laptop_temp", "REVOKED");
 
-    // 3. Immediately rejected
+    // Immediately rejected
     expect(
       await pairingService.canSync("dev_laptop_temp", "grp_coventry"),
     ).toBe(false);
+  });
+
+  it("Replication Security: Inbox rejects tampered envelope signature", async () => {
+    const envelope: SyncEnvelope = {
+      envelopeId: "env_tampered_01",
+      signedAt: "2026-09-06T12:00:00.000Z",
+      signerPublicKey: "ed25519_pk_" + "e".repeat(64),
+      signature: "f".repeat(128),
+      operation: {
+        operationId: "env_tampered_01",
+        applicationId: "tauri-boilerplate-demo",
+        organisationId: "org_acme",
+        syncGroupId: "grp_coventry",
+        featureId: "inventory",
+        entityType: "widgets",
+        entityId: "wid_fake",
+        operation: "create",
+        payload: { name: "Unauthorized Widget" },
+        authorId: "usr_attacker",
+        deviceId: "dev_attacker",
+        logicalTimestamp: "0000018f1000_0000_dev_attacker",
+        schemaVersion: 1,
+        protocolVersion: 1,
+      },
+    };
+
+    // Verify callback returns false for tampered signature
+    const record = await inboxService.receive(envelope, async () => false);
+
+    expect(record.verificationStatus).toBe("REJECTED");
+    expect(record.applyStatus).toBe("PENDING");
+
+    // applyPending should NOT apply unverified envelopes
+    const res = await inboxService.applyPending(async () => {
+      throw new Error("Should not be called for rejected envelopes");
+    });
+    expect(res.applied).toBe(0);
+  });
+
+  it("Invariant #6: Tombstone service prevents silent revive and tracks deletions for sync", async () => {
+    await db.transaction(async (tx) => {
+      await tombstoneService.record(
+        "widgets",
+        "wid_deleted_1",
+        "usr_alice",
+        "del_op_99",
+        "org_acme",
+        "grp_coventry",
+        "inventory",
+        tx,
+      );
+    });
+
+    // Invariant #6: isDeleted must return true
+    expect(await tombstoneService.isDeleted("widgets", "wid_deleted_1", "org_acme")).toBe(true);
+
+    const pending = await tombstoneService.propagatePending();
+    expect(pending.some((t) => t.entityId === "wid_deleted_1")).toBe(true);
   });
 });

@@ -66,15 +66,23 @@ describe("@platform/sync-protocol", () => {
   });
 
   describe("HandshakeValidator", () => {
+    const FAKE_NONCE = "a".repeat(32);
+    const FAKE_SIG = "b".repeat(128);
+    const FAKE_PK = "ed25519_pk_" + "c".repeat(64);
+
     const validMessage: HandshakeMessage = {
       applicationId: "tauri-boilerplate-demo",
       applicationVersion: "0.1.0",
       protocolVersion: 1,
       deviceId: "dev_peer_1",
       organisationId: "org_acme",
+      platform: "windows",
       supportedFeatures: ["example-feature", "organisations"],
       supportedEntityVersions: { widgets: 1 },
       timestamp: new Date().toISOString(),
+      nonce: FAKE_NONCE,
+      signerPublicKey: FAKE_PK,
+      signature: FAKE_SIG,
     };
 
     const options = {

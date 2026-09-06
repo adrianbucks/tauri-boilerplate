@@ -1,4 +1,4 @@
-use identity_core::DeviceIdentity;
+use identity_core::{DeviceIdentity, DeviceKeyProvider};
 use native_core::{
     core_migrations, create_organisation_for_session, create_widget_for_session,
     create_widgets_for_session,
@@ -172,6 +172,61 @@ fn db_transaction(
     database.transaction_json(ops)
 }
 
+#[derive(Debug, Deserialize)]
+struct SignMessageRequest {
+    message_hex: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct VerifyMessageRequest {
+    public_key: String,
+    message_hex: String,
+    signature_hex: String,
+}
+
+#[tauri::command]
+fn sign_message(
+    request: SignMessageRequest,
+    key_provider: tauri::State<'_, DeviceKeyProvider>,
+) -> Result<String, PlatformError> {
+    let message_bytes = hex::decode(&request.message_hex).map_err(|e| {
+        PlatformError::new(
+            "invalid_hex",
+            format!("Failed to decode message hex: {e}"),
+            "Invalid message encoding for signing",
+            "sign_message_err",
+        )
+    })?;
+    Ok(key_provider.sign_hex(&message_bytes))
+}
+
+#[tauri::command]
+fn verify_message(
+    request: VerifyMessageRequest,
+) -> Result<bool, PlatformError> {
+    let message_bytes = hex::decode(&request.message_hex).map_err(|e| {
+        PlatformError::new(
+            "invalid_hex",
+            format!("Failed to decode message hex: {e}"),
+            "Invalid message encoding for verification",
+            "verify_message_err",
+        )
+    })?;
+    DeviceKeyProvider::verify_hex(
+        &request.public_key,
+        &message_bytes,
+        &request.signature_hex,
+    )
+    .map_err(|e| {
+        PlatformError::new(
+            "verification_error",
+            e.to_string(),
+            "Signature verification failed",
+            "verify_message_err",
+        )
+    })
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -215,7 +270,9 @@ pub fn run() {
             create_organisation,
             db_query,
             db_execute,
-            db_transaction
+            db_transaction,
+            sign_message,
+            verify_message
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

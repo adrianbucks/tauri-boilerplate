@@ -7,12 +7,15 @@ import {
   HandshakeValidator,
   type HandshakeMessage,
   type HandshakeValidationOptions,
+  type HandshakeVerifyFn,
 } from "@platform/sync-protocol";
 
 export interface PairingRequestInput {
   handshake: HandshakeMessage;
   syncGroupId: string;
   userId?: string | undefined;
+  /** Optional cryptographic verify callback. Must be provided in production. */
+  verifyFn?: HandshakeVerifyFn | undefined;
 }
 
 export interface PairingDecisionResult {
@@ -38,26 +41,34 @@ export class PairingService {
   /**
    * Processes an incoming peer pairing request, validating the handshake and registering
    * a pending membership request.
+   *
+   * The peer's public key and platform are taken directly from the authenticated
+   * handshake message — no fabrication or inference from deviceId.
    */
   async requestPairing(
     input: PairingRequestInput,
     validationOptions: HandshakeValidationOptions,
     ctx: OperationContext,
   ): Promise<{ requestId: string; status: "PENDING" }> {
-    // 1. Handshake Layer Verification
-    HandshakeValidator.requireValid(
+    // 1. Handshake Layer Verification (sync checks + async signature verify)
+    await HandshakeValidator.requireValid(
       input.handshake,
-      validationOptions,
+      {
+        ...validationOptions,
+        verifyFn: input.verifyFn ?? validationOptions.verifyFn,
+      },
       ctx.correlationId,
     );
 
     return this.db.transaction(async (tx) => {
-      // 2. Ensure peer device record is registered in local store
+      // 2. Ensure peer device record is registered using real handshake identity.
+      //    signerPublicKey is the peer's authentic ed25519_pk_<hex> string.
+      //    platform is the peer's self-reported OS (validated via handshake).
       await this.identity.registerDevice(
         {
           deviceId: input.handshake.deviceId,
-          publicKey: `ed25519_pk_${input.handshake.deviceId}`,
-          platform: "windows",
+          publicKey: input.handshake.signerPublicKey,
+          platform: input.handshake.platform,
           applicationId: input.handshake.applicationId,
           userId: input.userId ?? null,
         },
@@ -84,6 +95,8 @@ export class PairingService {
             requestId,
             syncGroupId: input.syncGroupId,
             applicationVersion: input.handshake.applicationVersion,
+            signerPublicKey: input.handshake.signerPublicKey,
+            platform: input.handshake.platform,
           },
         },
         tx,

@@ -78,6 +78,7 @@ describe("@platform/platform", () => {
     expect(appliedMigrations).toEqual([
       { owner: "platform", version: 1 },
       { owner: "platform", version: 2 },
+      { owner: "platform", version: 3 },
       { owner: "feature.sample-feature", version: 1 },
     ]);
 

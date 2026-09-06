@@ -37,3 +37,4 @@ export interface Session {
   readonly establishedAt: string;
   readonly expiresAt: string | null;
 }
+

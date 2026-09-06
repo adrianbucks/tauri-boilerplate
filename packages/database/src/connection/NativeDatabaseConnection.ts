@@ -180,6 +180,39 @@ export class NativeDatabaseConnection implements DatabaseConnection {
     }
   }
 
+  /**
+   * Signs arbitrary message bytes using the native device key provider via Tauri IPC.
+   * Enforces Invariant #5: private key never crosses into TypeScript runtime.
+   */
+  async signMessage(messageBytes: Uint8Array): Promise<string> {
+    const messageHex = Array.from(messageBytes)
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+    const signature = (await this.invoke("sign_message", {
+      message_hex: messageHex,
+    })) as string;
+    return signature;
+  }
+
+  /**
+   * Verifies an Ed25519 signature against a public key using native crypto via Tauri IPC.
+   */
+  async verifyMessage(
+    publicKey: string,
+    messageBytes: Uint8Array,
+    signatureHex: string,
+  ): Promise<boolean> {
+    const messageHex = Array.from(messageBytes)
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+    const isValid = (await this.invoke("verify_message", {
+      public_key: publicKey,
+      message_hex: messageHex,
+      signature_hex: signatureHex,
+    })) as boolean;
+    return isValid;
+  }
+
   async close(): Promise<void> {
     // Native database lifecycle is managed by Tauri, no explicit close needed
     this.isInitialised = false;
