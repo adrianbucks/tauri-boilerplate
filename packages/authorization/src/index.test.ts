@@ -215,8 +215,24 @@ describe("@platform/authorization", () => {
   });
 
   describe("SyncGroupService", () => {
+    beforeEach(async () => {
+      await db.execute(
+        "INSERT INTO core_permissions (id, name) VALUES ('p_sync', 'sync.manage');",
+      );
+      await db.execute(
+        "INSERT INTO core_roles (id, created_at, updated_at, organisation_id, name) VALUES ('r_admin', '2026-08-30T10:00:00Z', '2026-08-30T10:00:00Z', 'org_1', 'Sync Admin');",
+      );
+      await db.execute(
+        "INSERT INTO core_role_permissions (id, role_id, permission_id) VALUES ('rp_sync', 'r_admin', 'p_sync');",
+      );
+      await db.execute(
+        "INSERT INTO core_user_roles (id, user_id, role_id, organisation_id, granted_at) VALUES ('ur_admin', 'user_admin', 'r_admin', 'org_1', '2026-08-30T10:00:00Z');",
+      );
+    });
+
     it("manages sync group lifecycle: request -> approve -> canSync -> revoke", async () => {
       const ctx = createOperationContext({
+        userId: "user_admin",
         deviceId: "dev_1",
         organisationId: "org_1",
       });
@@ -239,17 +255,17 @@ describe("@platform/authorization", () => {
         "user_op",
       );
 
-      // Approve membership
-      await syncGroupService.approveMembership(reqId, "user_admin");
+      // Approve membership with authorized ctx
+      await syncGroupService.approveMembership(reqId, ctx);
 
       // Now can sync
       expect(await syncGroupService.canSync("dev_tablet", group.id)).toBe(true);
 
-      // Revoke membership
+      // Revoke membership with authorized ctx
       await syncGroupService.revokeMembership(
         "dev_tablet",
         group.id,
-        "user_admin",
+        ctx,
         "Device lost",
       );
 
@@ -261,6 +277,7 @@ describe("@platform/authorization", () => {
 
     it("rejects a pending membership request", async () => {
       const ctx = createOperationContext({
+        userId: "user_admin",
         deviceId: "dev_1",
         organisationId: "org_1",
       });
@@ -277,7 +294,7 @@ describe("@platform/authorization", () => {
 
       await syncGroupService.rejectMembership(
         reqId,
-        "user_admin",
+        ctx,
         "Not authorised for this site",
       );
 
@@ -285,6 +302,36 @@ describe("@platform/authorization", () => {
       expect(await syncGroupService.canSync("dev_rejected", group.id)).toBe(
         false,
       );
+    });
+
+    it("rejects group creation when context lacks sync.manage permission", async () => {
+      const unauthorizedCtx = createOperationContext({
+        userId: "user_nobody",
+        deviceId: "dev_2",
+        organisationId: "org_1",
+      });
+
+      await expect(
+        syncGroupService.createGroup(
+          { name: "Secret Warehouse", organisationId: "org_1" },
+          unauthorizedCtx,
+        ),
+      ).rejects.toThrow("Authorization failed");
+    });
+
+    it("rejects cross-tenant sync group creation", async () => {
+      const ctx = createOperationContext({
+        userId: "user_admin",
+        deviceId: "dev_1",
+        organisationId: "org_1",
+      });
+
+      await expect(
+        syncGroupService.createGroup(
+          { name: "Other Org Group", organisationId: "org_2" },
+          ctx,
+        ),
+      ).rejects.toThrow("Cross-tenant sync group creation forbidden");
     });
   });
 });

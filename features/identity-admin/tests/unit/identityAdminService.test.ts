@@ -3,6 +3,8 @@ import { MemoryDatabaseConnection } from "@platform/database";
 import { createOperationContext } from "@platform/core";
 import { IdentityAdminService } from "../../src/services/identityAdminService.js";
 
+import { IDENTITY_ADMIN_PERMISSIONS } from "../../src/permissions.js";
+
 describe("@features/identity-admin", () => {
   let db: MemoryDatabaseConnection;
   let service: IdentityAdminService;
@@ -17,16 +19,10 @@ describe("@features/identity-admin", () => {
     await db.init();
 
     await db.execute(`
-      CREATE TABLE core_users (
+      CREATE TABLE core_permissions (
         id TEXT PRIMARY KEY,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        created_by TEXT,
-        updated_by TEXT,
-        organisation_id TEXT NOT NULL,
-        display_name TEXT NOT NULL,
-        email TEXT,
-        status TEXT NOT NULL DEFAULT 'ACTIVE'
+        name TEXT NOT NULL UNIQUE,
+        description TEXT
       );
       CREATE TABLE core_roles (
         id TEXT PRIMARY KEY,
@@ -38,6 +34,12 @@ describe("@features/identity-admin", () => {
         name TEXT NOT NULL,
         description TEXT
       );
+      CREATE TABLE core_role_permissions (
+        id TEXT PRIMARY KEY,
+        role_id TEXT NOT NULL,
+        permission_id TEXT NOT NULL,
+        scope_constraints_json TEXT
+      );
       CREATE TABLE core_user_roles (
         id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL,
@@ -45,6 +47,17 @@ describe("@features/identity-admin", () => {
         organisation_id TEXT NOT NULL,
         granted_by TEXT,
         granted_at TEXT NOT NULL
+      );
+      CREATE TABLE core_users (
+        id TEXT PRIMARY KEY,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        created_by TEXT,
+        updated_by TEXT,
+        organisation_id TEXT NOT NULL,
+        display_name TEXT NOT NULL,
+        email TEXT,
+        status TEXT NOT NULL DEFAULT 'ACTIVE'
       );
       CREATE TABLE core_devices (
         id TEXT PRIMARY KEY,
@@ -98,6 +111,32 @@ describe("@features/identity-admin", () => {
         metadata_json TEXT
       );
     `);
+
+    // Seed admin role & permissions for user_superadmin in org_acme
+    await db.execute(
+      `INSERT INTO core_roles (id, created_at, updated_at, organisation_id, name)
+       VALUES ('role_superadmin', '2026-08-30T10:00:00Z', '2026-08-30T10:00:00Z', 'org_acme', 'Superadmin')`,
+    );
+    for (const perm of [
+      IDENTITY_ADMIN_PERMISSIONS.USERS_CREATE,
+      IDENTITY_ADMIN_PERMISSIONS.USERS_READ,
+      IDENTITY_ADMIN_PERMISSIONS.DEVICES_APPROVE,
+      IDENTITY_ADMIN_PERMISSIONS.DEVICES_REVOKE,
+      "sync.manage",
+    ]) {
+      await db.execute(
+        `INSERT INTO core_permissions (id, name) VALUES (?, ?)`,
+        [perm, perm],
+      );
+      await db.execute(
+        `INSERT INTO core_role_permissions (id, role_id, permission_id) VALUES (?, 'role_superadmin', ?)`,
+        [`rp_${perm}`, perm],
+      );
+    }
+    await db.execute(
+      `INSERT INTO core_user_roles (id, user_id, role_id, organisation_id, granted_at)
+       VALUES ('ur_superadmin', 'user_superadmin', 'role_superadmin', 'org_acme', '2026-08-30T10:00:00Z')`,
+    );
 
     service = new IdentityAdminService(db);
   });
@@ -198,5 +237,35 @@ describe("@features/identity-admin", () => {
     );
     expect(roleRow).toHaveLength(1);
     expect(roleRow[0]?.role_id).toBe("role_op");
+  });
+
+  it("rejects cross-tenant user creation", async () => {
+    await expect(
+      service.createUser(
+        {
+          organisationId: "org_other_tenant",
+          displayName: "Cross Tenant User",
+        },
+        ctx,
+      ),
+    ).rejects.toThrow("Cross-tenant user creation forbidden");
+  });
+
+  it("rejects user creation when caller lacks permission", async () => {
+    const unprivilegedCtx = createOperationContext({
+      deviceId: "dev_nobody",
+      organisationId: "org_acme",
+      userId: "user_nobody",
+    });
+
+    await expect(
+      service.createUser(
+        {
+          organisationId: "org_acme",
+          displayName: "Unauthorized Test",
+        },
+        unprivilegedCtx,
+      ),
+    ).rejects.toThrow("Authorization failed");
   });
 });

@@ -58,3 +58,36 @@ export function createRequestContext(
       : undefined,
   };
 }
+
+export function isTrustedOperationContext(
+  ctx: OperationContext | TrustedOperationContext,
+): ctx is TrustedOperationContext {
+  return (
+    "principal" in ctx &&
+    typeof (ctx as TrustedOperationContext).principal === "object" &&
+    (ctx as TrustedOperationContext).principal !== null
+  );
+}
+
+export interface ContextSubject {
+  readonly userId: string | null;
+  readonly deviceId: string;
+  readonly organisationId: string;
+}
+
+export function extractContextSubject(
+  ctx: OperationContext | TrustedOperationContext,
+): ContextSubject {
+  if (isTrustedOperationContext(ctx)) {
+    return {
+      userId: ctx.principal.userId,
+      deviceId: ctx.principal.deviceId,
+      organisationId: ctx.principal.organisationId,
+    };
+  }
+  return {
+    userId: ctx.userId ?? null,
+    deviceId: ctx.deviceId,
+    organisationId: ctx.organisationId,
+  };
+}

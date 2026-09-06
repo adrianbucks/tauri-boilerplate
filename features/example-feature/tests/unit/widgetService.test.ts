@@ -4,6 +4,8 @@ import { createOperationContext } from "@platform/core";
 import { WidgetService } from "../../src/services/widgetService.js";
 import { exampleFeatureManifest } from "../../src/manifest.js";
 
+import { WIDGET_PERMISSIONS } from "../../src/permissions.js";
+
 describe("@features/example-feature", () => {
   let db: MemoryDatabaseConnection;
   let service: WidgetService;
@@ -18,13 +20,81 @@ describe("@features/example-feature", () => {
     userId: "user_bob",
   });
 
+  async function grantWidgetPermissions(
+    database: MemoryDatabaseConnection,
+    userId: string,
+    organisationId: string,
+  ) {
+    const roleId = `role_${organisationId}_manager`;
+    await database.execute(
+      `INSERT OR IGNORE INTO core_roles (id, created_at, updated_at, organisation_id, name)
+       VALUES (?, '2026-08-30T10:00:00Z', '2026-08-30T10:00:00Z', ?, 'Widget Manager')`,
+      [roleId, organisationId],
+    );
+    for (const perm of [
+      WIDGET_PERMISSIONS.CREATE,
+      WIDGET_PERMISSIONS.READ,
+      WIDGET_PERMISSIONS.UPDATE,
+      WIDGET_PERMISSIONS.DELETE,
+    ]) {
+      await database.execute(
+        `INSERT OR IGNORE INTO core_permissions (id, name) VALUES (?, ?)`,
+        [perm, perm],
+      );
+      await database.execute(
+        `INSERT OR IGNORE INTO core_role_permissions (id, role_id, permission_id) VALUES (?, ?, ?)`,
+        [`${roleId}_${perm}`, roleId, perm],
+      );
+    }
+    await database.execute(
+      `INSERT OR IGNORE INTO core_user_roles (id, user_id, role_id, organisation_id, granted_at)
+       VALUES (?, ?, ?, ?, '2026-08-30T10:00:00Z')`,
+      [`ur_${userId}_${organisationId}`, userId, roleId, organisationId],
+    );
+  }
+
   beforeEach(async () => {
     db = new MemoryDatabaseConnection(":memory:");
     await db.init();
 
+    await db.execute(`
+      CREATE TABLE core_permissions (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE,
+        description TEXT
+      );
+      CREATE TABLE core_roles (
+        id TEXT PRIMARY KEY,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        created_by TEXT,
+        updated_by TEXT,
+        organisation_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        description TEXT
+      );
+      CREATE TABLE core_role_permissions (
+        id TEXT PRIMARY KEY,
+        role_id TEXT NOT NULL,
+        permission_id TEXT NOT NULL,
+        scope_constraints_json TEXT
+      );
+      CREATE TABLE core_user_roles (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        role_id TEXT NOT NULL,
+        organisation_id TEXT NOT NULL,
+        granted_by TEXT,
+        granted_at TEXT NOT NULL
+      );
+    `);
+
     // Apply feature migration
     const engine = new MigrationEngine(db);
     await engine.applyMigrations(exampleFeatureManifest.migrations);
+
+    await grantWidgetPermissions(db, "user_alice", "org_acme");
+    await grantWidgetPermissions(db, "user_bob", "org_other");
 
     service = new WidgetService(db);
   });
@@ -133,6 +203,26 @@ describe("@features/example-feature", () => {
       ).resolves.toEqual(
         expect.objectContaining({ quantity: 5, deleted_at: null }),
       );
+    });
+
+    it("rejects widget creation when caller lacks permission", async () => {
+      const unprivilegedCtx = createOperationContext({
+        deviceId: "dev_nobody",
+        organisationId: "org_acme",
+        userId: "user_nobody",
+      });
+
+      await expect(
+        service.createWidget(
+          {
+            name: "Unauthorized Widget",
+            sku: "UNAUTH-1",
+            quantity: 1,
+            syncGroupId: "grp_coventry",
+          },
+          unprivilegedCtx,
+        ),
+      ).rejects.toThrow("Authorization failed");
     });
   });
 });

@@ -1,12 +1,17 @@
 import {
   ValidationError,
+  AuthorizationError,
   getUtcIsoTimestamp,
   generateCorrelationId,
+  extractContextSubject,
   type OperationContext,
+  type TrustedOperationContext,
 } from "@platform/core";
-import type { DatabaseConnection } from "@platform/database";
+import type { DatabaseConnection, TransactionClient } from "@platform/database";
+import { AuthorizationEngine } from "@platform/authorization";
 import { WidgetRepository } from "../repositories/widgetRepository.js";
 import type { WidgetRecord } from "../schema/widgets.js";
+import { WIDGET_PERMISSIONS, type WidgetPermission } from "../permissions.js";
 
 export interface CreateWidgetInput {
   name: string;
@@ -25,15 +30,54 @@ export interface UpdateWidgetInput {
 export class WidgetService {
   private readonly repo: WidgetRepository;
   private readonly db: DatabaseConnection;
+  private readonly auth: AuthorizationEngine;
 
-  constructor(db: DatabaseConnection) {
+  constructor(db: DatabaseConnection, auth?: AuthorizationEngine) {
     this.db = db;
     this.repo = new WidgetRepository(db);
+    this.auth = auth ?? new AuthorizationEngine(db);
+  }
+
+  private async requirePermission(
+    ctx: OperationContext | TrustedOperationContext,
+    permission: WidgetPermission,
+    tx?: TransactionClient,
+  ): Promise<void> {
+    if ("principal" in ctx && ctx.principal) {
+      await this.auth.requireTrusted(ctx, permission, undefined, tx);
+      return;
+    }
+    const subject = extractContextSubject(ctx);
+    if (!subject.userId) {
+      throw new AuthorizationError({
+        message: `Operation requires authenticated subject with permission '${permission}'`,
+        userMessage: "You are not authorized to perform this operation",
+        correlationId: ctx.correlationId,
+      });
+    }
+
+    const executor = tx ?? this.db;
+    const roleRows = await executor.query<{ role_id: string }>(
+      `SELECT role_id FROM core_user_roles WHERE user_id = ? AND organisation_id = ?`,
+      [subject.userId, subject.organisationId],
+    );
+    const roles = Object.freeze(roleRows.map((r) => r.role_id));
+
+    await this.auth.require(
+      {
+        userId: subject.userId,
+        organisationId: subject.organisationId,
+        roles,
+      },
+      permission,
+      undefined,
+      tx,
+    );
   }
 
   async createWidget(
     input: CreateWidgetInput,
-    ctx: OperationContext,
+    ctx: OperationContext | TrustedOperationContext,
   ): Promise<WidgetRecord> {
     // 1. Validation
     if (!input.name || input.name.trim().length === 0) {
@@ -60,13 +104,16 @@ export class WidgetService {
       });
     }
 
+    const subject = extractContextSubject(ctx);
     const normalizedSku = input.sku.trim().toUpperCase();
 
     // 2. Transaction execution
     return this.db.transaction(async (tx) => {
+      await this.requirePermission(ctx, WIDGET_PERMISSIONS.CREATE, tx);
+
       const existing = await this.repo.findBySku(
         normalizedSku,
-        ctx.organisationId,
+        subject.organisationId,
         tx,
       );
       if (existing) {
@@ -84,10 +131,10 @@ export class WidgetService {
         id,
         createdAt: now,
         updatedAt: now,
-        createdBy: ctx.userId,
-        updatedBy: ctx.userId,
+        createdBy: subject.userId,
+        updatedBy: subject.userId,
         entityId: id,
-        organisationId: ctx.organisationId,
+        organisationId: subject.organisationId,
         syncGroupId: input.syncGroupId,
         schemaVersion: 1,
         syncVersion: 1,
@@ -108,26 +155,33 @@ export class WidgetService {
 
   async getWidgetById(
     id: string,
-    ctx: OperationContext,
+    ctx: OperationContext | TrustedOperationContext,
   ): Promise<WidgetRecord | null> {
-    return this.repo.findByIdWithinOrganisation(id, ctx.organisationId);
+    await this.requirePermission(ctx, WIDGET_PERMISSIONS.READ);
+    const subject = extractContextSubject(ctx);
+    return this.repo.findByIdWithinOrganisation(id, subject.organisationId);
   }
 
   async listWidgets(
     syncGroupId: string,
-    ctx: OperationContext,
+    ctx: OperationContext | TrustedOperationContext,
   ): Promise<WidgetRecord[]> {
-    return this.repo.findBySyncGroup(syncGroupId, ctx.organisationId);
+    await this.requirePermission(ctx, WIDGET_PERMISSIONS.READ);
+    const subject = extractContextSubject(ctx);
+    return this.repo.findBySyncGroup(syncGroupId, subject.organisationId);
   }
 
   async updateWidget(
     id: string,
     input: UpdateWidgetInput,
-    ctx: OperationContext,
+    ctx: OperationContext | TrustedOperationContext,
   ): Promise<void> {
+    await this.requirePermission(ctx, WIDGET_PERMISSIONS.UPDATE);
+    const subject = extractContextSubject(ctx);
+
     const existing = await this.repo.findByIdWithinOrganisation(
       id,
-      ctx.organisationId,
+      subject.organisationId,
     );
     if (!existing || existing.deletedAt) {
       throw new ValidationError({
@@ -139,7 +193,7 @@ export class WidgetService {
 
     const updates: Partial<WidgetRecord> = {
       updatedAt: getUtcIsoTimestamp(),
-      updatedBy: ctx.userId,
+      updatedBy: subject.userId,
     };
 
     if (input.name !== undefined) updates.name = input.name.trim();
@@ -159,14 +213,20 @@ export class WidgetService {
     await this.repo.update(id, updates);
   }
 
-  async deleteWidget(id: string, ctx: OperationContext): Promise<void> {
+  async deleteWidget(
+    id: string,
+    ctx: OperationContext | TrustedOperationContext,
+  ): Promise<void> {
+    await this.requirePermission(ctx, WIDGET_PERMISSIONS.DELETE);
+    const subject = extractContextSubject(ctx);
+
     const existing = await this.repo.findByIdWithinOrganisation(
       id,
-      ctx.organisationId,
+      subject.organisationId,
     );
     if (!existing || existing.deletedAt) {
       return;
     }
-    await this.repo.softDelete(id, ctx.userId ?? "system");
+    await this.repo.softDelete(id, subject.userId ?? "system");
   }
 }

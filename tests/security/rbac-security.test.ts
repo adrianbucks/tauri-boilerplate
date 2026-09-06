@@ -1,7 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { MemoryDatabaseConnection } from "@platform/database";
-import { AuthorizationEngine } from "@platform/authorization";
-import { AuthorizationError } from "@platform/core";
+import { AuthorizationEngine, SyncGroupService } from "@platform/authorization";
+import {
+  AuthorizationError,
+  createOperationContext,
+  type TrustedOperationContext,
+} from "@platform/core";
+import { IdentityAdminService } from "@features/identity-admin";
+import { WidgetService } from "@features/example-feature";
 
 describe("Security Regression Suite — RBAC & Scope Enforcement", () => {
   let db: MemoryDatabaseConnection;
@@ -40,6 +46,59 @@ describe("Security Regression Suite — RBAC & Scope Enforcement", () => {
         organisation_id TEXT NOT NULL,
         granted_by TEXT,
         granted_at TEXT NOT NULL
+      );
+      CREATE TABLE core_sync_groups (
+        id TEXT PRIMARY KEY,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        created_by TEXT,
+        updated_by TEXT,
+        organisation_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        description TEXT,
+        status TEXT NOT NULL DEFAULT 'ACTIVE',
+        policy_json TEXT
+      );
+      CREATE TABLE core_users (
+        id TEXT PRIMARY KEY,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        created_by TEXT,
+        updated_by TEXT,
+        organisation_id TEXT NOT NULL,
+        display_name TEXT NOT NULL,
+        email TEXT,
+        status TEXT NOT NULL DEFAULT 'ACTIVE'
+      );
+      CREATE TABLE core_audit_events (
+        id TEXT PRIMARY KEY,
+        event_type TEXT NOT NULL,
+        user_id TEXT,
+        device_id TEXT NOT NULL,
+        organisation_id TEXT NOT NULL,
+        correlation_id TEXT NOT NULL,
+        timestamp TEXT NOT NULL,
+        metadata_json TEXT
+      );
+      CREATE TABLE feature_widgets (
+        id TEXT PRIMARY KEY,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        created_by TEXT,
+        updated_by TEXT,
+        entity_id TEXT NOT NULL,
+        organisation_id TEXT NOT NULL,
+        sync_group_id TEXT NOT NULL,
+        schema_version INTEGER NOT NULL DEFAULT 1,
+        sync_version INTEGER NOT NULL DEFAULT 1,
+        deleted_at TEXT,
+        deleted_by TEXT,
+        delete_operation_id TEXT,
+        data_classification TEXT NOT NULL DEFAULT 'INTERNAL',
+        name TEXT NOT NULL,
+        sku TEXT NOT NULL,
+        quantity INTEGER NOT NULL DEFAULT 0,
+        description TEXT
       );
 
       -- Seed Permissions
@@ -134,5 +193,174 @@ describe("Security Regression Suite — RBAC & Scope Enforcement", () => {
     if (!decision.granted) {
       expect(decision.code).toBe("PERMISSION_NOT_GRANTED");
     }
+  });
+
+  describe("TrustedOperationContext RBAC Enforcement", () => {
+    it("grants access to valid TrustedOperationContext holding permissions", async () => {
+      const trustedCtx: TrustedOperationContext = {
+        correlationId: "op_sec_trusted_valid",
+        principal: {
+          sessionId: "sess_100",
+          userId: "usr_cov_worker",
+          deviceId: "dev_cov_1",
+          organisationId: "org_acme",
+          roles: ["role_cov_operator"],
+          authStrength: "offline-session",
+        },
+      };
+
+      await expect(
+        auth.requireTrusted(trustedCtx, "inventory.read", {
+          warehouseId: "COV",
+        }),
+      ).resolves.toBeUndefined();
+    });
+
+    it("denies access to TrustedOperationContext when role lacks requested permission", async () => {
+      const trustedCtx: TrustedOperationContext = {
+        correlationId: "op_sec_trusted_unauth",
+        principal: {
+          sessionId: "sess_101",
+          userId: "usr_cov_worker",
+          deviceId: "dev_cov_1",
+          organisationId: "org_acme",
+          roles: ["role_cov_operator"],
+          authStrength: "offline-session",
+        },
+      };
+
+      await expect(
+        auth.requireTrusted(trustedCtx, "inventory.delete"),
+      ).rejects.toThrow(AuthorizationError);
+    });
+
+    it("strictly enforces scope constraints on TrustedOperationContext", async () => {
+      const trustedCtx: TrustedOperationContext = {
+        correlationId: "op_sec_trusted_scope",
+        principal: {
+          sessionId: "sess_102",
+          userId: "usr_cov_worker",
+          deviceId: "dev_cov_1",
+          organisationId: "org_acme",
+          roles: ["role_cov_operator"],
+          authStrength: "offline-session",
+        },
+      };
+
+      await expect(
+        auth.requireTrusted(trustedCtx, "inventory.read", {
+          warehouseId: "BHM",
+        }),
+      ).rejects.toThrow(AuthorizationError);
+    });
+  });
+
+  describe("Tenant Isolation & Mandatory Authorization in Services", () => {
+    it("SyncGroupService strictly rejects cross-tenant group creation", async () => {
+      const syncService = new SyncGroupService(db, auth);
+      const ctx = createOperationContext({
+        userId: "usr_attacker",
+        deviceId: "dev_attacker_1",
+        organisationId: "org_attacker",
+      });
+
+      await expect(
+        syncService.createGroup(
+          {
+            name: "Compromised Group",
+            organisationId: "org_victim",
+          },
+          ctx,
+        ),
+      ).rejects.toThrow("Cross-tenant sync group creation forbidden");
+    });
+
+    it("SyncGroupService strictly rejects group creation when context lacks sync.manage", async () => {
+      const syncService = new SyncGroupService(db, auth);
+      const ctx = createOperationContext({
+        userId: "usr_cov_worker",
+        deviceId: "dev_cov_1",
+        organisationId: "org_acme",
+      });
+
+      await expect(
+        syncService.createGroup(
+          {
+            name: "Unauthorised Group",
+            organisationId: "org_acme",
+          },
+          ctx,
+        ),
+      ).rejects.toThrow(AuthorizationError);
+    });
+
+    it("IdentityAdminService strictly rejects cross-tenant user creation", async () => {
+      const identityService = new IdentityAdminService(
+        db,
+        undefined,
+        undefined,
+        auth,
+      );
+      const ctx = createOperationContext({
+        userId: "usr_attacker",
+        deviceId: "dev_attacker_1",
+        organisationId: "org_attacker",
+      });
+
+      await expect(
+        identityService.createUser(
+          {
+            organisationId: "org_victim",
+            displayName: "Illegitimate User",
+          },
+          ctx,
+        ),
+      ).rejects.toThrow("Cross-tenant user creation forbidden");
+    });
+
+    it("IdentityAdminService strictly rejects user creation without users.create permission", async () => {
+      const identityService = new IdentityAdminService(
+        db,
+        undefined,
+        undefined,
+        auth,
+      );
+      const ctx = createOperationContext({
+        userId: "usr_cov_worker",
+        deviceId: "dev_cov_1",
+        organisationId: "org_acme",
+      });
+
+      await expect(
+        identityService.createUser(
+          {
+            organisationId: "org_acme",
+            displayName: "Operator Sam",
+          },
+          ctx,
+        ),
+      ).rejects.toThrow(AuthorizationError);
+    });
+
+    it("WidgetService strictly rejects widget creation when context lacks widgets.create", async () => {
+      const widgetService = new WidgetService(db, auth);
+      const ctx = createOperationContext({
+        userId: "usr_cov_worker",
+        deviceId: "dev_cov_1",
+        organisationId: "org_acme",
+      });
+
+      await expect(
+        widgetService.createWidget(
+          {
+            name: "Unauthorized Widget",
+            sku: "UNAUTH-SKU-1",
+            quantity: 10,
+            syncGroupId: "grp_1",
+          },
+          ctx,
+        ),
+      ).rejects.toThrow(AuthorizationError);
+    });
   });
 });

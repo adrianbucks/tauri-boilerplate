@@ -16,6 +16,7 @@
   "dependencies": {
     "@platform/core": "workspace:*",
     "@platform/database": "workspace:*",
+    "@platform/authorization": "workspace:*",
     "@platform/feature-system": "workspace:*",
     "drizzle-orm": "^0.39.3"
   }

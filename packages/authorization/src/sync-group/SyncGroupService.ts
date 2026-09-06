@@ -3,9 +3,12 @@ import {
   generateCorrelationId,
   ValidationError,
   AuthorizationError,
+  extractContextSubject,
   type OperationContext,
+  type TrustedOperationContext,
 } from "@platform/core";
 import type { DatabaseConnection, TransactionClient } from "@platform/database";
+import { AuthorizationEngine } from "../engine/AuthorizationEngine.js";
 
 export type MembershipStatus =
   | "REQUESTED"
@@ -42,14 +45,50 @@ export interface CreateSyncGroupInput {
 
 export class SyncGroupService {
   private readonly db: DatabaseConnection;
+  private readonly auth: AuthorizationEngine;
 
-  constructor(db: DatabaseConnection) {
+  constructor(db: DatabaseConnection, auth?: AuthorizationEngine) {
     this.db = db;
+    this.auth = auth ?? new AuthorizationEngine(db);
+  }
+
+  private async requirePermission(
+    ctx: OperationContext | TrustedOperationContext,
+    permission: string,
+    tx?: TransactionClient,
+  ): Promise<void> {
+    if ("principal" in ctx && ctx.principal) {
+      await this.auth.requireTrusted(ctx, permission, undefined, tx);
+      return;
+    }
+
+    const { userId, organisationId } = extractContextSubject(ctx);
+    if (!userId) {
+      throw new AuthorizationError({
+        message: `Operation requires authenticated subject with permission '${permission}'`,
+        userMessage: "You are not authorized to perform this operation",
+        correlationId: ctx.correlationId,
+      });
+    }
+
+    const executor = tx ?? this.db;
+    const roleRows = await executor.query<{ role_id: string }>(
+      `SELECT role_id FROM core_user_roles WHERE user_id = ? AND organisation_id = ?`,
+      [userId, organisationId],
+    );
+    const roles = Object.freeze(roleRows.map((r) => r.role_id));
+
+    await this.auth.require(
+      { userId, organisationId, roles },
+      permission,
+      undefined,
+      tx,
+    );
   }
 
   async createGroup(
     input: CreateSyncGroupInput,
-    ctx: OperationContext,
+    ctx: OperationContext | TrustedOperationContext,
     tx?: TransactionClient,
   ): Promise<SyncGroup> {
     const executor = tx ?? this.db;
@@ -61,6 +100,18 @@ export class SyncGroupService {
         correlationId: ctx.correlationId,
       });
     }
+
+    const { userId, organisationId } = extractContextSubject(ctx);
+
+    if (input.organisationId !== organisationId) {
+      throw new AuthorizationError({
+        message: `Cross-tenant sync group creation forbidden: context organisation '${organisationId}' cannot create group in organisation '${input.organisationId}'`,
+        userMessage: "Cannot create sync group for another organisation",
+        correlationId: ctx.correlationId,
+      });
+    }
+
+    await this.requirePermission(ctx, "sync.manage", tx);
 
     const id = generateCorrelationId("grp");
     const now = getUtcIsoTimestamp();
@@ -75,8 +126,8 @@ export class SyncGroupService {
       id,
       now,
       now,
-      ctx.userId,
-      ctx.userId,
+      userId,
+      userId,
       input.organisationId,
       input.name.trim(),
       input.description ?? null,
@@ -112,11 +163,23 @@ export class SyncGroupService {
 
   async approveMembership(
     requestId: string,
-    approverUserId: string,
+    approver: string | OperationContext | TrustedOperationContext,
     signature?: string,
     tx?: TransactionClient,
   ): Promise<void> {
     const executor = tx ?? this.db;
+    let approverUserId: string;
+
+    if (typeof approver === "object" && approver !== null) {
+      await this.requirePermission(approver, "sync.manage", tx);
+      approverUserId =
+        "principal" in approver
+          ? approver.principal.userId
+          : (approver.userId ?? "system");
+    } else {
+      approverUserId = approver;
+    }
+
     const reqRows = await executor.query<{
       id: string;
       device_id: string;
@@ -169,11 +232,23 @@ export class SyncGroupService {
   async revokeMembership(
     deviceId: string,
     groupId: string,
-    revokedByUserId: string,
+    revokedBy: string | OperationContext | TrustedOperationContext,
     reason: string,
     tx?: TransactionClient,
   ): Promise<void> {
     const executor = tx ?? this.db;
+    let revokedByUserId: string;
+
+    if (typeof revokedBy === "object" && revokedBy !== null) {
+      await this.requirePermission(revokedBy, "sync.manage", tx);
+      revokedByUserId =
+        "principal" in revokedBy
+          ? revokedBy.principal.userId
+          : (revokedBy.userId ?? "system");
+    } else {
+      revokedByUserId = revokedBy;
+    }
+
     const now = getUtcIsoTimestamp();
     const revId = generateCorrelationId("rev");
 
@@ -192,11 +267,23 @@ export class SyncGroupService {
 
   async rejectMembership(
     requestId: string,
-    rejectorUserId: string,
+    rejector: string | OperationContext | TrustedOperationContext,
     reason: string,
     tx?: TransactionClient,
   ): Promise<void> {
     const executor = tx ?? this.db;
+    let rejectorUserId: string;
+
+    if (typeof rejector === "object" && rejector !== null) {
+      await this.requirePermission(rejector, "sync.manage", tx);
+      rejectorUserId =
+        "principal" in rejector
+          ? rejector.principal.userId
+          : (rejector.userId ?? "system");
+    } else {
+      rejectorUserId = rejector;
+    }
+
     const now = getUtcIsoTimestamp();
     const decisionId = generateCorrelationId("dec");
 

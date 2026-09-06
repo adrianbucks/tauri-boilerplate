@@ -111,6 +111,9 @@ importers:
 
   features/example-feature:
     dependencies:
+      '@platform/authorization':
+        specifier: workspace:*
+        version: link:../../packages/authorization
       '@platform/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -147,6 +150,9 @@ importers:
 
   features/organisations:
     dependencies:
+      '@platform/authorization':
+        specifier: workspace:*
+        version: link:../../packages/authorization
       '@platform/core':
         specifier: workspace:*
         version: link:../../packages/core

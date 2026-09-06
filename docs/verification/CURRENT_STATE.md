@@ -24,8 +24,8 @@ The repository has a strong package/module skeleton, strict TypeScript settings,
 | Device identity                       | Native Ed25519 `DeviceKeyProvider` with protected seed persistence and native signing (WP-005)                                      | Native protected device key + persistent binding                             | **P0** (✅ RESOLVED) |
 | User authentication                   | Native Argon2id verification + device binding + lockout cooldown, wired to TS session (WP-005)                                      | Offline credential/platform authentication                                   | **P0** (✅ RESOLVED) |
 | Session trust                         | Native-issued `NativeSessionView` mapped to `TrustedOperationContext` with verified device/roles                                    | Native-issued trusted principal                                              | **P0** (✅ RESOLVED) |
-| Authorization                         | RBAC/scope engine exists                                                                                                            | Enforce at every privileged service boundary                                 | **P1**               |
-| Tenant isolation                      | Several unrestricted queries/services exist                                                                                         | Mandatory organisation scope                                                 | **P1**               |
+| Authorization                         | Mandatory central authorization at all privileged service boundaries (WP-007)                                                       | Enforce at every privileged service boundary                                 | **P1** (✅ RESOLVED) |
+| Tenant isolation                      | Cross-tenant rejection & strict organisation isolation across all services (WP-007)                                                 | Mandatory organisation scope                                                 | **P1** (✅ RESOLVED) |
 | Audit                                 | Append/list service + tests                                                                                                         | Transactional append-only audit with redaction/integrity policy              | P1                   |
 | Sync protocol types                   | Implemented                                                                                                                         | Canonical signed protocol                                                    | **P0**               |
 | Handshake                             | Compatibility checks only                                                                                                           | Cryptographically authenticated/replay-resistant                             | **P0**               |
@@ -155,16 +155,32 @@ test result: 4 test files passed; 19 passed
 
 **Required:** authenticated peer identity obtained from the native key provider/transport and actual platform metadata.
 
-### CS-008 — Tenant/authorization enforcement is incomplete
+### CS-008 — Tenant/authorization enforcement is incomplete ✅ RESOLVED (WP-007)
 
-The example-feature widget repository and service now require an organisation
-context for SKU, ID, sync-group, update, delete, and list operations, with a
-cross-organisation negative test. The legacy organisation service now scopes
-reads, lists, and updates to the operation context, also with a negative test.
-Creation authorization and sync-group administration still need the same
-mandatory central authorization treatment.
+**Resolution Summary (2026-09-06):**
+Mandatory central authorization and tenant isolation have been systematically integrated across all privileged service entry points:
 
-**Required:** authorization must be mandatory at privileged service entry points and repositories must enforce organisation scope where appropriate.
+- `packages/core`: Standardized `extractContextSubject(ctx)` and `isTrustedOperationContext(ctx)` type guards, allowing uniform extraction of actor identity and tenant boundary from either `OperationContext` or `TrustedOperationContext`.
+- `packages/authorization` (`SyncGroupService`): Injected `AuthorizationEngine`, strictly enforcing `sync.manage` on group creation, membership approval, revocation, and rejection. Enforces cross-tenant rejection (`input.organisationId !== organisationId`).
+- `features/organisations` (`OrganisationService`): Injected `AuthorizationEngine`, enforcing `organisations.create`, `organisations.read`, and `organisations.manage`, preventing cross-tenant visibility or mutation.
+- `features/identity-admin` (`IdentityAdminService`): Injected `AuthorizationEngine`, enforcing `users.create`, `devices.approve`, and `devices.revoke`, strictly rejecting cross-tenant user creation.
+- `features/example-feature` (`WidgetService`): Injected `AuthorizationEngine`, enforcing `widgets.create`, `widgets.read`, `widgets.update`, and `widgets.delete` via repository-mediated tenant isolation.
+- `tests/security/rbac-security.test.ts`: Expanded regression suite to 12 dedicated tests asserting permission grant/denial, scope constraints on `TrustedOperationContext`, cross-tenant rejection across all migrated services, and unauthorized access rejection.
+
+**Test Evidence:**
+
+- `tests/security/rbac-security.test.ts` (12/12 passed) - Tests `TrustedOperationContext` RBAC, scope enforcement, cross-tenant rejection for sync groups & users, and unprivileged rejection across all services.
+- `features/organisations/tests/unit/organisationService.test.ts` (4/4 passed) - Asserts tenant-scoped reads/updates and rejection of unprivileged creation.
+- `features/identity-admin/tests/unit/identityAdminService.test.ts` (6/6 passed) - Asserts cross-tenant creation rejection and permission requirements.
+- `features/example-feature/tests/unit/widgetService.test.ts` (6/6 passed) - Asserts tenant isolation and permission requirements on mutations.
+- `packages/authorization/src/index.test.ts` (6/6 passed) - Asserts `SyncGroupService` lifecycle, cross-tenant rejection, and permission requirements.
+
+```
+pnpm --filter @tests/security test
+test result: 4 test files passed; 27 passed
+pnpm test
+test result: 34 tasks successful, 0 failed
+```
 
 ### CS-009 — Demo-owned schema bootstrap is resolved
 

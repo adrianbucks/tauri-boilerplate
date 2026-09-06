@@ -159,6 +159,44 @@ describe("Cross-Package Integration Suite — End-to-End Pipeline", () => {
     await platform.init();
   });
 
+  async function grantAllPermissions(userId: string, organisationId: string) {
+    const roleId = `role_${organisationId}_admin`;
+    await db.execute(
+      `INSERT OR IGNORE INTO core_roles (id, created_at, updated_at, organisation_id, name)
+       VALUES (?, '2026-08-30T10:00:00Z', '2026-08-30T10:00:00Z', ?, 'Administrator')`,
+      [roleId, organisationId],
+    );
+    const perms = [
+      "organisations.create",
+      "organisations.read",
+      "organisations.manage",
+      "users.create",
+      "users.read",
+      "devices.approve",
+      "devices.revoke",
+      "sync.manage",
+      "widgets.create",
+      "widgets.read",
+      "widgets.update",
+      "widgets.delete",
+    ];
+    for (const perm of perms) {
+      await db.execute(
+        `INSERT OR IGNORE INTO core_permissions (id, name) VALUES (?, ?)`,
+        [perm, perm],
+      );
+      await db.execute(
+        `INSERT OR IGNORE INTO core_role_permissions (id, role_id, permission_id) VALUES (?, ?, ?)`,
+        [`${roleId}_${perm}`, roleId, perm],
+      );
+    }
+    await db.execute(
+      `INSERT OR IGNORE INTO core_user_roles (id, user_id, role_id, organisation_id, granted_at)
+       VALUES (?, ?, ?, ?, '2026-08-30T10:00:00Z')`,
+      [`ur_${userId}_${organisationId}`, userId, roleId, organisationId],
+    );
+  }
+
   afterEach(async () => {
     await db.close();
   });
@@ -170,6 +208,8 @@ describe("Cross-Package Integration Suite — End-to-End Pipeline", () => {
       userId: "usr_admin",
     });
 
+    await grantAllPermissions("usr_admin", "org_acme_logistics");
+
     // 1. Create Organisation Tenancy
     const orgService = new OrganisationService(db);
     const org = await orgService.createOrganisation(
@@ -179,6 +219,14 @@ describe("Cross-Package Integration Suite — End-to-End Pipeline", () => {
     expect(org.id).toBeDefined();
     expect(org.name).toBe("Acme Global Logistics");
 
+    // Authorize admin within the newly created tenant
+    await grantAllPermissions("usr_admin", org.id);
+    const tenantAdminCtx = createOperationContext({
+      deviceId: ctx.deviceId,
+      organisationId: org.id,
+      userId: ctx.userId,
+    });
+
     // 2. Onboard User via Identity Admin Service
     const adminService = new IdentityAdminService(db);
     const userId = await adminService.createUser(
@@ -187,7 +235,7 @@ describe("Cross-Package Integration Suite — End-to-End Pipeline", () => {
         email: "alice@acme.com",
         organisationId: org.id,
       },
-      ctx,
+      tenantAdminCtx,
     );
     expect(userId).toBeDefined();
 
@@ -198,9 +246,10 @@ describe("Cross-Package Integration Suite — End-to-End Pipeline", () => {
       "dev_scanner_101",
       userId,
     );
-    await adminService.approveDevice("dev_scanner_101", reqId, ctx);
+    await adminService.approveDevice("dev_scanner_101", reqId, tenantAdminCtx);
 
     // 4. Feature CRUD (Widgets table migrated automatically by Platform.init())
+    await grantAllPermissions(userId, org.id);
     const widgetService = new WidgetService(db);
     const widget = await widgetService.createWidget(
       {
@@ -230,6 +279,8 @@ describe("Cross-Package Integration Suite — End-to-End Pipeline", () => {
       organisationId: "org_warehouse",
       userId: "usr_operator",
     });
+
+    await grantAllPermissions("usr_operator", "org_warehouse");
 
     const widgetService = new WidgetService(db);
     const importEngine = new ImportEngine(db);

@@ -29,6 +29,35 @@ class VirtualSyncDevice {
   async init(): Promise<void> {
     await this.db.init();
     await this.db.execute(`
+      CREATE TABLE core_permissions (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE,
+        description TEXT
+      );
+      CREATE TABLE core_roles (
+        id TEXT PRIMARY KEY,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        created_by TEXT,
+        updated_by TEXT,
+        organisation_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        description TEXT
+      );
+      CREATE TABLE core_role_permissions (
+        id TEXT PRIMARY KEY,
+        role_id TEXT NOT NULL,
+        permission_id TEXT NOT NULL,
+        scope_constraints_json TEXT
+      );
+      CREATE TABLE core_user_roles (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        role_id TEXT NOT NULL,
+        organisation_id TEXT NOT NULL,
+        granted_by TEXT,
+        granted_at TEXT NOT NULL
+      );
       CREATE TABLE widgets (
         id TEXT PRIMARY KEY,
         created_at TEXT NOT NULL,
@@ -49,6 +78,24 @@ class VirtualSyncDevice {
         quantity INTEGER NOT NULL DEFAULT 0,
         description TEXT
       );
+
+      INSERT INTO core_roles (id, created_at, updated_at, organisation_id, name)
+      VALUES ('role_sync_op', '2026-08-30T10:00:00Z', '2026-08-30T10:00:00Z', '${this.orgId}', 'Sync Operator');
+
+      INSERT INTO core_permissions (id, name) VALUES
+        ('widgets.create', 'widgets.create'),
+        ('widgets.read', 'widgets.read'),
+        ('widgets.update', 'widgets.update'),
+        ('widgets.delete', 'widgets.delete');
+
+      INSERT INTO core_role_permissions (id, role_id, permission_id) VALUES
+        ('rp_wc', 'role_sync_op', 'widgets.create'),
+        ('rp_wr', 'role_sync_op', 'widgets.read'),
+        ('rp_wu', 'role_sync_op', 'widgets.update'),
+        ('rp_wd', 'role_sync_op', 'widgets.delete');
+
+      INSERT INTO core_user_roles (id, user_id, role_id, organisation_id, granted_at)
+      VALUES ('ur_${this.deviceId}', 'usr_${this.deviceId}', 'role_sync_op', '${this.orgId}', '2026-08-30T10:00:00Z');
     `);
   }
 
