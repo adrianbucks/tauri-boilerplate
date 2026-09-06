@@ -12,3 +12,5 @@ serde_json = "1.0"
 thiserror = "1.0"
 hex = "0.4"
 getrandom = "0.2"
+ed25519-dalek = { version = "2.1", default-features = false, features = ["rand_core", "fast"] }
+rand_core = { version = "0.6", features = ["getrandom"] }

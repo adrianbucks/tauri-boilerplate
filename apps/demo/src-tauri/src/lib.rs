@@ -2,7 +2,7 @@ use identity_core::DeviceIdentity;
 use native_core::{
     core_migrations, create_organisation_for_session, create_widget_for_session,
     create_widgets_for_session,
-    list_organisations_for_session, list_widgets_for_session, AuthenticateUserRequest,
+    list_organisations_for_session, list_widgets_for_session, session_view, AuthenticateUserRequest,
     DatabaseHealth, DurableDatabase, NativeOrganisationCreateRequest, NativeOrganisationRecord,
     NativeSessionStore, NativeSessionView, NativeWidgetCreateRequest, NativeWidgetListRequest,
     NativeWidgetRecord, PlatformError,
@@ -77,6 +77,17 @@ fn authenticate_user(
             password: request.password,
         },
     )
+}
+
+#[tauri::command]
+fn get_current_session(
+    sessions: tauri::State<'_, NativeSessionStore>,
+) -> Result<Option<NativeSessionView>, PlatformError> {
+    match sessions.current_principal() {
+        Ok(principal) => Ok(Some(session_view(&principal))),
+        Err(err) if err.code == "session_missing" => Ok(None),
+        Err(err) => Err(err),
+    }
 }
 
 #[tauri::command]
@@ -181,11 +192,13 @@ pub fn run() {
                     .concat(),
                 )
                 .map_err(|error| std::io::Error::other(error.message))?;
-            let device_identity = database
-                .load_or_create_device_identity(APPLICATION_ID, std::env::consts::OS)
+            let key_provider = database
+                .load_or_create_device_key_provider(APPLICATION_ID, std::env::consts::OS)
                 .map_err(|error| std::io::Error::other(error.message))?;
+            let device_identity = key_provider.identity().clone();
             app.manage(database);
             app.manage(device_identity);
+            app.manage(key_provider);
             app.manage(NativeSessionStore::new());
             Ok(())
         })
@@ -193,6 +206,7 @@ pub fn run() {
             get_device_identity,
             get_database_health,
             authenticate_user,
+            get_current_session,
             logout_user,
             list_widgets,
             create_widget,

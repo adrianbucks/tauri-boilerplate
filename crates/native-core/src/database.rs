@@ -7,7 +7,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
 use crypto_core::PasswordVerifier;
-use identity_core::{DeviceIdentity, KeyManager};
+use identity_core::{DeviceIdentity, DeviceKeyProvider};
 use crate::PlatformError;
 use crate::widget::{
     authorize_widget_create, authorize_widget_read, NativePrincipal, NativeWidgetBulkCreateRequest,
@@ -88,15 +88,32 @@ impl DurableDatabase {
             .map_err(|error| database_error("db_execute", error))
     }
 
-    pub fn load_or_create_device_identity(
+    pub fn load_or_create_device_key_provider(
         &self,
         application_id: &str,
         platform: &str,
-    ) -> Result<DeviceIdentity, PlatformError> {
+    ) -> Result<DeviceKeyProvider, PlatformError> {
+        let key_file = if self.path.as_os_str() == ":memory:" {
+            None
+        } else {
+            Some(self.path.with_file_name("device_identity.key"))
+        };
+
+        let provider = DeviceKeyProvider::load_or_create(key_file.as_deref(), application_id, platform)
+            .map_err(|e| {
+                PlatformError::new(
+                    "AUTHENTICATION_ERROR",
+                    format!("Failed to load or create device key: {e}"),
+                    "Unable to access device identity",
+                    "device_key_provider",
+                )
+            })?;
+
         let connection = self
             .connection
             .lock()
             .map_err(|_| database_error_message("db_lock", "Database connection lock poisoned"))?;
+
         let existing = connection
             .query_row(
                 "SELECT device_id, public_key
@@ -109,24 +126,28 @@ impl DurableDatabase {
             )
             .optional()
             .map_err(|error| database_error("device_identity_lookup", error))?;
-        if let Some((device_id, public_key)) = existing {
-            return Ok(DeviceIdentity {
-                device_id,
-                public_key,
-                platform: platform.to_string(),
-                application_id: application_id.to_string(),
-            });
+
+        if let Some((existing_id, existing_pk)) = existing {
+            if existing_id == provider.device_id() && existing_pk == provider.public_key() {
+                return Ok(provider);
+            }
+            connection
+                .execute(
+                    "UPDATE core_devices
+                     SET device_id = ?1, public_key = ?2, updated_at = ?3
+                     WHERE application_id = ?4 AND platform = ?5 AND user_id IS NULL",
+                    params![
+                        provider.device_id(),
+                        provider.public_key(),
+                        current_epoch_seconds().to_string(),
+                        application_id,
+                        platform
+                    ],
+                )
+                .map_err(|error| database_error("device_identity_update", error))?;
+            return Ok(provider);
         }
 
-        let identity = KeyManager::get_or_create_device_identity(application_id, platform)
-            .map_err(|error| {
-                PlatformError::new(
-                    "AUTHENTICATION_ERROR",
-                    format!("Failed to generate device identity: {error}"),
-                    "Unable to access device identity",
-                    "device_identity_generate",
-                )
-            })?;
         let now = current_epoch_seconds().to_string();
         connection
             .execute(
@@ -135,16 +156,25 @@ impl DurableDatabase {
                   application_id, status, registered_at)
                  VALUES (?1, ?2, ?2, ?3, ?4, ?5, ?6, 'APPROVED', ?2)",
                 params![
-                    format!("device_record_{}", identity.device_id),
+                    format!("device_record_{}", provider.device_id()),
                     now,
-                    identity.device_id,
-                    identity.public_key,
-                    identity.platform,
-                    identity.application_id
+                    provider.device_id(),
+                    provider.public_key(),
+                    provider.identity().platform,
+                    provider.identity().application_id
                 ],
             )
             .map_err(|error| database_error("device_identity_bind", error))?;
-        Ok(identity)
+        Ok(provider)
+    }
+
+    pub fn load_or_create_device_identity(
+        &self,
+        application_id: &str,
+        platform: &str,
+    ) -> Result<DeviceIdentity, PlatformError> {
+        let provider = self.load_or_create_device_key_provider(application_id, platform)?;
+        Ok(provider.identity().clone())
     }
 
     pub fn transaction(&self, sql: &str) -> Result<(), PlatformError> {
@@ -1339,18 +1369,29 @@ mod tests {
                 .expect("core migrations should apply");
             database
                 .load_or_create_device_identity("app.test", "windows")
-                .expect("device identity should bind");
+                .expect("device identity should bind")
         };
         let second = {
             let database = DurableDatabase::open(&path).expect("database should reopen");
             database
                 .load_or_create_device_identity("app.test", "windows")
-                .expect("device identity should reload");
+                .expect("device identity should reload")
         };
 
         assert_eq!(first, second);
+        assert!(first.public_key.starts_with("ed25519_pk_"));
+        assert_eq!(first.public_key.len(), 11 + 64);
+        assert!(first.device_id.starts_with("dev_"));
 
-        let database = DurableDatabase::open(&path).expect("database should reopen for count");
+        // Verify native signing and verification roundtrip with loaded provider
+        let database = DurableDatabase::open(&path).expect("database should reopen for provider check");
+        let provider = database
+            .load_or_create_device_key_provider("app.test", "windows")
+            .expect("key provider should load");
+        let message = b"canonical native message for restart verification";
+        let signature = provider.sign(message);
+        assert!(DeviceKeyProvider::verify(&first.public_key, message, &signature).unwrap());
+
         let connection = database.connection.lock().unwrap();
         let count: i64 = connection
             .query_row(
@@ -1365,6 +1406,7 @@ mod tests {
         fs::remove_file(&path).expect("database file should exist");
         let _ = fs::remove_file(path.with_extension("db-wal"));
         let _ = fs::remove_file(path.with_extension("db-shm"));
+        let _ = fs::remove_file(path.with_file_name("device_identity.key"));
     }
 
     #[test]

@@ -213,5 +213,81 @@ describe("@platform/identity", () => {
     it("returns null for validateCurrentSession when no session exists", async () => {
       await expect(sessionService.validateCurrentSession()).rejects.toThrow();
     });
+
+    it("delegates authentication to native gateway and establishes trusted session", async () => {
+      // Setup local device and user
+      await deviceService.registerDevice({
+        publicKey: "pub_key_native_1",
+        platform: "windows",
+        applicationId: "demo",
+      });
+      await db.execute(
+        "UPDATE core_devices SET status = 'ACTIVE' WHERE device_id = (SELECT device_id FROM core_devices LIMIT 1);",
+      );
+      await db.execute(
+        "INSERT INTO core_users (id, created_at, updated_at, organisation_id, display_name, status) VALUES ('u_native', '2026-08-30T10:00:00Z', '2026-08-30T10:00:00Z', 'org_1', 'Native User', 'ACTIVE');",
+      );
+      await db.execute(
+        "INSERT INTO core_user_roles (id, user_id, role_id, organisation_id, granted_at) VALUES ('ur_nat', 'u_native', 'role_operator', 'org_1', '2026-08-30T10:00:00Z');",
+      );
+
+      const mockGateway = {
+        authenticateUser: async (req: {
+          user_id: string;
+          password: string;
+        }) => {
+          if (req.user_id === "u_native" && req.password === "secret123") {
+            return {
+              user_id: "u_native",
+              device_id: "dev_crypto_ed25519",
+              organisation_id: "org_1",
+              permissions: ["widget:read", "widget:create"],
+            };
+          }
+          throw new Error("Invalid credentials");
+        },
+        logoutUser: async () => undefined,
+      };
+
+      const session = await sessionService.authenticate(
+        { userId: "u_native", password: "secret123" },
+        mockGateway,
+      );
+
+      expect(session.userId).toBe("u_native");
+      expect(session.deviceId).toBe("dev_crypto_ed25519");
+      expect(session.organisationId).toBe("org_1");
+      expect(session.roles).toEqual(["role_operator"]);
+
+      const trustedContext = await sessionService.getTrustedOperationContext();
+      expect(trustedContext.principal).toMatchObject({
+        userId: "u_native",
+        deviceId: "dev_crypto_ed25519",
+        organisationId: "org_1",
+        roles: ["role_operator"],
+        authStrength: "offline-session",
+      });
+
+      // Test logout
+      await sessionService.logout(mockGateway);
+      expect(sessionService.getCurrentSession()).toBeNull();
+      await expect(sessionService.validateCurrentSession()).rejects.toThrow();
+    });
+
+    it("rejects authentication when native gateway fails", async () => {
+      const mockGateway = {
+        authenticateUser: async () => {
+          throw new Error("Argon2id verification failed");
+        },
+      };
+
+      await expect(
+        sessionService.authenticate(
+          { userId: "u_wrong", password: "bad" },
+          mockGateway,
+        ),
+      ).rejects.toThrow("Argon2id verification failed");
+      expect(sessionService.getCurrentSession()).toBeNull();
+    });
   });
 });

@@ -2,6 +2,13 @@ export interface NativeInvoker {
   invoke<T>(command: string, args?: Record<string, unknown>): Promise<T>;
 }
 
+export interface NativeDeviceIdentity {
+  device_id: string;
+  public_key: string;
+  platform: string;
+  application_id: string;
+}
+
 export interface NativeDatabaseHealth {
   db_path: string;
   sqlite_version: string;
@@ -12,6 +19,7 @@ export interface NativeDatabaseHealth {
 
 export interface NativeSessionView {
   user_id: string;
+  device_id: string;
   organisation_id: string;
   permissions: string[];
 }
@@ -70,7 +78,9 @@ export interface CreateNativeWidgetsRequest {
 }
 
 export interface PlatformNativeGateway {
+  getDeviceIdentity(): Promise<NativeDeviceIdentity>;
   getDatabaseHealth(): Promise<NativeDatabaseHealth>;
+  getCurrentSession(): Promise<NativeSessionView | null>;
   authenticateUser(
     request: AuthenticateUserRequest,
   ): Promise<NativeSessionView>;
@@ -90,8 +100,12 @@ export function createPlatformNativeGateway(
   invoker: NativeInvoker,
 ): PlatformNativeGateway {
   return {
+    getDeviceIdentity: () =>
+      invoker.invoke<NativeDeviceIdentity>("get_device_identity"),
     getDatabaseHealth: () =>
       invoker.invoke<NativeDatabaseHealth>("get_database_health"),
+    getCurrentSession: () =>
+      invoker.invoke<NativeSessionView | null>("get_current_session"),
     authenticateUser: (request) =>
       invoker.invoke<NativeSessionView>("authenticate_user", { request }),
     logoutUser: () => invoker.invoke<void>("logout_user"),

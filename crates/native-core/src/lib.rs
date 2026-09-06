@@ -10,7 +10,7 @@ pub use error::PlatformError;
 pub use schema::{core_migration, core_migrations};
 pub use session::{
     create_organisation_for_session, create_widget_for_session, create_widgets_for_session,
-    list_organisations_for_session, list_widgets_for_session, AuthenticateUserRequest,
+    list_organisations_for_session, list_widgets_for_session, session_view, AuthenticateUserRequest,
     NativeSessionStore, NativeSessionView,
 };
 pub use widget::{
@@ -18,6 +18,7 @@ pub use widget::{
     NativeWidgetCreateRequest, NativeWidgetListRequest, NativeWidgetRecord,
 };
 pub use organisation::{NativeOrganisationCreateRequest, NativeOrganisationRecord};
+pub use identity_core::{DeviceIdentity, DeviceKeyError, DeviceKeyProvider};
 
 #[cfg(test)]
 mod tests {

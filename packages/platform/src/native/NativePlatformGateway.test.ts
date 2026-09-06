@@ -88,5 +88,27 @@ describe("PlatformNativeGateway", () => {
     });
     await gateway.logoutUser();
     expect(invoke).toHaveBeenLastCalledWith("logout_user");
+
+    // Test getDeviceIdentity
+    const identity = {
+      device_id: "dev_123",
+      public_key: "ed25519_pk_abc",
+      platform: "windows",
+      application_id: "com.demo",
+    };
+    invoke.mockResolvedValueOnce(identity);
+    await expect(gateway.getDeviceIdentity()).resolves.toEqual(identity);
+    expect(invoke).toHaveBeenLastCalledWith("get_device_identity");
+
+    // Test getCurrentSession
+    const sessionView = {
+      user_id: "u_1",
+      device_id: "dev_123",
+      organisation_id: "org_1",
+      permissions: ["widget:read"],
+    };
+    invoke.mockResolvedValueOnce(sessionView);
+    await expect(gateway.getCurrentSession()).resolves.toEqual(sessionView);
+    expect(invoke).toHaveBeenLastCalledWith("get_current_session");
   });
 });

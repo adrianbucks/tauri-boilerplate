@@ -17,6 +17,7 @@ pub struct AuthenticateUserRequest {
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct NativeSessionView {
     pub user_id: String,
+    pub device_id: String,
     pub organisation_id: String,
     pub permissions: Vec<String>,
 }
@@ -78,6 +79,7 @@ impl Default for NativeSessionStore {
 pub fn session_view(principal: &NativePrincipal) -> NativeSessionView {
     NativeSessionView {
         user_id: principal.user_id.clone(),
+        device_id: principal.device_id.clone(),
         organisation_id: principal.organisation_id.clone(),
         permissions: principal.permissions.clone(),
     }
@@ -146,5 +148,23 @@ mod tests {
         assert!(sessions.current_principal().is_err());
         sessions.logout().expect("logout should be idempotent");
         assert!(sessions.current_principal().is_err());
+    }
+
+    #[test]
+    fn session_view_maps_authenticated_device_and_permissions() {
+        let principal = NativePrincipal::from_authenticated_device_session(
+            "user_alice",
+            "dev_crypto_123",
+            "org_test",
+            vec!["widget:read".to_string(), "widget:create".to_string()],
+        );
+        let view = session_view(&principal);
+        assert_eq!(view.user_id, "user_alice");
+        assert_eq!(view.device_id, "dev_crypto_123");
+        assert_eq!(view.organisation_id, "org_test");
+        assert_eq!(
+            view.permissions,
+            vec!["widget:read".to_string(), "widget:create".to_string()]
+        );
     }
 }

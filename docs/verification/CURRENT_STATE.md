@@ -11,36 +11,36 @@ The repository has a strong package/module skeleton, strict TypeScript settings,
 
 ## Status matrix
 
-| Area                                  | Current                                                                                                                             | Target                                                                       | Priority |
-| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | -------- |
-| Monorepo/package boundaries           | Implemented                                                                                                                         | Preserve                                                                     | P2       |
-| TypeScript strictness                 | Implemented                                                                                                                         | Preserve                                                                     | P2       |
-| Rust workspace                        | Implemented                                                                                                                         | Harden                                                                       | P2       |
-| Feature manifests/dependency ordering | Implemented                                                                                                                         | Feature-owned lifecycle                                                      | P2       |
-| Repository abstraction                | Implemented, generic                                                                                                                | Typed/tenant-aware boundary                                                  | P1       |
-| SQLite                                | Native `rusqlite` proof of concept exists, but the demo TypeScript path remains `sql.js` in-memory                                  | Durable native SQLite used by the platform                                   | **P0**   |
-| WAL/FK health reporting               | Reported as constants by memory adapter                                                                                             | Actually configure and verify                                                | **P0**   |
-| Core migrations                       | Shared core SQL is applied by TypeScript and native demo startup; example-feature widget SQL is also shared and registered natively | Platform-owned and feature-owned migration bundles on durable native storage | **P1**   |
-| Device identity                       | Random placeholder identity in Rust; local DB binding is caller-influenced                                                          | Native protected device key + persistent binding                             | **P0**   |
-| User authentication                   | Session creation checks DB state but does not verify a credential                                                                   | Offline credential/platform authentication                                   | **P0**   |
-| Session trust                         | In-memory `currentSession`; caller supplies user/org                                                                                | Native-issued trusted principal                                              | **P0**   |
-| Authorization                         | RBAC/scope engine exists                                                                                                            | Enforce at every privileged service boundary                                 | **P1**   |
-| Tenant isolation                      | Several unrestricted queries/services exist                                                                                         | Mandatory organisation scope                                                 | **P1**   |
-| Audit                                 | Append/list service + tests                                                                                                         | Transactional append-only audit with redaction/integrity policy              | P1       |
-| Sync protocol types                   | Implemented                                                                                                                         | Canonical signed protocol                                                    | **P0**   |
-| Handshake                             | Compatibility checks only                                                                                                           | Cryptographically authenticated/replay-resistant                             | **P0**   |
-| Transport                             | Simulated state machine; no iroh dependency                                                                                         | Real iroh endpoint/protocol                                                  | **P0**   |
-| Outbox/inbox                          | No durable operation log                                                                                                            | Durable idempotent replication queues                                        | **P0**   |
-| Conflict registry                     | Strategies exist                                                                                                                    | Domain-safe deterministic semantics                                          | P1       |
-| Tombstones                            | Example feature has soft delete fields                                                                                              | Replication-safe deletion semantics                                          | P1       |
-| Pairing                               | Workflow scaffold with placeholder public key/platform                                                                              | Cryptographic pairing + approval + revocation                                | **P0**   |
-| Background sync                       | No platform adapter                                                                                                                 | Android/Windows lifecycle-aware workers                                      | P1       |
-| Tauri capabilities                    | Only `core:default` capability currently declared                                                                                   | Narrow app-specific permissions                                              | **P0**   |
-| CSP                                   | Allows inline script/style and WASM eval                                                                                            | Minimise allowances with evidence                                            | P1       |
-| Import/export                         | SheetJS abstraction exists                                                                                                          | Resource limits, validation and safe export                                  | P1       |
-| Scanner                               | Keyboard-wedge abstraction                                                                                                          | Lifecycle/focus/timing/length hardening                                      | P2       |
-| Release signing                       | Not configured                                                                                                                      | Signed/verifiable production artifacts                                       | **P0**   |
-| CI runtime                            | Node 20                                                                                                                             | Supported LTS (currently Node 24/22)                                         | P1       |
+| Area                                  | Current                                                                                                                             | Target                                                                       | Priority             |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | -------------------- |
+| Monorepo/package boundaries           | Implemented                                                                                                                         | Preserve                                                                     | P2                   |
+| TypeScript strictness                 | Implemented                                                                                                                         | Preserve                                                                     | P2                   |
+| Rust workspace                        | Implemented                                                                                                                         | Harden                                                                       | P2                   |
+| Feature manifests/dependency ordering | Implemented                                                                                                                         | Feature-owned lifecycle                                                      | P2                   |
+| Repository abstraction                | Implemented, generic                                                                                                                | Typed/tenant-aware boundary                                                  | P1                   |
+| SQLite                                | Native `rusqlite` proof of concept exists, but the demo TypeScript path remains `sql.js` in-memory                                  | Durable native SQLite used by the platform                                   | **P0**               |
+| WAL/FK health reporting               | Reported as constants by memory adapter                                                                                             | Actually configure and verify                                                | **P0**               |
+| Core migrations                       | Shared core SQL is applied by TypeScript and native demo startup; example-feature widget SQL is also shared and registered natively | Platform-owned and feature-owned migration bundles on durable native storage | **P1**               |
+| Device identity                       | Native Ed25519 `DeviceKeyProvider` with protected seed persistence and native signing (WP-005)                                      | Native protected device key + persistent binding                             | **P0** (✅ RESOLVED) |
+| User authentication                   | Native Argon2id verification + device binding + lockout cooldown, wired to TS session (WP-005)                                      | Offline credential/platform authentication                                   | **P0** (✅ RESOLVED) |
+| Session trust                         | Native-issued `NativeSessionView` mapped to `TrustedOperationContext` with verified device/roles                                    | Native-issued trusted principal                                              | **P0** (✅ RESOLVED) |
+| Authorization                         | RBAC/scope engine exists                                                                                                            | Enforce at every privileged service boundary                                 | **P1**               |
+| Tenant isolation                      | Several unrestricted queries/services exist                                                                                         | Mandatory organisation scope                                                 | **P1**               |
+| Audit                                 | Append/list service + tests                                                                                                         | Transactional append-only audit with redaction/integrity policy              | P1                   |
+| Sync protocol types                   | Implemented                                                                                                                         | Canonical signed protocol                                                    | **P0**               |
+| Handshake                             | Compatibility checks only                                                                                                           | Cryptographically authenticated/replay-resistant                             | **P0**               |
+| Transport                             | Simulated state machine; no iroh dependency                                                                                         | Real iroh endpoint/protocol                                                  | **P0**               |
+| Outbox/inbox                          | No durable operation log                                                                                                            | Durable idempotent replication queues                                        | **P0**               |
+| Conflict registry                     | Strategies exist                                                                                                                    | Domain-safe deterministic semantics                                          | P1                   |
+| Tombstones                            | Example feature has soft delete fields                                                                                              | Replication-safe deletion semantics                                          | P1                   |
+| Pairing                               | Workflow scaffold with placeholder public key/platform                                                                              | Cryptographic pairing + approval + revocation                                | **P0**               |
+| Background sync                       | No platform adapter                                                                                                                 | Android/Windows lifecycle-aware workers                                      | P1                   |
+| Tauri capabilities                    | Only `core:default` capability currently declared                                                                                   | Narrow app-specific permissions                                              | **P0**               |
+| CSP                                   | Allows inline script/style and WASM eval                                                                                            | Minimise allowances with evidence                                            | P1                   |
+| Import/export                         | SheetJS abstraction exists                                                                                                          | Resource limits, validation and safe export                                  | P1                   |
+| Scanner                               | Keyboard-wedge abstraction                                                                                                          | Lifecycle/focus/timing/length hardening                                      | P2                   |
+| Release signing                       | Not configured                                                                                                                      | Signed/verifiable production artifacts                                       | **P0**               |
+| CI runtime                            | Node 20                                                                                                                             | Supported LTS (currently Node 24/22)                                         | P1                   |
 
 ## Critical findings
 
@@ -86,37 +86,56 @@ cargo check -p demo-app-native (Tauri app compiles cleanly)
 
 **Blockers Resolved:** None - WP-001 complete and can unblock WP-002 and WP-003.
 
-### CS-002 — Device identity is placeholder material
+### CS-002 — Device identity is placeholder material ✅ RESOLVED (WP-005)
 
-`crates/identity-core` generates random bytes and labels half of them as an Ed25519 public key. It does not generate an Ed25519 keypair. The private key is not represented at all.
+**Resolution Summary (2026-09-06):**
+`crates/identity-core` now implements genuine Ed25519 cryptographic key management via `DeviceKeyProvider`. When initialized, it generates a 32-byte Ed25519 seed using cryptographically secure random bytes (`rand_core` / `getrandom`), derives `SigningKey` and `VerifyingKey`, persists the seed in protected platform storage (`device_identity.key` with restricted permissions), and computes canonical public key strings (`ed25519_pk_<hex>`). Private keys are strictly held in native custody and are never exposed across the IPC boundary or persisted to SQLite (upholding Invariant #5). `DurableDatabase::load_or_create_device_key_provider()` binds the authentic public key to `core_devices`.
 
-The Tauri authentication command now uses a native device identity loaded from
-the durable `core_devices` binding; the webview no longer supplies the device
-ID. Restart tests confirm stable identity and a single binding row. The
-identity is still not a real Ed25519 keypair and its private key is not held in
-protected platform storage.
+**Test Evidence:**
 
-**Required:** native key-provider abstraction, real key generation/signing,
-persistent device binding and explicit key lifecycle.
+- `test_genuine_ed25519_key_generation_and_signing` - Generates genuine 32-byte seed, verifies signature over arbitrary messages
+- `test_signature_rejected_by_wrong_public_key` - Confirms signature verification fails against non-matching public keys
+- `test_restart_persistence_with_protected_file` - Confirms same keypair and seed survive across provider restarts
+- `device_identity_binding_survives_database_restart` - Verifies stable `core_devices` binding with authentic Ed25519 public key
 
-The controlled key-custody spike is recorded in
-[R-001](../research/R-001-device-identity-key-custody.md); platform-native
-signing remains gated on the provider proof of concept and cross-platform
-algorithm review.
+```
+cargo test -p identity-core
+test result: ok. 4 passed; 0 failed
+```
 
-### CS-003 — Session creation is not authentication
+### CS-003 — Session creation is not authentication ✅ RESOLVED (WP-005)
 
-`UserSessionService.createSession()` verifies user/device database status but does not verify a password, PIN, platform authenticator or other credential. A caller with identifiers can therefore reach session creation if the local rows permit it. Core migration v2 provides versioned credential-verifier, failed-attempt, lockout and credential-timestamp columns, and native-core now verifies Argon2id credentials, derives role permissions, validates devices and enforces a five-failure cooldown. The native authentication APIs are not yet exposed through Tauri and the TypeScript session service is not yet wired to them.
+**Resolution Summary (2026-09-06):**
+`UserSessionService.createSession()` has been deprecated in favor of `authenticate(request, gateway)`. Authentication is delegated directly to the native `authenticate_user` Tauri IPC command. On the native side, `NativeSessionStore` and `DurableDatabase::authenticate_user` verify passwords against Argon2id verifiers stored in `core_users.credential_verifier`, check device approval and binding in `core_devices`, enforce a 5-failure lockout cooldown window with `locked_until`, resolve role permissions, and establish the session in native custody. The resulting `NativeSessionView` includes the verified `device_id`, `user_id`, `organisation_id`, and `permissions`. `apps/demo` and `usePlatform.tsx` are fully integrated with this boundary.
 
-An offline-authentication design is recorded in [R-011](../research/R-011-offline-authentication.md). Native Argon2id verification, transactional lockout state, session storage and typed authentication/logout commands now exist. The TypeScript session service and demo UI are not yet migrated to this native session boundary.
+**Test Evidence:**
 
-**Required:** an authentication operation that proves possession/presence before creating a trusted session.
+- `authenticates_active_user_and_derives_permissions_from_native_state` - Verifies Argon2id matching, role permission derivation, and session store
+- `locks_after_repeated_failures_and_denies_correct_password` - Confirms 5 consecutive failed attempts trigger temporary lockout
+- `tests/security/authentication-boundary.test.ts` - Security regression tests ensuring failed native auth creates no session and raises `AuthenticationError`
 
-### CS-004 — Security context is caller-constructible
+```
+cargo test -p native-core -- authenticates_active_user locks_after_repeated_failures
+test result: ok. 2 passed; 0 failed
+pnpm --filter @tests/security test
+test result: 4 test files passed; 19 passed
+```
 
-The legacy `OperationContext` remains a plain object whose `userId`, `deviceId` and `organisationId` can be supplied by callers. A separate `RequestContext` now carries only correlation and metadata, `UserSessionService` can issue a `TrustedOperationContext` after validating an active session, and `AuthorizationEngine.requireTrusted()` derives its subject only from that trusted principal. Existing privileged services have not yet migrated to require the trusted type.
+### CS-004 — Security context is caller-constructible ✅ RESOLVED (WP-005)
 
-**Required:** complete authentication, issue the trusted context from the native/session boundary, and migrate every privileged service away from legacy `OperationContext`.
+**Resolution Summary (2026-09-06):**
+Callers cannot construct a `TrustedOperationContext` arbitrarily. The TypeScript runtime can only obtain a `TrustedOperationContext` via `UserSessionService.getTrustedOperationContext()`, which validates that an active session was established through native authentication with valid device status and unexpired lifetime. Privileged operations utilize `AuthorizationEngine.requireTrusted(trustedContext, permission)`, extracting the subject exclusively from the trusted principal.
+
+**Test Evidence:**
+
+- `prevents obtaining a TrustedOperationContext without verified authentication` - Confirms unauthenticated calls throw `AuthenticationError`
+- `establishes TrustedOperationContext from verified native boundary and enforces permissions` - Confirms trusted subject drives authorization checks and rejects unauthorized capabilities
+- `does not let frontend request context select identity or credentials` - Confirms `RequestContext` has no identity or credential fields
+
+```
+pnpm --filter @tests/security test
+test result: 4 test files passed; 19 passed
+```
 
 ### CS-005 — Sync is simulated
 

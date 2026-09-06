@@ -77,25 +77,41 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
 
       setImportEngine(new ImportEngine(db));
 
+      try {
+        const existingSession = await nativeGateway.getCurrentSession();
+        if (existingSession) {
+          setNativeSession(existingSession);
+          await p.sessions.establishFromNativeSession(existingSession);
+        }
+      } catch {
+        // No active native session
+      }
+
       setPlatform(p);
       setIsReady(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, []);
+  }, [nativeGateway]);
 
   const authenticate = useCallback(
     async (request: { user_id: string; password: string }) => {
       const session = await nativeGateway.authenticateUser(request);
       setNativeSession(session);
+      if (platform) {
+        await platform.sessions.establishFromNativeSession(session);
+      }
     },
-    [nativeGateway],
+    [nativeGateway, platform],
   );
 
   const logout = useCallback(async () => {
     await nativeGateway.logoutUser();
     setNativeSession(null);
-  }, [nativeGateway]);
+    if (platform) {
+      platform.sessions.invalidateSession();
+    }
+  }, [nativeGateway, platform]);
 
   useEffect(() => {
     init();

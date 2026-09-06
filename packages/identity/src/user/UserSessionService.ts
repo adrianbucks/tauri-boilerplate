@@ -9,6 +9,27 @@ import type { DatabaseConnection, TransactionClient } from "@platform/database";
 import { DeviceIdentityService } from "../device/DeviceIdentityService.js";
 import type { Session, UserIdentity } from "../types.js";
 
+export interface NativeAuthenticator {
+  authenticateUser(request: { user_id: string; password: string }): Promise<{
+    user_id: string;
+    device_id: string;
+    organisation_id: string;
+    permissions: string[];
+  }>;
+  logoutUser?(): Promise<void>;
+  getCurrentSession?(): Promise<{
+    user_id: string;
+    device_id: string;
+    organisation_id: string;
+    permissions: string[];
+  } | null>;
+}
+
+export interface AuthenticateUserRequest {
+  userId: string;
+  password: string;
+}
+
 export interface CreateSessionOptions {
   userId: string;
   organisationId: string;
@@ -31,6 +52,114 @@ export class UserSessionService {
     return this.currentSession;
   }
 
+  /**
+   * Authenticates credentials through the native platform security boundary (Argon2id + device binding).
+   * On success, establishes an in-memory session with the verified native device identity and roles.
+   */
+  async authenticate(
+    request: AuthenticateUserRequest,
+    gateway: NativeAuthenticator,
+    tx?: TransactionClient,
+  ): Promise<Session> {
+    if (!request.userId || !request.password) {
+      throw new AuthenticationError({
+        message: "User ID and password are required",
+        userMessage: "Please provide both user ID and password",
+        correlationId: "auth_missing_fields",
+      });
+    }
+
+    let nativeView: {
+      user_id: string;
+      device_id: string;
+      organisation_id: string;
+      permissions: string[];
+    };
+
+    try {
+      nativeView = await gateway.authenticateUser({
+        user_id: request.userId,
+        password: request.password,
+      });
+    } catch (cause) {
+      this.invalidateSession();
+      throw new AuthenticationError({
+        message:
+          cause instanceof Error
+            ? cause.message
+            : "Native authentication failed",
+        userMessage: "Invalid credentials or account locked",
+        correlationId: "auth_native_failed",
+      });
+    }
+
+    return this.establishFromNativeSession(nativeView, tx);
+  }
+
+  /**
+   * Establishes a TypeScript session from an already verified native session view.
+   */
+  async establishFromNativeSession(
+    nativeView: {
+      user_id: string;
+      device_id: string;
+      organisation_id: string;
+      permissions: string[];
+    },
+    tx?: TransactionClient,
+  ): Promise<Session> {
+    const executor = tx ?? this.db;
+
+    // Verify user exists and is active locally
+    const userRows = await executor.query<{
+      id: string;
+      organisation_id: string;
+      display_name: string;
+      status: string;
+    }>(
+      "SELECT id, organisation_id, display_name, status FROM core_users WHERE id = ? LIMIT 1",
+      [nativeView.user_id],
+    );
+
+    const user = userRows[0];
+    if (!user || user.status !== "ACTIVE") {
+      this.invalidateSession();
+      throw new AuthenticationError({
+        message: `User '${nativeView.user_id}' is inactive or not found`,
+        userMessage: "User account is inactive",
+        correlationId: "sess_user_inactive",
+      });
+    }
+
+    const roleRows = await executor.query<{ role_id: string }>(
+      `SELECT role_id
+       FROM core_user_roles
+       WHERE user_id = ? AND organisation_id = ?
+       ORDER BY role_id ASC`,
+      [nativeView.user_id, nativeView.organisation_id],
+    );
+
+    const sessionId = generateCorrelationId("sess");
+    const now = getUtcIsoTimestamp();
+
+    const session: Session = {
+      sessionId,
+      userId: nativeView.user_id,
+      deviceId: nativeView.device_id,
+      organisationId: nativeView.organisation_id,
+      roles: Object.freeze(roleRows.map((row) => row.role_id)),
+      establishedAt: now,
+      expiresAt: null,
+    };
+
+    this.currentSession = session;
+    return session;
+  }
+
+  /**
+   * @deprecated Identifier-only session creation bypasses credential verification (CS-003).
+   * Prefer `authenticate(request, gateway)` or `establishFromNativeSession(nativeView)`.
+   */
   async createSession(
     options: CreateSessionOptions,
     tx?: TransactionClient,
@@ -179,6 +308,13 @@ export class UserSessionService {
 
   invalidateSession(): void {
     this.currentSession = null;
+  }
+
+  async logout(gateway?: NativeAuthenticator): Promise<void> {
+    if (gateway?.logoutUser) {
+      await gateway.logoutUser();
+    }
+    this.invalidateSession();
   }
 
   async getUser(
