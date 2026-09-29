@@ -57,3 +57,4 @@ export class NotesRepository extends BaseRepository<NoteRecord> {
     return this.mapRow(rows[0]);
   }
 }
+

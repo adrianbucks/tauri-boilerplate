@@ -2,7 +2,9 @@
   "$schema": "https://schema.tauri.app/config/2",
   "identifier": "main-window",
   "description": "Scoped least-privilege capability set for the primary application window. Grants event listener and unlistener permissions required for asynchronous P2P replication event dispatch (sync://envelope-received, background://sync-tick) while omitting event emit from the webview. Does not grant broad core plugins or filesystem/shell access.",
-  "windows": ["main"],
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "core:event:allow-listen",
     "core:event:allow-unlisten",

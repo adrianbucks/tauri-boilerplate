@@ -23,3 +23,4 @@ export interface UpdateNoteInput {
   title?: string;
   content?: string;
 }
+

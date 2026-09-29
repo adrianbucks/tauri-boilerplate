@@ -11,3 +11,4 @@ CREATE TABLE IF NOT EXISTS notes (
   deleted_by TEXT,
   delete_operation_id TEXT
 );
+

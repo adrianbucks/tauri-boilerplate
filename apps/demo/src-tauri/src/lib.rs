@@ -486,3 +486,4 @@ mod tests {
         assert!(migration.sql.contains("CREATE TABLE IF NOT EXISTS widgets"));
     }
 }
+
