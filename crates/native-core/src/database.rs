@@ -88,6 +88,68 @@ impl DurableDatabase {
             .map_err(|error| database_error("db_execute", error))
     }
 
+    /// Returns the file-system path of the database.
+    /// Used by `background-core` to re-open a fresh connection on a `spawn_blocking` thread.
+    pub fn path(&self) -> &std::path::Path {
+        &self.path
+    }
+
+    /// Queries `core_sync_outbox` for distinct organisation IDs that have at least one
+    /// pending (unacknowledged) row. Returns an empty `Vec` if the table does not exist.
+    ///
+    /// This method is called by `background-core::OutboxScheduler` on each tick.
+    pub fn query_pending_outbox_orgs(&self) -> Result<Vec<String>, PlatformError> {
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| database_error_message("db_lock", "Database connection lock poisoned"))?;
+
+        // Guard: return empty list gracefully if the outbox table has not been created yet
+        // (e.g., the schema migration has not run in this deployment context).
+        let table_exists: bool = connection
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'core_sync_outbox'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .map(|n| n > 0)
+            .unwrap_or(false);
+
+        if !table_exists {
+            return Ok(vec![]);
+        }
+
+        let mut stmt = connection
+            .prepare(
+                "SELECT DISTINCT organisation_id \
+                 FROM core_sync_outbox \
+                 WHERE status = 'pending' \
+                 ORDER BY organisation_id ASC",
+            )
+            .map_err(|e| database_error("bg_outbox_prepare", e))?;
+
+        let orgs = stmt
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|e| database_error("bg_outbox_query", e))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| database_error("bg_outbox_row", e))?;
+
+        Ok(orgs)
+    }
+
+    /// Executes a raw SQL statement without parameters — intended exclusively for
+    /// test fixture setup. Not guarded by `validate_safe_sql`.
+    #[cfg(test)]
+    pub fn execute_raw(&self, sql: &str) -> Result<(), PlatformError> {
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| database_error_message("db_lock", "Database connection lock poisoned"))?;
+        connection
+            .execute_batch(sql)
+            .map_err(|e| database_error("db_execute_raw", e))
+    }
+
     pub fn load_or_create_device_key_provider(
         &self,
         application_id: &str,
@@ -1048,11 +1110,61 @@ impl DurableDatabase {
         ))
     }
 
+    pub fn validate_safe_sql(sql: &str) -> Result<(), PlatformError> {
+        let clean = sql
+            .lines()
+            .filter(|line| !line.trim().starts_with("--"))
+            .collect::<Vec<&str>>()
+            .join(" ");
+        let upper = clean.trim().to_uppercase();
+
+        // Disallow ATTACH / DETACH (arbitrary filesystem mounting)
+        if upper.starts_with("ATTACH ") || upper.starts_with("ATTACH\t") || upper.contains(" ATTACH ") {
+            return Err(PlatformError::new(
+                "disallowed_sql",
+                "ATTACH DATABASE is disallowed over client database bridge",
+                "Unauthorized database operation",
+                "sql_safety_err",
+            ));
+        }
+        if upper.starts_with("DETACH ") || upper.starts_with("DETACH\t") || upper.contains(" DETACH ") {
+            return Err(PlatformError::new(
+                "disallowed_sql",
+                "DETACH DATABASE is disallowed over client database bridge",
+                "Unauthorized database operation",
+                "sql_safety_err",
+            ));
+        }
+
+        // Disallow VACUUM INTO (arbitrary file export)
+        if upper.contains("VACUUM") && upper.contains("INTO") {
+            return Err(PlatformError::new(
+                "disallowed_sql",
+                "VACUUM INTO is disallowed over client database bridge",
+                "Unauthorized database operation",
+                "sql_safety_err",
+            ));
+        }
+
+        // Disallow PRAGMA manipulation from webview (pragmas must be controlled by native platform)
+        if upper.starts_with("PRAGMA ") || upper.starts_with("PRAGMA\t") || upper.contains(";PRAGMA") || upper.contains("; PRAGMA") {
+            return Err(PlatformError::new(
+                "disallowed_sql",
+                "PRAGMA execution is disallowed over client database bridge",
+                "Unauthorized database operation",
+                "sql_safety_err",
+            ));
+        }
+
+        Ok(())
+    }
+
     pub fn query_json(
         &self,
         sql: &str,
         params: Vec<serde_json::Value>,
     ) -> Result<serde_json::Value, PlatformError> {
+        Self::validate_safe_sql(sql)?;
         let connection = self
             .connection
             .lock()
@@ -1129,6 +1241,7 @@ impl DurableDatabase {
         sql: &str,
         params: Vec<serde_json::Value>,
     ) -> Result<serde_json::Value, PlatformError> {
+        Self::validate_safe_sql(sql)?;
         let connection = self
             .connection
             .lock()
@@ -1161,6 +1274,9 @@ impl DurableDatabase {
         &self,
         operations: Vec<DbJsonOperation>,
     ) -> Result<(), PlatformError> {
+        for op in &operations {
+            Self::validate_safe_sql(&op.sql)?;
+        }
         let connection = self
             .connection
             .lock()
@@ -2224,6 +2340,54 @@ mod tests {
         }
         
         std::thread::sleep(std::time::Duration::from_millis(100));
+        let _ = fs::remove_file(&path);
+        let _ = fs::remove_file(path.with_extension("db-wal"));
+        let _ = fs::remove_file(path.with_extension("db-shm"));
+    }
+
+    #[test]
+    fn sql_safety_guard_blocks_hostile_pragmas_and_attachments() {
+        let path = test_path("wp020-sql-safety");
+        let db = DurableDatabase::open(&path).expect("open");
+        db.apply_migrations(&crate::core_migrations()).expect("migrations");
+
+        // 1. Blocks PRAGMA queries
+        let pragma_res = db.query_json("PRAGMA foreign_keys = OFF;", vec![]);
+        assert!(pragma_res.is_err(), "PRAGMA query must be rejected");
+        assert_eq!(pragma_res.expect_err("err").code, "disallowed_sql");
+
+        let pragma_exec = db.execute_json("PRAGMA writable_schema = 1;", vec![]);
+        assert!(pragma_exec.is_err(), "PRAGMA execute must be rejected");
+
+        // 2. Blocks ATTACH DATABASE
+        let attach_res = db.execute_json("ATTACH DATABASE 'malicious.db' AS evil;", vec![]);
+        assert!(attach_res.is_err(), "ATTACH must be rejected");
+        assert_eq!(attach_res.expect_err("err").code, "disallowed_sql");
+
+        // 3. Blocks DETACH DATABASE
+        let detach_res = db.execute_json("DETACH DATABASE evil;", vec![]);
+        assert!(detach_res.is_err(), "DETACH must be rejected");
+
+        // 4. Blocks VACUUM INTO
+        let vacuum_res = db.execute_json("VACUUM INTO 'exfiltrated.db';", vec![]);
+        assert!(vacuum_res.is_err(), "VACUUM INTO must be rejected");
+
+        // 5. Allows safe SELECT query
+        let select_res = db.query_json("SELECT COUNT(*) AS c FROM core_organisations;", vec![]);
+        assert!(select_res.is_ok(), "Safe SELECT must be allowed");
+
+        // 6. Allows safe DML via transaction_json
+        let tx_ops = vec![
+            crate::DbJsonOperation {
+                op_type: "execute".to_string(),
+                sql: "INSERT INTO core_organisations (id, created_at, updated_at, name) VALUES ('org_safe_01', '2026-09-13', '2026-09-13', 'Safe Org');".to_string(),
+                params: vec![],
+            }
+        ];
+        let tx_res = db.transaction_json(tx_ops);
+        assert!(tx_res.is_ok(), "Safe transaction must succeed");
+
+        drop(db);
         let _ = fs::remove_file(&path);
         let _ = fs::remove_file(path.with_extension("db-wal"));
         let _ = fs::remove_file(path.with_extension("db-shm"));

@@ -8,21 +8,19 @@ The repository is not yet production-ready. The architecture and platform slices
 
 ## Current capabilities
 
-- **Monorepo platform scaffold**: TypeScript packages, Rust crates, feature registry, and a demo app that consumes public platform APIs.
-- **Local data abstractions**: Repository and migration engines exist; the demo still uses an in-memory `sql.js` connection rather than durable native SQLite.
-- **RBAC and session types**: Scoped `can()` / `require()` and in-memory sessions; trusted session context and cryptographic device identity are incomplete.
-- **Feature manifests**: Registration, dependency ordering, permissions, and declared sync policies.
-- **Native packaging**: Local unsigned Windows MSI/NSIS and Android APK builds; CI workflows exist. Signing is not configured.
+- **Monorepo platform scaffold**: pnpm 10 workspaces + Turborepo + Cargo workspace covering 13 packages, 3 apps, and 4 native crates.
+- **Durable native SQLite**: File-backed `rusqlite` persistence with WAL mode, foreign keys, and typed native gateway (`crates/native-core`, `@platform/database`).
+- **Cryptographic device identity**: Native Ed25519 `DeviceKeyProvider` with protected seed custody in native memory; private keys never enter JavaScript.
+- **Authentication & session trust**: Argon2id verification with 5-failure lockout cooldown window, issuing native-authenticated `TrustedOperationContext`.
+- **RBAC & tenant isolation**: Central `requireTrusted()` permission engine with mandatory `organisationId` scope and cross-tenant mutation rejection.
+- **Deterministic sync & live iroh P2P**: Canonical envelopes, mutual authenticated handshake, durable outbox/inbox queues, soft-delete tombstones, and live `iroh 1.2.0` QUIC transport.
+- **Durable background task queue**: SQLite-backed task worker with jittered exponential backoff and `OutboxSyncWorker`.
+- **Downstream adoption verified**: Secondary independent consumer application (`apps/minimal-consumer`) proves platform domain neutrality (Gate G-12 passed).
 
-## Target platform capabilities
+## Target platform capabilities (Open Gates)
 
-These remain the product goals. They are not present as production behavior yet. See [implementation status](docs/verification/status.md).
-
-- **Durable local-first SQLite** with native startup migrations.
-- **P2P synchronization** over iroh, with a durable operation log and multi-device convergence.
-- **Seven-layer pre-sync authorization** enforced on real transport, not only in-process simulations.
-- **OS-backed private-key storage** with Ed25519 device identity that never crosses into TypeScript.
-- **Signed Windows and Android release artifacts** with updater metadata and checksums.
+- **Native OS background adapters** (WP-016): Android WorkManager and Windows Task Scheduler / system tray integration.
+- **Signed release artifacts** (WP-018): Authenticode signing for Windows installers and release keystore signing for Android APKs.
 
 ---
 
@@ -31,40 +29,42 @@ These remain the product goals. They are not present as production behavior yet.
 ```text
 tauri-boilerplate/
 ├── apps/
-│   └── demo/                     # Showcase application (Locations & Warehouses)
+│   ├── demo/                     # Reference application (Widgets, Locations, Warehouses)
+│   └── minimal-consumer/         # Independent consumer app (Field Notes - Gate G-12)
 ├── packages/                     # Core platform packages (TypeScript)
 │   ├── core/                     # Errors, logging, correlation IDs, config
-│   ├── database/                 # Connection abstraction, sql.js test adapter, migrations
-│   ├── identity/                 # Device and session types (native identity is still a placeholder)
-│   ├── authorization/            # Scoped RBAC engine (can / require)
-│   ├── audit/                    # Append-only audit logging
-│   ├── sync/                     # SyncManager & sync state machine
-│   ├── sync-protocol/            # Sync operation formats, HLC timestamps, conflict policies
-│   ├── feature-system/           # Feature manifests & dependency resolution
-│   ├── ui/                       # shadcn/ui components, AppShell, DataTable
-│   ├── import-export/            # SheetJS CSV/XLSX import and export engines
-│   ├── hardware/                 # Keyboard-wedge scanner (camera/plugin path is future work)
-│   └── platform/                 # Bootstrap and package assembly
-├── crates/                       # Rust library crates
-│   ├── native-core/              # Tauri command helpers and error serialization
-│   ├── identity-core/            # Placeholder device identifiers (secure storage is future work)
-│   ├── sync-core/                # Transport types; iroh node is not implemented
-│   └── crypto-core/              # HLC helpers; production signing is future work
+│   ├── database/                 # NativeDatabaseConnection, Drizzle schema, BaseRepository
+│   ├── identity/                 # User session service and device identity types
+│   ├── authorization/            # Scoped RBAC engine (can / requireTrusted)
+│   ├── audit/                    # Append-only audit logging (core_audit_events)
+│   ├── sync/                     # OutboxService, InboxService, ConflictEngine, IrohSyncTransport
+│   ├── sync-protocol/            # CanonicalSyncEnvelope, HLC timestamps, HandshakeProtocol
+│   ├── tasks/                    # TaskQueueService, TaskWorker, OutboxSyncWorker, BackoffPolicy
+│   ├── feature-system/           # Feature manifests & topological dependency resolution
+│   ├── ui/                       # shadcn/ui components, AppShell, DataTable, theme tokens
+│   ├── import-export/            # SheetJS CSV/XLSX import & export engines
+│   ├── hardware/                 # Keyboard-wedge scanner abstraction
+│   └── platform/                 # Bootstrap, migration runner, and platform assembly
+├── crates/                       # Native Rust crates
+│   ├── native-core/              # DurableDatabase, rusqlite WAL, SQL safety guard, Tauri IPC
+│   ├── identity-core/            # Genuine Ed25519 DeviceKeyProvider, protected keyfile custody
+│   ├── sync-core/                # IrohSyncEndpoint (iroh 1.2.0 QUIC over UDP, ALPN handler)
+│   └── crypto-core/              # Cryptographic verification and canonical signing helpers
 ├── features/                     # Reusable platform features
 │   ├── identity-admin/           # User, device, role, and sync-group admin UI
 │   ├── organisations/            # Organization management & membership lifecycle
-│   └── example-feature/          # Reference feature implementation (template)
-├── docs/                         # Comprehensive documentation suite & ADRs
-│   ├── architecture/             # Target architecture plus current-status notes
-│   ├── specifications/           # S-01–S-12 implementation contracts
-│   ├── verification/             # Evidence-backed implementation status
-│   ├── research/                 # Open technology spikes
-│   ├── development/              # Developer guides, testing & agent invariants
-│   ├── security/                 # Threat model & capability governance
-│   ├── protocols/                # Handshake & sync wire format (target)
-│   └── decisions/                # Architecture Decision Records (ADRs)
+│   └── example-feature/          # Reference feature implementation (Widgets)
+├── docs/                         # Canonical refactored documentation suite
+│   ├── 01-overview/              # Project overview, tech stack, repository tour
+│   ├── 02-architecture/          # System architecture, principles, persistence, sync, security
+│   ├── 03-decisions/             # ADR index and 20 Architecture Decision Records
+│   ├── 04-guides/                # Getting started, developer guide, agent guide, feature guide
+│   ├── 05-reference/             # API contracts, sync protocol, capability matrix, error taxonomy
+│   ├── 06-status/                # Evidence-backed current state, roadmap, work packages, gates
+│   └── 07-in-development/        # Active development tracking, open gates, research register
 └── dist/                         # Generated installer and APK outputs
 ```
+
 
 ---
 
@@ -208,15 +208,17 @@ pnpm format:check
 
 ## Documentation
 
-Documentation is in [`docs/`](./docs/README.md). Architecture pages keep target patterns; [implementation status](./docs/verification/status.md) is the evidence-backed current view.
+Documentation is organized under [`docs/`](./docs/README.md):
 
-1. [Documentation hub](./docs/README.md)
-2. [Implementation status](./docs/verification/status.md)
-3. [Development roadmap](./docs/development/roadmap.md)
-4. [Architecture principles](./docs/architecture/02-architecture-principles.md)
-5. [Repository structure](./docs/development/01-repository-structure.md)
-6. [Agent and developer guidelines](./docs/development/06-agent-and-developer-guidelines.md)
-7. [Architecture Decision Records](./docs/decisions/ADR-001-repository-and-monorepo.md)
+1. **[Documentation Hub](./docs/README.md)** — Start here for overview and directory navigation.
+2. **[Overview](./docs/01-overview/README.md)** — Project overview, technology baseline, and repository tour.
+3. **[Architecture](./docs/02-architecture/README.md)** — Deep technical design across all subsystems (persistence, sync, security, tasks, etc.).
+4. **[Decisions (ADRs)](./docs/03-decisions/README.md)** — Architecture Decision Records index and 20 canonical decisions.
+5. **[Guides](./docs/04-guides/README.md)** — Getting started, developer workflows, AI agent guidelines, and downstream adoption.
+6. **[Reference](./docs/05-reference/README.md)** — API contracts, sync protocol, capability matrix, and dependency graphs.
+7. **[Status](./docs/06-status/README.md)** — Evidence-backed current state, roadmap, work packages (WP-001–WP-020), and acceptance gates.
+8. **[In-Development](./docs/07-in-development/README.md)** — Active development tracking, open gates (WP-016, WP-018), and research register.
+
 
 ---
 

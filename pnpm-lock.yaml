@@ -109,6 +109,49 @@ importers:
         specifier: ^6.2.0
         version: 6.4.3(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.13)
 
+  apps/minimal-consumer:
+    dependencies:
+      '@platform/audit':
+        specifier: workspace:*
+        version: link:../../packages/audit
+      '@platform/authorization':
+        specifier: workspace:*
+        version: link:../../packages/authorization
+      '@platform/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@platform/database':
+        specifier: workspace:*
+        version: link:../../packages/database
+      '@platform/feature-system':
+        specifier: workspace:*
+        version: link:../../packages/feature-system
+      '@platform/identity':
+        specifier: workspace:*
+        version: link:../../packages/identity
+      '@platform/platform':
+        specifier: workspace:*
+        version: link:../../packages/platform
+      '@platform/sync':
+        specifier: workspace:*
+        version: link:../../packages/sync
+      '@platform/sync-protocol':
+        specifier: workspace:*
+        version: link:../../packages/sync-protocol
+      '@platform/tasks':
+        specifier: workspace:*
+        version: link:../../packages/tasks
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.20.1
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.7(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.13)
+
   features/example-feature:
     dependencies:
       '@platform/authorization':

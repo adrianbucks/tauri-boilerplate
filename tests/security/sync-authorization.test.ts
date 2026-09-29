@@ -12,6 +12,8 @@ import {
   OutboxService,
   InboxService,
   TombstoneService,
+  IrohSyncTransport,
+  type TauriInvokeFn,
 } from "@platform/sync";
 import { SyncGroupService } from "@platform/authorization";
 import { DeviceIdentityService } from "@platform/identity";
@@ -388,5 +390,76 @@ describe("Security Regression Suite — Sync & Pairing Authorization", () => {
 
     const pending = await tombstoneService.propagatePending();
     expect(pending.some((t) => t.entityId === "wid_deleted_1")).toBe(true);
+  });
+
+  it("Invariant #4 & #5: IrohSyncTransport integrates with InboxService without leaking private keys", async () => {
+    const mockInvoke = async (cmd: string, _args?: Record<string, unknown>) => {
+      if (cmd === "sync_start_endpoint") {
+        return { endpoint_id: "node_sec_01", addr_json: "{}" };
+      }
+      if (cmd === "sync_connect_peer") {
+        return "node_peer_02";
+      }
+      if (cmd === "sync_send_envelope") {
+        return undefined;
+      }
+      return undefined;
+    };
+
+    let pushIncoming: ((event: { payload: unknown }) => void) | undefined;
+    const mockListen = async (_event: string, handler: (event: { payload: unknown }) => void) => {
+      pushIncoming = handler;
+      return () => {};
+    };
+
+    const transport = new IrohSyncTransport({
+      invoke: mockInvoke as unknown as TauriInvokeFn,
+      listen: mockListen as any,
+    });
+
+    await transport.connect("peer_remote", "node_peer_02");
+
+    // Invariant #5: Ensure transport never stores or exposes private keys
+    const transportKeys = Object.keys(transport);
+    expect(transportKeys.some((k) => k.toLowerCase().includes("private"))).toBe(false);
+
+    // Invariant #4: When an envelope arrives across iroh transport, it must pass verification before apply
+    let receivedByHandler = false;
+    transport.onReceive(async (_peerId, envelope) => {
+      receivedByHandler = true;
+      // Pass to inbox service with strict verification (which rejects forged signatures)
+      const record = await inboxService.receive(envelope, async () => false);
+      expect(record.verificationStatus).toBe("REJECTED");
+    });
+
+    const forgedEnvelope: SyncEnvelope = {
+      envelopeId: "env_tampered_01",
+      signedAt: new Date().toISOString(),
+      signerPublicKey: "ed25519_pk_" + "f".repeat(64),
+      signature: "0".repeat(128),
+      operation: {
+        operationId: "op_tampered_01",
+        applicationId: "tauri-boilerplate-demo",
+        organisationId: "org_acme",
+        syncGroupId: "grp_coventry",
+        featureId: "inventory",
+        entityType: "widgets",
+        entityId: "wid_fake_01",
+        operation: "create",
+        payload: { name: "Forged Widget" },
+        authorId: "usr_attacker",
+        deviceId: "dev_attacker",
+        logicalTimestamp: "0000018f1000_0000_dev_attacker",
+        schemaVersion: 1,
+        protocolVersion: 1,
+      },
+    };
+
+    await transport.handleIncomingMessage({
+      sender_endpoint_id: "node_peer_02",
+      payload_json: JSON.stringify(forgedEnvelope),
+    });
+
+    expect(receivedByHandler).toBe(true);
   });
 });

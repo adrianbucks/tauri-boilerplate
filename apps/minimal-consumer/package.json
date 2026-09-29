@@ -1,0 +1,28 @@
+{
+  "name": "@apps/minimal-consumer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@platform/core": "workspace:*",
+    "@platform/database": "workspace:*",
+    "@platform/identity": "workspace:*",
+    "@platform/authorization": "workspace:*",
+    "@platform/audit": "workspace:*",
+    "@platform/sync": "workspace:*",
+    "@platform/sync-protocol": "workspace:*",
+    "@platform/tasks": "workspace:*",
+    "@platform/feature-system": "workspace:*",
+    "@platform/platform": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}

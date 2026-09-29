@@ -1,4 +1,4 @@
-Detailed instructions and rules are maintained in [`docs/development/06-agent-and-developer-guidelines.md`](./docs/development/06-agent-and-developer-guidelines.md).
+Detailed operational instructions and rules are maintained in [`docs/04-guides/agent-guide.md`](./docs/04-guides/agent-guide.md) and [`docs/04-guides/developer-guide.md`](./docs/04-guides/developer-guide.md).
 
 ---
 

@@ -5,7 +5,9 @@ members = [
     "crates/identity-core",
     "crates/sync-core",
     "crates/crypto-core",
-    "apps/demo/src-tauri"
+    "crates/background-core",
+    "apps/demo/src-tauri",
+    "apps/minimal-consumer/src-tauri"
 ]
 
 [workspace.package]

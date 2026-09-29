@@ -68,17 +68,16 @@ The repository currently declares:
 - Tauri 2 (`@tauri-apps/cli` 2.11.4 in the demo package);
 - React 19 + TypeScript;
 - Vite 6;
-- pnpm 10.26.0 + Turborepo 2.4.4;
+- pnpm 10.5.2 + Turborepo 2.4.4;
 - Drizzle ORM 0.39.3 for schema/ORM abstractions;
-- `sql.js` as the current in-memory test/demo database adapter;
-- Rust workspace using edition 2021 and the repository-pinned toolchain;
-- Vitest 3 for TypeScript tests.
-
-The codebase **does not currently contain an iroh dependency or real iroh transport implementation**. `sync-core` contains transport-shaped abstractions only.
+- Native file-backed SQLite (`rusqlite`) in Rust; `sql.js` for fast in-memory unit tests;
+- Native `iroh 1.2.0` QUIC transport in `crates/sync-core` with ALPN `tauri-boilerplate-sync/1.0`;
+- Rust workspace using edition 2021 and pinned toolchain `1.98.1`;
+- Vitest 3 for TypeScript unit and integration tests.
 
 ## 5. Production objective
 
-The target platform must eventually provide:
+The target platform provides:
 
 ```text
 React application
@@ -86,16 +85,17 @@ React application
 Platform services
     ↓ trusted native gateway
 Tauri/Rust boundary
-    ├── durable SQLite
-    ├── protected device keys
-    ├── authenticated sessions
-    └── real iroh transport
+    ├── durable SQLite (WAL mode + foreign keys)
+    ├── protected device keys (Ed25519)
+    ├── authenticated sessions (Argon2id)
+    └── real iroh QUIC transport
             ↓
-       authorised peer
+       authorised peer (7-layer admission)
 ```
 
-The platform must remain functional locally if the peer/network is unavailable.
+The platform remains fully functional locally if the peer/network is unavailable.
 
 ## 6. Definition of production readiness
 
-Production readiness is not a single build-success flag. It requires all P0/P1 security and durability gaps in `verification/CURRENT_STATE.md` to be closed and the acceptance gates in `testing/ACCEPTANCE_GATES.md` to pass on the supported Windows and Android matrix.
+Production readiness is not a single build-success flag. It requires all P0/P1 security and durability work packages in [`docs/06-status/current-state.md`](./06-status/current-state.md) to be closed and the acceptance gates in [`docs/06-status/acceptance-gates.md`](./06-status/acceptance-gates.md) to pass on the supported Windows and Android matrix.
+

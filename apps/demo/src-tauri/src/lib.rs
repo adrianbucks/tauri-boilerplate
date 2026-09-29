@@ -1,3 +1,6 @@
+use background_core::{
+    BackgroundLifecycleState, BackgroundSchedulerStatus,
+};
 use identity_core::{DeviceIdentity, DeviceKeyProvider};
 use native_core::{
     core_migrations, create_organisation_for_session, create_widget_for_session,
@@ -7,8 +10,9 @@ use native_core::{
     NativeSessionStore, NativeSessionView, NativeWidgetCreateRequest, NativeWidgetListRequest,
     NativeWidgetRecord, PlatformError,
 };
-use tauri::Manager;
-use serde::Deserialize;
+use sync_core::{EndpointAddr, IrohSyncEndpoint};
+use tauri::{Emitter, Manager};
+use serde::{Deserialize, Serialize};
 
 const APPLICATION_ID: &str = "com.tauri.boilerplate.demo";
 
@@ -227,6 +231,179 @@ fn verify_message(
     })
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncEndpointInfo {
+    pub endpoint_id: String,
+    pub addr_json: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SyncConnectRequest {
+    pub addr_json: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SyncSendRequest {
+    pub endpoint_id: String,
+    pub payload_json: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SyncDisconnectRequest {
+    pub endpoint_id: String,
+}
+
+#[derive(Default)]
+pub struct SyncState {
+    pub endpoint: tokio::sync::RwLock<Option<IrohSyncEndpoint>>,
+}
+
+#[tauri::command]
+async fn sync_start_endpoint(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, SyncState>,
+) -> Result<SyncEndpointInfo, PlatformError> {
+    let mut lock = state.endpoint.write().await;
+    if let Some(ep) = lock.as_ref() {
+        let addr = ep.endpoint_addr();
+        let addr_json = serde_json::to_string(&addr).map_err(|e| {
+            PlatformError::new("serialization_error", e.to_string(), "Failed to serialize addr", "sync_err")
+        })?;
+        return Ok(SyncEndpointInfo {
+            endpoint_id: ep.endpoint_id(),
+            addr_json,
+        });
+    }
+
+    let endpoint = IrohSyncEndpoint::bind(None).await.map_err(|e| {
+        PlatformError::new("endpoint_bind_failed", e.to_string(), "Failed to bind iroh endpoint", "sync_err")
+    })?;
+
+    let endpoint_id = endpoint.endpoint_id();
+    let addr = endpoint.endpoint_addr();
+    let addr_json = serde_json::to_string(&addr).map_err(|e| {
+        PlatformError::new("serialization_error", e.to_string(), "Failed to serialize addr", "sync_err")
+    })?;
+
+    let receiver_ep = endpoint.clone();
+    let app_clone = app.clone();
+    tokio::spawn(async move {
+        while let Some(msg) = receiver_ep.next_inbound_envelope().await {
+            let _ = app_clone.emit("sync://envelope-received", &msg);
+        }
+    });
+
+    *lock = Some(endpoint);
+
+    Ok(SyncEndpointInfo {
+        endpoint_id,
+        addr_json,
+    })
+}
+
+#[tauri::command]
+async fn sync_connect_peer(
+    request: SyncConnectRequest,
+    state: tauri::State<'_, SyncState>,
+) -> Result<String, PlatformError> {
+    let lock = state.endpoint.read().await;
+    let endpoint = lock.as_ref().ok_or_else(|| {
+        PlatformError::new("endpoint_not_started", "Sync endpoint not started", "Start endpoint first", "sync_err")
+    })?;
+
+    let addr_str = if request.addr_json.trim_start().starts_with('{') {
+        request.addr_json
+    } else {
+        serde_json::json!({ "id": request.addr_json.trim() }).to_string()
+    };
+    let addr: EndpointAddr = serde_json::from_str(&addr_str).map_err(|e| {
+        PlatformError::new("invalid_addr", format!("Failed to parse EndpointAddr: {e}"), "Invalid address", "sync_err")
+    })?;
+
+    endpoint.connect_endpoint_addr(addr).await.map_err(|e| {
+        PlatformError::new("connect_failed", e.to_string(), "Failed to connect to peer", "sync_err")
+    })
+}
+
+#[tauri::command]
+async fn sync_disconnect_peer(
+    request: SyncDisconnectRequest,
+    state: tauri::State<'_, SyncState>,
+) -> Result<(), PlatformError> {
+    let lock = state.endpoint.read().await;
+    let endpoint = lock.as_ref().ok_or_else(|| {
+        PlatformError::new("endpoint_not_started", "Sync endpoint not started", "Start endpoint first", "sync_err")
+    })?;
+
+    endpoint.disconnect(&request.endpoint_id).await.map_err(|e| {
+        PlatformError::new("disconnect_failed", e.to_string(), "Failed to disconnect peer", "sync_err")
+    })
+}
+
+#[tauri::command]
+async fn sync_send_envelope(
+    request: SyncSendRequest,
+    state: tauri::State<'_, SyncState>,
+) -> Result<(), PlatformError> {
+    let lock = state.endpoint.read().await;
+    let endpoint = lock.as_ref().ok_or_else(|| {
+        PlatformError::new("endpoint_not_started", "Sync endpoint not started", "Start endpoint first", "sync_err")
+    })?;
+
+    endpoint.send_envelope(&request.endpoint_id, &request.payload_json).await.map_err(|e| {
+        PlatformError::new("send_failed", e.to_string(), "Failed to send envelope", "sync_err")
+    })
+}
+
+#[tauri::command]
+async fn sync_is_connected(
+    request: SyncDisconnectRequest,
+    state: tauri::State<'_, SyncState>,
+) -> Result<bool, PlatformError> {
+    let lock = state.endpoint.read().await;
+    if let Some(endpoint) = lock.as_ref() {
+        Ok(endpoint.is_connected(&request.endpoint_id).await)
+    } else {
+        Ok(false)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Background lifecycle commands (WP-016, Gate G-09)
+// ---------------------------------------------------------------------------
+
+/// Starts the background outbox scheduler if not already running.
+/// Idempotent: safe to call on every page load / DOMContentLoaded.
+/// Justification: required so the outbox can be drained when the window is
+/// minimised — the scheduler loop is bound to the process, not the webview.
+#[tauri::command]
+async fn background_start(
+    app: tauri::AppHandle,
+    lifecycle: tauri::State<'_, BackgroundLifecycleState>,
+) -> Result<(), PlatformError> {
+    let app_clone = app.clone();
+    let emit_fn: background_core::EmitFn = Box::new(move |payload| {
+        let _ = app_clone.emit("background://sync-tick", &payload);
+    });
+    lifecycle.start(emit_fn).map_err(PlatformError::from)
+}
+
+/// Stops the background outbox scheduler and awaits graceful teardown.
+#[tauri::command]
+async fn background_stop(
+    lifecycle: tauri::State<'_, BackgroundLifecycleState>,
+) -> Result<(), PlatformError> {
+    lifecycle.stop().await.map_err(PlatformError::from)
+}
+
+/// Returns whether the scheduler is currently running.
+#[tauri::command]
+fn background_status(
+    lifecycle: tauri::State<'_, BackgroundLifecycleState>,
+) -> Result<BackgroundSchedulerStatus, PlatformError> {
+    Ok(lifecycle.status())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -251,10 +428,15 @@ pub fn run() {
                 .load_or_create_device_key_provider(APPLICATION_ID, std::env::consts::OS)
                 .map_err(|error| std::io::Error::other(error.message))?;
             let device_identity = key_provider.identity().clone();
+            // Register background lifecycle state (WP-016)
+            // The scheduler uses the database path to re-open connections on blocking threads.
+            let bg_db_path = database.path().to_path_buf();
             app.manage(database);
             app.manage(device_identity);
             app.manage(key_provider);
             app.manage(NativeSessionStore::new());
+            app.manage(SyncState::default());
+            app.manage(BackgroundLifecycleState::new(bg_db_path));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -272,7 +454,15 @@ pub fn run() {
             db_execute,
             db_transaction,
             sign_message,
-            verify_message
+            verify_message,
+            sync_start_endpoint,
+            sync_connect_peer,
+            sync_disconnect_peer,
+            sync_send_envelope,
+            sync_is_connected,
+            background_start,
+            background_stop,
+            background_status
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

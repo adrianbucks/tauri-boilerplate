@@ -1,0 +1,24 @@
+[package]
+name = "minimal-consumer-native"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[lib]
+name = "minimal_consumer_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[dependencies]
+native-core = { path = "../../../crates/native-core" }
+identity-core = { path = "../../../crates/identity-core" }
+crypto-core = { path = "../../../crates/crypto-core" }
+sync-core = { path = "../../../crates/sync-core" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+hex = "0.4"
+tauri = { version = "2.0", default-features = false, features = ["wry"] }
+tokio = { version = "1.0", features = ["sync", "rt"] }
+
+[build-dependencies]
+tauri-build = { version = "2.0", features = [] }
