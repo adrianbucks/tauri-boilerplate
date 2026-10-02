@@ -28,6 +28,7 @@ tauri-boilerplate/
 ## 2. Common Development Commands
 
 ### Building
+
 ```bash
 # Build all TypeScript packages and applications
 pnpm turbo build
@@ -37,6 +38,7 @@ cargo build --workspace --release
 ```
 
 ### Type Checking & Linting
+
 ```bash
 # Run TypeScript compilation checks across all workspaces
 pnpm turbo typecheck
@@ -55,6 +57,7 @@ cargo fmt --all -- --check
 ```
 
 ### Testing
+
 ```bash
 # Run all fast unit tests
 pnpm turbo test
@@ -62,7 +65,7 @@ pnpm turbo test
 # Run cross-package integration tests
 pnpm test:integration
 
-# Run security regression tests (RBAC, pairing, capabilities)
+# Run security regression tests (RBAC, pairing, capabilities, permission governance)
 pnpm test:security
 
 # Run synchronization and protocol tests
@@ -70,6 +73,9 @@ pnpm test:sync
 
 # Run native Rust unit tests
 cargo test --workspace
+
+# Validate all feature manifests and source-level permission coverage (WP-021)
+pnpm feature-validate
 ```
 
 ---
@@ -77,17 +83,21 @@ cargo test --workspace
 ## 3. Engineering Conventions & Invariants
 
 ### 1. Mandatory Correlation IDs
+
 Every state mutation, audit event, import job, and background task must receive or generate a `correlationId` (UUID v4) and propagate it down the call graph.
 
 ### 2. Tenant Isolation by Default
+
 All domain queries must explicitly require `organisationId`. Never write repository queries that fetch records across tenant boundaries.
 
 ### 3. Error Handling
+
 - Use typed error classes extending `PlatformError` from `@platform/core`.
 - Include distinct error codes (`AUTH_DENIED`, `RECORD_NOT_FOUND`, `VERSION_CONFLICT`).
 - Never swallow errors silently without logging or re-throwing.
 
 ### 4. Transactions
+
 Atomic mutations across multiple tables (e.g. updating an entity + writing an audit event + queuing an outbox envelope) must execute inside a `db.transaction()` block:
 
 ```typescript
@@ -107,6 +117,7 @@ Before opening a pull request, ensure the complete verification pipeline succeed
 - [ ] `pnpm format:check` passes without errors.
 - [ ] `pnpm turbo typecheck` passes with zero type diagnostics.
 - [ ] `pnpm test` and `pnpm test:security` pass completely.
+- [ ] `pnpm feature-validate` passes — all feature permission references declared in manifests (WP-021).
 - [ ] `cargo fmt --all -- --check` and `cargo clippy` pass without warnings.
 - [ ] `cargo test --workspace` passes all Rust unit tests.
 - [ ] Any security or permission changes have accompanying tests in `tests/security/`.

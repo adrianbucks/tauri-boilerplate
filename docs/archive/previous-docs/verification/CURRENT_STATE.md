@@ -11,37 +11,37 @@ The repository contains a robust local-first platform foundation: file-backed du
 
 ## Status matrix
 
-| Area                                  | Current                                                                                                                             | Target                                                                       | Priority             |
-| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | -------------------- |
-| Monorepo/package boundaries           | Implemented                                                                                                                         | Preserve                                                                     | P2                   |
-| TypeScript strictness                 | Implemented                                                                                                                         | Preserve                                                                     | P2                   |
-| Rust workspace                        | Implemented                                                                                                                         | Harden                                                                       | P2                   |
-| Feature manifests/dependency ordering | Implemented                                                                                                                         | Feature-owned lifecycle                                                      | P2                   |
-| Repository abstraction                | Implemented, tenant-aware boundaries enforced                                                                                       | Preserve typed/tenant-aware boundary                                         | P1 (✅ RESOLVED)     |
-| SQLite                                | Native file-backed `rusqlite` via Tauri commands, durable storage at `{app_data_dir}/platform.sqlite3` (WP-001)                     | Durable native SQLite used by the platform                                   | **P0** (✅ RESOLVED) |
-| WAL/FK health reporting               | Explicit `PRAGMA foreign_keys = ON` and `PRAGMA journal_mode = WAL`, verified by 5 regression tests (WP-001)                        | Actually configure and verify                                                | **P0** (✅ RESOLVED) |
-| Core migrations                       | Platform-owned migrations applied in order before feature migrations; verified checksums (WP-002)                                  | Platform-owned and feature-owned migration bundles on durable native storage | **P1** (✅ RESOLVED) |
-| Device identity                       | Native Ed25519 `DeviceKeyProvider` with protected seed persistence and native signing (WP-005)                                      | Native protected device key + persistent binding                             | **P0** (✅ RESOLVED) |
-| User authentication                   | Native Argon2id verification + device binding + lockout cooldown, wired to TS session (WP-005)                                      | Offline credential/platform authentication                                   | **P0** (✅ RESOLVED) |
-| Session trust                         | Native-issued `NativeSessionView` mapped to `TrustedOperationContext` with verified device/roles                                    | Native-issued trusted principal                                              | **P0** (✅ RESOLVED) |
-| Authorization                         | Mandatory central authorization at all privileged service boundaries (WP-007)                                                       | Enforce at every privileged service boundary                                 | **P1** (✅ RESOLVED) |
-| Tenant isolation                      | Cross-tenant rejection & strict organisation isolation across all services (WP-007)                                                 | Mandatory organisation scope                                                 | **P1** (✅ RESOLVED) |
-| Audit                                 | Append/list service + transactional commit with domain state and outbox operations                                                  | Transactional append-only audit with redaction/integrity policy              | P1 (✅ RESOLVED)     |
-| Sync protocol types                   | Canonical signed protocol with deterministic key-sorted JSON and Ed25519 verification (WP-010)                                      | Canonical signed protocol                                                    | **P0** (✅ RESOLVED) |
-| Handshake                             | Authenticated handshake with nonce freshness, timestamp skew window, and signature check (WP-011)                                  | Cryptographically authenticated/replay-resistant                             | **P0** (✅ RESOLVED) |
+| Area                                  | Current                                                                                                                                                            | Target                                                                       | Priority             |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------- | -------------------- |
+| Monorepo/package boundaries           | Implemented                                                                                                                                                        | Preserve                                                                     | P2                   |
+| TypeScript strictness                 | Implemented                                                                                                                                                        | Preserve                                                                     | P2                   |
+| Rust workspace                        | Implemented                                                                                                                                                        | Harden                                                                       | P2                   |
+| Feature manifests/dependency ordering | Implemented                                                                                                                                                        | Feature-owned lifecycle                                                      | P2                   |
+| Repository abstraction                | Implemented, tenant-aware boundaries enforced                                                                                                                      | Preserve typed/tenant-aware boundary                                         | P1 (✅ RESOLVED)     |
+| SQLite                                | Native file-backed `rusqlite` via Tauri commands, durable storage at `{app_data_dir}/platform.sqlite3` (WP-001)                                                    | Durable native SQLite used by the platform                                   | **P0** (✅ RESOLVED) |
+| WAL/FK health reporting               | Explicit `PRAGMA foreign_keys = ON` and `PRAGMA journal_mode = WAL`, verified by 5 regression tests (WP-001)                                                       | Actually configure and verify                                                | **P0** (✅ RESOLVED) |
+| Core migrations                       | Platform-owned migrations applied in order before feature migrations; verified checksums (WP-002)                                                                  | Platform-owned and feature-owned migration bundles on durable native storage | **P1** (✅ RESOLVED) |
+| Device identity                       | Native Ed25519 `DeviceKeyProvider` with protected seed persistence and native signing (WP-005)                                                                     | Native protected device key + persistent binding                             | **P0** (✅ RESOLVED) |
+| User authentication                   | Native Argon2id verification + device binding + lockout cooldown, wired to TS session (WP-005)                                                                     | Offline credential/platform authentication                                   | **P0** (✅ RESOLVED) |
+| Session trust                         | Native-issued `NativeSessionView` mapped to `TrustedOperationContext` with verified device/roles                                                                   | Native-issued trusted principal                                              | **P0** (✅ RESOLVED) |
+| Authorization                         | Mandatory central authorization at all privileged service boundaries (WP-007)                                                                                      | Enforce at every privileged service boundary                                 | **P1** (✅ RESOLVED) |
+| Tenant isolation                      | Cross-tenant rejection & strict organisation isolation across all services (WP-007)                                                                                | Mandatory organisation scope                                                 | **P1** (✅ RESOLVED) |
+| Audit                                 | Append/list service + transactional commit with domain state and outbox operations                                                                                 | Transactional append-only audit with redaction/integrity policy              | P1 (✅ RESOLVED)     |
+| Sync protocol types                   | Canonical signed protocol with deterministic key-sorted JSON and Ed25519 verification (WP-010)                                                                     | Canonical signed protocol                                                    | **P0** (✅ RESOLVED) |
+| Handshake                             | Authenticated handshake with nonce freshness, timestamp skew window, and signature check (WP-011)                                                                  | Cryptographically authenticated/replay-resistant                             | **P0** (✅ RESOLVED) |
 | Transport                             | Native `iroh` 1.2.0 QUIC endpoint in `crates/sync-core`, Tauri IPC commands in `apps/demo/src-tauri`, and `IrohSyncTransport` in `@platform/sync` (WP-014 / R-002) | Real iroh endpoint/protocol                                                  | **P0** (✅ RESOLVED) |
-| Outbox/inbox                          | Durable SQLite queues (`core_sync_outbox`, `core_sync_inbox`) with transactional enqueue and idempotent receive (WP-012)          | Durable idempotent replication queues                                        | **P0** (✅ RESOLVED) |
-| Conflict registry                     | Multi-strategy engine (LWW, additive, append-only, immutable) with safety guards for absolute quantities (WP-013)                  | Domain-safe deterministic semantics                                          | P1 (✅ RESOLVED)     |
-| Tombstones                            | Soft-delete tombstone engine with `delete_operation_id` to prevent resurrection (WP-013)                                           | Replication-safe deletion semantics                                          | P1 (✅ RESOLVED)     |
-| Pairing                               | Authenticated peer identity check and actual platform metadata binding (WP-011)                                                    | Cryptographic pairing + approval + revocation                                | **P0** (✅ RESOLVED) |
-| Background sync                       | Durable background task subsystem in `@platform/tasks` with `OutboxSyncWorker` (WP-015); OS lifecycle adapters pending (WP-016)     | Android/Windows lifecycle-aware workers                                      | P1                   |
-| Tauri capabilities                    | Least-privilege capability matrix, scoped events, native SQL safety filter, Invariant #8 verified (WP-020)                         | Narrow app-specific permissions                                              | P1 (✅ RESOLVED)     |
-| CSP                                   | Strict CSP (`default-src 'self'`, no inline scripts or WASM eval) (CS-012)                                                          | Minimise allowances with evidence                                            | P1 (✅ RESOLVED)     |
-| Import/export                         | Hostile input limits (size, sheet, row, cell budgets) and formula injection neutralization (CS-013)                                | Resource limits, validation and safe export                                  | P1 (✅ RESOLVED)     |
-| Scanner                               | Keyboard-wedge abstraction                                                                                                          | Lifecycle/focus/timing/length hardening                                      | P2                   |
-| Release signing                       | Not configured                                                                                                                      | Signed/verifiable production artifacts                                       | **P0**               |
-| CI runtime                            | Node 24 LTS configured and active (CS-014)                                                                                           | Supported LTS                                                                | P1 (✅ RESOLVED)     |
-| Downstream adoption                   | Multi-consumer architecture verified via `apps/minimal-consumer` with isolated Field Notes domain, Gate G-12 passed (WP-019)         | Second minimal application proves platform domain neutrality                 | P1 (✅ RESOLVED)     |
+| Outbox/inbox                          | Durable SQLite queues (`core_sync_outbox`, `core_sync_inbox`) with transactional enqueue and idempotent receive (WP-012)                                           | Durable idempotent replication queues                                        | **P0** (✅ RESOLVED) |
+| Conflict registry                     | Multi-strategy engine (LWW, additive, append-only, immutable) with safety guards for absolute quantities (WP-013)                                                  | Domain-safe deterministic semantics                                          | P1 (✅ RESOLVED)     |
+| Tombstones                            | Soft-delete tombstone engine with `delete_operation_id` to prevent resurrection (WP-013)                                                                           | Replication-safe deletion semantics                                          | P1 (✅ RESOLVED)     |
+| Pairing                               | Authenticated peer identity check and actual platform metadata binding (WP-011)                                                                                    | Cryptographic pairing + approval + revocation                                | **P0** (✅ RESOLVED) |
+| Background sync                       | Durable background task subsystem in `@platform/tasks` with `OutboxSyncWorker` (WP-015); OS lifecycle adapters pending (WP-016)                                    | Android/Windows lifecycle-aware workers                                      | P1                   |
+| Tauri capabilities                    | Least-privilege capability matrix, scoped events, native SQL safety filter, Invariant #8 verified (WP-020)                                                         | Narrow app-specific permissions                                              | P1 (✅ RESOLVED)     |
+| CSP                                   | Strict CSP (`default-src 'self'`, no inline scripts or WASM eval) (CS-012)                                                                                         | Minimise allowances with evidence                                            | P1 (✅ RESOLVED)     |
+| Import/export                         | Hostile input limits (size, sheet, row, cell budgets) and formula injection neutralization (CS-013)                                                                | Resource limits, validation and safe export                                  | P1 (✅ RESOLVED)     |
+| Scanner                               | Keyboard-wedge abstraction                                                                                                                                         | Lifecycle/focus/timing/length hardening                                      | P2                   |
+| Release signing                       | Not configured                                                                                                                                                     | Signed/verifiable production artifacts                                       | **P0**               |
+| CI runtime                            | Node 24 LTS configured and active (CS-014)                                                                                                                         | Supported LTS                                                                | P1 (✅ RESOLVED)     |
+| Downstream adoption                   | Multi-consumer architecture verified via `apps/minimal-consumer` with isolated Field Notes domain, Gate G-12 passed (WP-019)                                       | Second minimal application proves platform domain neutrality                 | P1 (✅ RESOLVED)     |
 
 ## Critical findings
 
@@ -142,6 +142,7 @@ test result: 4 test files passed; 19 passed
 
 **Resolution Summary (2026-09-06):**
 The sync data and protocol layer has been upgraded from pure simulation to a production-grade durable pipeline:
+
 - `packages/sync-protocol`: Introduced `SyncEnvelope` deterministic canonical serialization (sorted-key UTF-8 JSON) signed via Ed25519 (`SyncEnvelopeBuilder`) with public key and signature format enforcement (Invariant #5).
 - `packages/database` & `packages/platform`: Platform migration 3 (`core-replication.sql`) establishes durable `core_sync_outbox`, `core_sync_inbox`, and `core_sync_tombstones` schemas with indexes and constraints.
 - `packages/sync` (`OutboxService`): Atomic transactional queueing of outbound signed operations, ordered batch retrieval for transport polling, and retry lifecycle.
@@ -154,6 +155,7 @@ The sync data and protocol layer has been upgraded from pure simulation to a pro
 
 **Resolution Summary (2026-09-06):**
 `HandshakeValidator` and `HandshakeProtocol` now provide comprehensive mutual authentication and replay resistance:
+
 - `HandshakeMessage` requires 32-hex random `nonce`, canonical `signerPublicKey` (`ed25519_pk_<hex>`), platform metadata, and 128-hex Ed25519 `signature`.
 - Deterministic canonicalization excludes the `signature` field for signature verification over sorted-key UTF-8 bytes.
 - Validates timestamp skew (default 30,000 ms threshold) rejecting past and future expired messages.
@@ -164,6 +166,7 @@ The sync data and protocol layer has been upgraded from pure simulation to a pro
 
 **Resolution Summary (2026-09-06):**
 `PairingService.requestPairing()` no longer fabricates public keys (`ed25519_pk_${deviceId}`) or hardcodes `"windows"`:
+
 - Directly utilizes the sender's verified `signerPublicKey` and actual `platform` metadata from the authenticated `HandshakeMessage`.
 - Invokes `HandshakeValidator.requireValid()` passing the cryptographic `verifyFn` callback, ensuring unverified or forged peer handshakes are rejected before pairing requests can be stored.
 
@@ -220,6 +223,7 @@ demo bootstrap.
 ### CS-010 — Additive conflict policy is safe and guarded ✅ RESOLVED (WP-013)
 
 **Resolution Summary (2026-09-06):**
+
 - `packages/sync-protocol` (`ConflictRegistry`): Implemented `registerAbsoluteLwwField` and `isAbsoluteLwwField`. Attempting to register an `"additive"` policy on a field declared as an absolute quantity throws an explicit error at registry setup time.
 - `packages/sync` (`ConflictEngine`): Multi-strategy conflict engine supporting LWW (HLC ordering), append-only, immutable, manual, and additive (delta-only). When `"additive"` strategy is executed against an absolute value field, `ConflictEngine` throws a descriptive `ConflictError` to prevent silent corruption of absolute quantities.
 
@@ -268,6 +272,7 @@ Representative package tests and builds have passed on the local runtime.
 
 **Resolution Summary (2026-09-06):**
 The platform now contains a durable background task engine implemented in `@platform/tasks`:
+
 - `TaskQueueService`: Full lifecycle task management backed by SQLite durable state (`core_tasks` schema), supporting unique constraints, concurrency limits, prioritization, status transitions (`queued` -> `running` -> `completed` / `failed`), and transactional enqueueing.
 - `TaskWorker`: Polling worker supporting graceful shutdown, timeouts, cancellation tokens, and pluggable task execution handlers.
 - `BackoffPolicy`: Configurable exponential backoff with jitter and max attempt bounds to prevent thundering herd problems on transient network errors.
@@ -281,11 +286,13 @@ The platform now contains a durable background task engine implemented in `@plat
 The peer-to-peer replication substrate was researched under Gate R-002 (`docs/research/R-002-replication-substrate.md`) and accepted under `ADR-012`. Option 1 (Signed operation logs over direct `iroh::Endpoint` QUIC streams) was selected to enforce Invariant #4 (7-layer sync admission) and transactional SQLite outbox/inbox durability.
 
 **Implementation:**
+
 - **Native QUIC Endpoint:** `crates/sync-core/src/endpoint.rs` implements `IrohSyncEndpoint` on `iroh 1.2.0`, ALPN `tauri-boilerplate-sync/1.0`, framed bidirectional streams (4-byte length prefix + 1-byte ACK), and background inbound message listener.
 - **Tauri Native IPC:** `apps/demo/src-tauri/src/lib.rs` provides `sync_start_endpoint`, `sync_connect_peer`, `sync_disconnect_peer`, `sync_send_envelope`, and `sync_is_connected` commands, emitting `sync://envelope-received` events to the webview.
 - **TypeScript Transport Adapter:** `packages/sync/src/transport/IrohSyncTransport.ts` implements the canonical `SyncTransport` interface, bridging the native IPC layer to the TypeScript outbox worker while strictly adhering to Invariant #5 (no private keys in TypeScript or IPC).
 
 **Test Evidence:**
+
 - `crates/sync-core`: `test_iroh_loopback_two_node_envelope_exchange` validates full loopback QUIC exchange between two distinct in-process iroh nodes.
 - `packages/sync`: `IrohSyncTransport.test.ts` (100% pass) verifying endpoint init, connection mapping, envelope framing, and event listener lifecycle.
 - `tests/security`: `sync-authorization.test.ts` regression tests confirming that unverified or tampered incoming envelopes are rejected by `InboxService` (Invariant #4) and that private keys are never exposed (Invariant #5).
@@ -296,11 +303,13 @@ The peer-to-peer replication substrate was researched under Gate R-002 (`docs/re
 The multi-consumer boundary was verified by scaffolding a second, completely independent application (`apps/minimal-consumer`). The application implements an offline-first Field Notes domain (`notes` schema, repository, feature manifest, and service) consuming purely `@platform/*` libraries without importing `@apps/demo` or `@features/*`, and without requiring any platform code modifications (Gate G-12 & Invariant #10).
 
 **Implementation:**
+
 - **Secondary Consumer Application:** `apps/minimal-consumer/package.json` configures workspace dependencies on `@platform/*`.
 - **Field Notes Domain:** `apps/minimal-consumer/src/notes/` provides table DDL, `BaseRepository` implementation, feature manifest with LWW sync policy, atomic outbox replication, and tombstone soft-deletion.
 - **Native Tauri App:** `apps/minimal-consumer/src-tauri` implements `minimal-consumer-native`, providing standalone window capabilities, app-specific identity namespace (`com.tauri.boilerplate.minimal-consumer`), and feature-owned migrations.
 
 **Test Evidence:**
+
 - `apps/minimal-consumer`: `index.test.ts` verifies platform baseline init without demo features, absence of `widgets` table, RBAC enforcement, atomic outbox queueing, and tombstone soft-deletion.
 - `apps/minimal-consumer/src-tauri`: 3 Rust unit tests passing (`identity_namespace_is_application_owned`, `notes_feature_migration_keeps_feature_ownership`, `isolation_test_does_not_contain_demo_features`).
 

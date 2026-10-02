@@ -2,7 +2,7 @@
 
 **Status**: Accepted (Implemented & Verified)  
 **Date**: 2026-08-30 (Updated 2026-09-28)  
-**Authors**: Antigravity Pair Programming  
+**Authors**: Antigravity Pair Programming
 
 ---
 
@@ -37,6 +37,7 @@ Local-first business applications need to discover and synchronize data directly
 ## Research Gate R-002 Resolution
 
 During evaluation of iroh integration modes, two architectural options were considered:
+
 - **Option 1 (Chosen)**: Streaming canonical signed `SyncEnvelope` frames across bidirectional QUIC streams with custom ALPN `tauri-boilerplate-sync/1.0`.
 - **Option 2 (Rejected)**: `iroh-docs` (document replication substrate). Rejected because `iroh-docs` operates as an independent document-key store, bypassing the platform's mandatory 7-layer sync admission pipeline, and cannot couple mutations transactionally with local SQLite tables and audit logs.
 

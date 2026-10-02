@@ -17,6 +17,7 @@ tooling/                       │
 ```
 
 A downstream developer should **never need to add or edit files inside `packages/` or `crates/`** to implement their business logic. If they feel they need to, either:
+
 - They are doing something that belongs in a `features/` package, or
 - The boilerplate is missing a platform capability and they should open an upstream PR.
 
@@ -116,6 +117,7 @@ packages/<name>/
 ```
 
 **Rules**:
+
 - Only symbols exported from `src/index.ts` are part of the public API.
 - `internal/` modules must never be imported from outside the package.
 - Every package has its own `package.json` with `"name": "@platform/<name>"`.
@@ -233,14 +235,14 @@ minimal-consumer-native
 
 ### File naming conventions
 
-| Type | Convention | Example |
-|---|---|---|
-| React component | PascalCase | `DataTable.tsx` |
-| React page | PascalCase + Page suffix | `WidgetListPage.tsx` |
-| Service | camelCase + Service suffix | `syncGroupService.ts` |
-| Repository | camelCase + Repository suffix | `widgetRepository.ts` |
-| Types file | camelCase + .types suffix | `sync.types.ts` |
-| Rust module | snake_case | `sync_core.rs` |
+| Type            | Convention                    | Example               |
+| --------------- | ----------------------------- | --------------------- |
+| React component | PascalCase                    | `DataTable.tsx`       |
+| React page      | PascalCase + Page suffix      | `WidgetListPage.tsx`  |
+| Service         | camelCase + Service suffix    | `syncGroupService.ts` |
+| Repository      | camelCase + Repository suffix | `widgetRepository.ts` |
+| Types file      | camelCase + .types suffix     | `sync.types.ts`       |
+| Rust module     | snake_case                    | `sync_core.rs`        |
 
 ---
 
@@ -263,6 +265,7 @@ apps/*
 ```
 
 **Forbidden imports:**
+
 - `packages/database` importing from `features/*`
 - `packages/core` importing from any other `packages/*`
 - `features/*` importing from `apps/*`

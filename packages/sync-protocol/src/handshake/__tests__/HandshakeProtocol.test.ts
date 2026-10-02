@@ -1,6 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { HandshakeValidator, canonicalizeHandshake } from "../HandshakeProtocol.js";
-import type { HandshakeMessage, HandshakeValidationOptions } from "../HandshakeProtocol.js";
+import {
+  HandshakeValidator,
+  canonicalizeHandshake,
+} from "../HandshakeProtocol.js";
+import type {
+  HandshakeMessage,
+  HandshakeValidationOptions,
+} from "../HandshakeProtocol.js";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -247,6 +253,8 @@ describe("canonicalizeHandshake()", () => {
   it("differs when any field value differs", () => {
     const msg1 = makeValidMessage({ nonce: "a".repeat(32) });
     const msg2 = makeValidMessage({ nonce: "f".repeat(32) });
-    expect(canonicalizeHandshake(msg1)).not.toEqual(canonicalizeHandshake(msg2));
+    expect(canonicalizeHandshake(msg1)).not.toEqual(
+      canonicalizeHandshake(msg2),
+    );
   });
 });

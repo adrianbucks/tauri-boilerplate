@@ -12,6 +12,7 @@
 The platform requires decentralized, local-first cross-device data replication without relying on mandatory centralized servers. Network participants must be able to communicate directly over peer-to-peer connections across local networks and NAT boundaries, with encrypted relay fallback when direct hole-punching fails.
 
 However, replication cannot merely mirror raw key-values or tables:
+
 1. **Invariant #4**: A peer being reachable does not mean it is authorized. All 7 admission layers (transport, peer identity, protocol version, organisation match, session/device status, sync-group policy, and namespace permissions) must be evaluated before application mutations are exchanged.
 2. **Invariant #1**: Database access must remain transactionally coupled with application business state and `core_audit_events`.
 3. **Invariant #6**: Synchronisable entities require explicit soft-delete tombstones (`deleted_at`, `deleted_by`, `delete_operation_id`).
@@ -21,7 +22,7 @@ However, replication cannot merely mirror raw key-values or tables:
 
 ## 2. Alternatives Evaluated
 
-### Option 1: Custom Signed Operation Envelopes over iroh QUIC (`iroh::Endpoint`) — *(SELECTED)*
+### Option 1: Custom Signed Operation Envelopes over iroh QUIC (`iroh::Endpoint`) — _(SELECTED)_
 
 In this architecture, `iroh::Endpoint` is used purely as the secure peer-to-peer transport substrate. It manages NAT traversal, QUIC encryption, peer discovery via public keys (`NodeId`), and DERP relay fallback. The application-level replication engine sends and receives authenticated, canonically serialized `SyncEnvelope`s across dedicated bidirectional QUIC streams.
 
@@ -57,6 +58,7 @@ Uses Option 1 for all structured transactional mutations and replication envelop
 ## 3. Decision
 
 We adopt **Option 1**:
+
 1. Integrate `iroh` (v1.2.0) into `crates/sync-core`.
 2. Configure `iroh::Endpoint` to listen on custom ALPN: `tauri-boilerplate-sync/1.0`.
 3. Stream canonical, Ed25519-signed `SyncEnvelope` frames across QUIC streams.

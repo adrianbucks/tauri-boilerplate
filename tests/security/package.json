@@ -19,6 +19,7 @@
     "@platform/platform": "workspace:*",
     "@features/example-feature": "workspace:*",
     "@features/organisations": "workspace:*",
-    "@features/identity-admin": "workspace:*"
+    "@features/identity-admin": "workspace:*",
+    "@tooling/feature-validator": "workspace:*"
   }
 }

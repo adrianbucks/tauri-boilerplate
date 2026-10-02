@@ -85,6 +85,7 @@ A capability is production-ready only when all relevant gates pass.
 A second minimal application can consume the platform without modifying platform internals for domain-specific behavior.
 
 ### Verification Criteria & Evidence (WP-019)
+
 - **Zero Platform Modifications**: Verified that `@apps/minimal-consumer` imports only `@platform/*` packages with zero domain changes made to `@platform/platform`, `@platform/database`, `@platform/sync`, or any other platform package.
 - **Domain Independence (Invariant #10)**: Created independent Field Notes domain (`notes` schema, repository, feature manifest, service) entirely within `apps/minimal-consumer/src/notes/`.
 - **Database & Migration Isolation**: Proved that `widgets` table and demo features are NOT created or leaked when running the minimal consumer application.

@@ -40,7 +40,9 @@ describe("Security Regression Suite — Sync & Pairing Authorization", () => {
     currentProtocolVersion: 1,
   };
 
-  function createValidHandshake(overrides?: Partial<HandshakeMessage>): HandshakeMessage {
+  function createValidHandshake(
+    overrides?: Partial<HandshakeMessage>,
+  ): HandshakeMessage {
     return {
       applicationId: "tauri-boilerplate-demo",
       applicationVersion: "0.1.0",
@@ -386,7 +388,9 @@ describe("Security Regression Suite — Sync & Pairing Authorization", () => {
     });
 
     // Invariant #6: isDeleted must return true
-    expect(await tombstoneService.isDeleted("widgets", "wid_deleted_1", "org_acme")).toBe(true);
+    expect(
+      await tombstoneService.isDeleted("widgets", "wid_deleted_1", "org_acme"),
+    ).toBe(true);
 
     const pending = await tombstoneService.propagatePending();
     expect(pending.some((t) => t.entityId === "wid_deleted_1")).toBe(true);
@@ -407,7 +411,10 @@ describe("Security Regression Suite — Sync & Pairing Authorization", () => {
     };
 
     let pushIncoming: ((event: { payload: unknown }) => void) | undefined;
-    const mockListen = async (_event: string, handler: (event: { payload: unknown }) => void) => {
+    const mockListen = async (
+      _event: string,
+      handler: (event: { payload: unknown }) => void,
+    ) => {
       pushIncoming = handler;
       return () => {};
     };
@@ -421,7 +428,9 @@ describe("Security Regression Suite — Sync & Pairing Authorization", () => {
 
     // Invariant #5: Ensure transport never stores or exposes private keys
     const transportKeys = Object.keys(transport);
-    expect(transportKeys.some((k) => k.toLowerCase().includes("private"))).toBe(false);
+    expect(transportKeys.some((k) => k.toLowerCase().includes("private"))).toBe(
+      false,
+    );
 
     // Invariant #4: When an envelope arrives across iroh transport, it must pass verification before apply
     let receivedByHandler = false;

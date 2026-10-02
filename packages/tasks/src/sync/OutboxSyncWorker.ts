@@ -23,7 +23,11 @@
  */
 
 import type { Logger } from "@platform/core";
-import { ConsoleLogger, getUtcIsoTimestamp, generateCorrelationId } from "@platform/core";
+import {
+  ConsoleLogger,
+  getUtcIsoTimestamp,
+  generateCorrelationId,
+} from "@platform/core";
 import type { DatabaseConnection } from "@platform/database";
 import type { TaskExecutionContext } from "../types.js";
 import type { TaskQueueService } from "../queue/TaskQueueService.js";
@@ -200,10 +204,7 @@ export class OutboxSyncWorker {
    * @param organisationId - Organisation to sync.
    * @param batchLimit     - Max envelopes to process per cycle.
    */
-  async enqueueSync(
-    organisationId: string,
-    batchLimit = 50,
-  ): Promise<void> {
+  async enqueueSync(organisationId: string, batchLimit = 50): Promise<void> {
     await this.taskQueue.enqueue<OutboxSyncPayload>({
       taskType: OUTBOX_SYNC_TASK_TYPE,
       uniqueKey: `sync:outbox:${organisationId}`,

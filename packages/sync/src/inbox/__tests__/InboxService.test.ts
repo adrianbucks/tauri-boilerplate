@@ -87,14 +87,8 @@ describe("InboxService", () => {
   });
 
   it("handles duplicate envelope_id idempotently", async () => {
-    const record1 = await service.receive(
-      validEnvelope,
-      async () => true,
-    );
-    const record2 = await service.receive(
-      validEnvelope,
-      async () => true,
-    );
+    const record1 = await service.receive(validEnvelope, async () => true);
+    const record2 = await service.receive(validEnvelope, async () => true);
 
     expect(record1.id).toBe(record2.id);
     const pending = await service.getByApplyStatus("PENDING");

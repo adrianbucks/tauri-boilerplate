@@ -1,7 +1,7 @@
 # Historical Documentation Archive
 
 > **Notice**: The documents in this directory are preserved strictly for historical reference, evolutionary context, and audit tracking.
-> 
+>
 > The authoritative, comprehensive living documentation for the project is located in the root [`docs/`](../README.md) directory.
 
 ---

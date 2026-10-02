@@ -7,7 +7,7 @@ This document provides the canonical operational instructions, behavioral rules,
 ## 1. The Prime Directive for AI Agents
 
 > **Never guess at a security-sensitive, version-sensitive, or evolving API.**
-> 
+>
 > Inspect existing code in the repository, examine package manifests (`package.json`, `Cargo.toml`), read lockfiles, and consult official documentation before proposing changes to Tauri 2, iroh, Drizzle, TanStack, or cryptographic primitives.
 
 ---
@@ -32,6 +32,7 @@ Every modification made by an AI assistant must strictly uphold these 10 non-neg
 ## 3. Forbidden vs. Required Code Patterns
 
 ### ❌ Forbidden Anti-Patterns
+
 ```typescript
 // ❌ 1. Hardcoded role checking
 if (user.role === "admin") { deleteWidget(id); }
@@ -59,12 +60,18 @@ console.log("Device private key seed:", privateKeySeed);
 ```
 
 ### ✅ Required Idiomatic Patterns
+
 ```typescript
 // ✅ 1. Centralized capability and permission enforcement
-await authorization.requireTrusted(trustedContext, "widgets.write", { organisationId });
+await authorization.requireTrusted(trustedContext, "widgets.write", {
+  organisationId,
+});
 
 // ✅ 2. Tenant-scoped repository queries
-const widget = await widgetRepository.findByIdWithinOrganisation(id, trustedContext.organisationId);
+const widget = await widgetRepository.findByIdWithinOrganisation(
+  id,
+  trustedContext.organisationId,
+);
 
 // ✅ 3. Atomic business mutations with transactional audit and outbox
 await db.transaction(async (tx) => {
@@ -76,14 +83,18 @@ await db.transaction(async (tx) => {
 // ✅ 4. Replication-safe tombstone deletion
 await tombstoneService.markDeleted({
   entityId,
-  namespace: 'feature.widgets',
+  namespace: "feature.widgets",
   deletedBy: trustedContext.userId,
   deleteOperationId: crypto.randomUUID(),
 });
 
 // ✅ 5. Cryptographic signature verification with canonical serialization
 const canonicalBytes = canonicalSerialize(envelopeWithoutSignature);
-const isValid = await cryptoService.verifySignature(canonicalBytes, envelope.signature, peerPublicKey);
+const isValid = await cryptoService.verifySignature(
+  canonicalBytes,
+  envelope.signature,
+  peerPublicKey,
+);
 
 // ✅ 6. Idempotent inbox processing
 await inboxService.receiveEnvelope(envelope);
@@ -94,6 +105,7 @@ await inboxService.receiveEnvelope(envelope);
 ## 4. Verification & Testing Requirements
 
 Whenever you complete a task or refactor:
+
 1. Always run TypeScript typechecks and unit tests:
    ```bash
    pnpm typecheck

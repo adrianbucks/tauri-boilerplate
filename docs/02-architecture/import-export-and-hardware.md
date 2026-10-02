@@ -40,7 +40,7 @@ Features define their import schema using `ImportDefinition<TRecord>`:
 ```typescript
 // packages/import-export/src/types.ts
 
-export type ColumnType = 'string' | 'number' | 'boolean' | 'date';
+export type ColumnType = "string" | "number" | "boolean" | "date";
 
 export interface ImportColumn {
   readonly key: string;
@@ -60,7 +60,7 @@ export interface RowValidationError {
 export interface ImportDefinition<TRecord> {
   readonly id: string;
   readonly entityName: string;
-  readonly acceptedFormats: readonly ('csv' | 'xlsx' | 'xls')[];
+  readonly acceptedFormats: readonly ("csv" | "xlsx" | "xls")[];
   readonly columns: readonly ImportColumn[];
   validateRow: (
     rawRow: Record<string, unknown>,
@@ -97,7 +97,9 @@ The export engine formats entity collections into downloadable workbooks (XLSX, 
 ```typescript
 export interface ExportColumn<T> {
   readonly header: string;
-  readonly accessor: (record: T) => string | number | boolean | null | undefined;
+  readonly accessor: (
+    record: T,
+  ) => string | number | boolean | null | undefined;
 }
 
 export interface ExportDefinition<T> {
@@ -111,6 +113,7 @@ export interface ExportDefinition<T> {
 Spreadsheet applications (Excel, LibreOffice) interpret values starting with `=`, `+`, `-`, or `@` as active executable formulas.
 
 The export engine sanitizes all exported string values:
+
 - Prepends a single quote (`'`) to any cell value that starts with `=, +, -, @, \t, \r`.
 - Ensures downstream user environments are immune to CSV injection attacks.
 
@@ -124,21 +127,21 @@ The hardware subsystem (`@platform/hardware`) provides a unified barcode and RFI
 // packages/hardware/src/scanner/types.ts
 
 export type BarcodeFormat =
-  | 'QR_CODE'
-  | 'DATA_MATRIX'
-  | 'CODE_128'
-  | 'CODE_39'
-  | 'EAN_13'
-  | 'EAN_8'
-  | 'UPC_A'
-  | 'UPC_E'
-  | 'UNKNOWN';
+  | "QR_CODE"
+  | "DATA_MATRIX"
+  | "CODE_128"
+  | "CODE_39"
+  | "EAN_13"
+  | "EAN_8"
+  | "UPC_A"
+  | "UPC_E"
+  | "UNKNOWN";
 
 export interface BarcodeScanResult {
   readonly text: string;
   readonly format?: BarcodeFormat;
   readonly timestamp: string; // ISO-8601 UTC
-  readonly deviceType: 'keyboard-wedge' | 'camera' | 'hardware-plugin';
+  readonly deviceType: "keyboard-wedge" | "camera" | "hardware-plugin";
 }
 
 export interface BarcodeScanner {

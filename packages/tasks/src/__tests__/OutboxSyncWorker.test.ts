@@ -69,7 +69,9 @@ function makeEntry(overrides: Partial<OutboxEntry> = {}): OutboxEntry {
   };
 }
 
-function makeCtx(overrides: Partial<TaskExecutionContext> = {}): TaskExecutionContext {
+function makeCtx(
+  overrides: Partial<TaskExecutionContext> = {},
+): TaskExecutionContext {
   const controller = new AbortController();
   return {
     taskId: "task-001",

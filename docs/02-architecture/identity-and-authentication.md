@@ -158,18 +158,19 @@ const ctx = {
 
 ## Session lifecycle
 
-| State | Trigger | Effect |
-|---|---|---|
-| Created | `authenticate_user` IPC succeeds | `NativeSessionView` created in native; `TrustedOperationContext` created in TS |
-| Active | — | All privileged operations require `TrustedOperationContext` |
-| Expired | Idle timeout | Session invalidated; re-authentication required |
-| Logged out | `logout_user` IPC called | Session cleared in both native and TS |
-| Revoked (device) | Admin revokes device | All sessions on that device invalidated |
-| Locked | 5 failed auth attempts | `locked_until` timestamp; further attempts rejected until expiry |
+| State            | Trigger                          | Effect                                                                         |
+| ---------------- | -------------------------------- | ------------------------------------------------------------------------------ |
+| Created          | `authenticate_user` IPC succeeds | `NativeSessionView` created in native; `TrustedOperationContext` created in TS |
+| Active           | —                                | All privileged operations require `TrustedOperationContext`                    |
+| Expired          | Idle timeout                     | Session invalidated; re-authentication required                                |
+| Logged out       | `logout_user` IPC called         | Session cleared in both native and TS                                          |
+| Revoked (device) | Admin revokes device             | All sessions on that device invalidated                                        |
+| Locked           | 5 failed auth attempts           | `locked_until` timestamp; further attempts rejected until expiry               |
 
 ### Shared device user switching
 
 One physical device may host multiple local user profiles. Switching users:
+
 1. Calls `logout_user` on the current session.
 2. Clears the `TrustedOperationContext` from memory.
 3. Returns to the login screen.
@@ -181,12 +182,12 @@ Device transport identity (the Ed25519 key) is not affected by user switch.
 
 ## Native Tauri commands
 
-| Command | Auth required | Purpose |
-|---|---|---|
-| `authenticate_user` | No (pre-auth) | Verify credential, produce NativeSessionView |
-| `logout_user` | Yes | Invalidate session |
-| `get_device_identity` | No | Return public key + device ID |
-| `get_database_health` | No | Return WAL/FK/integrity status |
+| Command               | Auth required | Purpose                                      |
+| --------------------- | ------------- | -------------------------------------------- |
+| `authenticate_user`   | No (pre-auth) | Verify credential, produce NativeSessionView |
+| `logout_user`         | Yes           | Invalidate session                           |
+| `get_device_identity` | No            | Return public key + device ID                |
+| `get_database_health` | No            | Return WAL/FK/integrity status               |
 
 Private key operations (signing sync envelopes) happen internally in Rust and results are returned — the key never leaves native custody.
 
@@ -198,14 +199,13 @@ Roles are data, not hardcoded branches. The authorization engine:
 
 ```typescript
 // ✅ Correct
-await authorization.requireTrusted(
-  trustedContext,
-  "widgets.delete",
-  { organisationId: ctx.organisationId },
-);
+await authorization.requireTrusted(trustedContext, "widgets.delete", {
+  organisationId: ctx.organisationId,
+});
 ```
 
 Permission evaluation verifies:
+
 1. Active user account.
 2. Active and approved device.
 3. Correct organisation scope.
@@ -218,6 +218,7 @@ Permission evaluation verifies:
 ## Device recovery
 
 Recovery is a separate security workflow. Lost/stolen/replaced devices must be revocable and re-enrollable without:
+
 - Exposing old private keys.
 - Bypassing authorization.
 - Allowing resurrection of revoked device identity.
@@ -228,10 +229,10 @@ Recovery mechanics: An admin approves a new device binding for the user. The old
 
 ## Future considerations
 
-| Item | Status |
-|---|---|
-| OS platform keystore integration (Windows DPAPI / Android Keystore) | Research gate — see ADR-028 |
-| Step-up authentication for sensitive operations | Not yet implemented |
-| Credential change flow | Not yet implemented |
-| Biometric authentication integration | Future consideration |
-| Transport key / device key separation | Evaluated — currently same key |
+| Item                                                                | Status                         |
+| ------------------------------------------------------------------- | ------------------------------ |
+| OS platform keystore integration (Windows DPAPI / Android Keystore) | Research gate — see ADR-028    |
+| Step-up authentication for sensitive operations                     | Not yet implemented            |
+| Credential change flow                                              | Not yet implemented            |
+| Biometric authentication integration                                | Future consideration           |
+| Transport key / device key separation                               | Evaluated — currently same key |

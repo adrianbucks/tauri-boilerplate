@@ -13,13 +13,28 @@ import {
   type RegisterFeatureOptions,
   type FeatureManifest,
 } from "@platform/feature-system";
-import { TaskQueueService, TaskWorker, type TaskWorkerOptions } from "@platform/tasks";
+import {
+  TaskQueueService,
+  TaskWorker,
+  type TaskWorkerOptions,
+} from "@platform/tasks";
+import type { SignFn } from "@platform/sync-protocol";
+import type { SyncTransport } from "@platform/sync";
 import { coreMigrations } from "./migrations/coreMigrations.js";
+
+export interface PlatformSyncOptions {
+  deviceId: string;
+  organisationId: string;
+  signerPublicKey?: string | undefined;
+  signFn?: SignFn | undefined;
+  transport?: SyncTransport | undefined;
+}
 
 export interface PlatformOptions {
   db: DatabaseConnection;
   config?: Partial<AppConfig> | undefined;
   logger?: Logger | undefined;
+  syncOptions?: PlatformSyncOptions | undefined;
 }
 
 export class Platform {
@@ -62,12 +77,30 @@ export class Platform {
 
     this.sync = new SyncManager({
       db: this.db,
-      deviceId: "pending_init",
-      organisationId: "pending_init",
+      deviceId: options.syncOptions?.deviceId ?? "pending_init",
+      organisationId: options.syncOptions?.organisationId ?? "pending_init",
+      signerPublicKey: options.syncOptions?.signerPublicKey,
+      signFn: options.syncOptions?.signFn,
+      transport: options.syncOptions?.transport,
     });
 
     this.tasks = new TaskQueueService(this.db);
     this.taskWorker = new TaskWorker(this.db, {}, this.logger);
+  }
+
+  /**
+   * Configures or re-configures the SyncManager with verified device identity,
+   * organisation scope, native signing delegate, and active transport.
+   */
+  configureSync(options: PlatformSyncOptions): void {
+    (this as { sync: SyncManager }).sync = new SyncManager({
+      db: this.db,
+      deviceId: options.deviceId,
+      organisationId: options.organisationId,
+      signerPublicKey: options.signerPublicKey,
+      signFn: options.signFn,
+      transport: options.transport,
+    });
   }
 
   registerFeature(options: RegisterFeatureOptions): void {

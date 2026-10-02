@@ -1,15 +1,18 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { Platform } from "@platform/platform";
 import { NativeDatabaseConnection } from "@platform/database";
 import { ImportEngine } from "@platform/import-export";
 import { exampleFeatureManifest } from "@features/example-feature";
 import { organisationsManifest } from "@features/organisations";
 import { identityAdminManifest } from "@features/identity-admin";
-import type { SyncState } from "@platform/sync";
+import { type SyncState, IrohSyncTransport } from "@platform/sync";
 import {
   createPlatformNativeGateway,
+  createNativeSignFn,
   type NativeSessionView,
+  type NativeDeviceIdentity,
   type PlatformNativeGateway,
 } from "@platform/platform";
 
@@ -18,6 +21,7 @@ interface PlatformContextValue {
   importEngine: ImportEngine | null;
   nativeGateway: PlatformNativeGateway | null;
   nativeSession: NativeSessionView | null;
+  transport: IrohSyncTransport | null;
   authenticate: (request: {
     user_id: string;
     password: string;
@@ -33,6 +37,7 @@ export const PlatformContext = React.createContext<PlatformContextValue>({
   importEngine: null,
   nativeGateway: null,
   nativeSession: null,
+  transport: null,
   authenticate: async () => undefined,
   logout: async () => undefined,
   syncState: "DISCONNECTED",
@@ -49,9 +54,12 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
   const [nativeSession, setNativeSession] = useState<NativeSessionView | null>(
     null,
   );
+  const [transport, setTransport] = useState<IrohSyncTransport | null>(null);
   const [syncState] = useState<SyncState>("IDLE");
   const [isReady, setIsReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const unlistenRef = useRef<(() => void) | null>(null);
 
   const init = useCallback(async () => {
     try {
@@ -77,8 +85,9 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
 
       setImportEngine(new ImportEngine(db));
 
+      let existingSession: NativeSessionView | null = null;
       try {
-        const existingSession = await nativeGateway.getCurrentSession();
+        existingSession = await nativeGateway.getCurrentSession();
         if (existingSession) {
           setNativeSession(existingSession);
           await p.sessions.establishFromNativeSession(existingSession);
@@ -86,6 +95,58 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
       } catch {
         // No active native session
       }
+
+      // Initialize native iroh transport and configure sync with native Ed25519 signing
+      const syncTransport = new IrohSyncTransport({
+        invoke,
+        listen: <T,>(event: string, handler: (e: { payload: T }) => void) =>
+          listen<T>(event, (e) => handler({ payload: e.payload })),
+      });
+      setTransport(syncTransport);
+      syncTransport.init().catch(() => {});
+
+      let deviceIdentity: NativeDeviceIdentity | null = null;
+      try {
+        deviceIdentity = await nativeGateway.getDeviceIdentity();
+      } catch {
+        // Fallback if device identity is not yet initialized
+      }
+
+      p.configureSync({
+        deviceId: deviceIdentity?.device_id ?? "dev_default",
+        organisationId: existingSession?.organisation_id ?? "default_org",
+        signerPublicKey: deviceIdentity?.public_key,
+        signFn: createNativeSignFn(nativeGateway),
+        transport: syncTransport,
+      });
+
+      // --- WP-016b: Start background scheduler at platform boot ---
+      // background_start is idempotent. Calling it here (outside any React
+      // component lifecycle) ensures the OutboxScheduler keeps running even
+      // when the main window is hidden to the system tray.
+      try {
+        await invoke("background_start");
+      } catch {
+        // Non-fatal: log but do not block platform initialisation.
+        // The scheduler may already be running if init() is called twice.
+      }
+
+      // Subscribe to tray-initiated "Sync Now" requests.
+      // SECURITY: the payload is a UTC unix-second timestamp string only —
+      // no credentials or private key material ever appear in this event.
+      const unlisten = await listen<string>(
+        "background://sync-now-requested",
+        (_event) => {
+          // Re-invoke background_start as an idempotent sync-now trigger.
+          // The OutboxScheduler will emit background://sync-tick on its next
+          // tick; for an immediate drain the TypeScript OutboxSyncWorker
+          // should subscribe to this channel independently.
+          invoke("background_start").catch(() => {
+            // Scheduler already running — no action needed.
+          });
+        },
+      );
+      unlistenRef.current = unlisten;
 
       setPlatform(p);
       setIsReady(true);
@@ -100,6 +161,18 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
       setNativeSession(session);
       if (platform) {
         await platform.sessions.establishFromNativeSession(session);
+        try {
+          const identity = await nativeGateway.getDeviceIdentity();
+          platform.configureSync({
+            deviceId: identity.device_id,
+            organisationId: session.organisation_id,
+            signerPublicKey: identity.public_key,
+            signFn: createNativeSignFn(nativeGateway),
+            transport: platform.sync.getTransport(),
+          });
+        } catch {
+          // Non-fatal fallback
+        }
       }
     },
     [nativeGateway, platform],
@@ -115,6 +188,10 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     init();
+    return () => {
+      // Clean up tray event listener on unmount to prevent memory leaks.
+      unlistenRef.current?.();
+    };
   }, [init]);
 
   return (
@@ -124,6 +201,7 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
         importEngine,
         nativeGateway,
         nativeSession,
+        transport,
         authenticate,
         logout,
         syncState,

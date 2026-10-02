@@ -22,6 +22,7 @@ The data architecture is implemented across `crates/native-core`, `packages/data
 ## Target storage model & Future Work
 
 While the core persistence foundation is production-ready, the following enhancements remain on the roadmap:
+
 1. **Encrypted Storage Layer (ADR-026)**: Deferred until key hierarchy, platform keystores (Windows DPAPI / Android Keystore), and migration semantics are proven.
 2. **Automated Backup & Disaster Recovery**: Runtime routine to take atomic SQLite vacuum/backup snapshots without locking application operations.
 

@@ -110,5 +110,78 @@ describe("PlatformNativeGateway", () => {
     invoke.mockResolvedValueOnce(sessionView);
     await expect(gateway.getCurrentSession()).resolves.toEqual(sessionView);
     expect(invoke).toHaveBeenLastCalledWith("get_current_session");
+
+    // Test getBackgroundStatus
+    const bgStatus = { running: true };
+    invoke.mockResolvedValueOnce(bgStatus);
+    await expect(gateway.getBackgroundStatus()).resolves.toEqual(bgStatus);
+    expect(invoke).toHaveBeenLastCalledWith("background_status");
+
+    // Test getSyncEndpointInfo
+    const endpointInfo = {
+      endpoint_id: "ep_123",
+      addr_json: '{"id":"ep_123"}',
+    };
+    invoke.mockResolvedValueOnce(endpointInfo);
+    await expect(gateway.getSyncEndpointInfo()).resolves.toEqual(endpointInfo);
+    expect(invoke).toHaveBeenLastCalledWith("sync_start_endpoint");
+
+    // Test signMessage
+    invoke.mockResolvedValueOnce("sig_hex_128");
+    await expect(gateway.signMessage("aabbcc")).resolves.toBe("sig_hex_128");
+    expect(invoke).toHaveBeenLastCalledWith("sign_message", {
+      request: { message_hex: "aabbcc" },
+    });
+
+    // Test verifyMessage
+    invoke.mockResolvedValueOnce(true);
+    await expect(
+      gateway.verifyMessage({
+        public_key: "ed25519_pk_abc",
+        message_hex: "aabbcc",
+        signature_hex: "sig_hex_128",
+      }),
+    ).resolves.toBe(true);
+    expect(invoke).toHaveBeenLastCalledWith("verify_message", {
+      request: {
+        public_key: "ed25519_pk_abc",
+        message_hex: "aabbcc",
+        signature_hex: "sig_hex_128",
+      },
+    });
+  });
+
+  it("createNativeSignFn delegates to native signMessage without exposing private keys (Invariant #5)", async () => {
+    const invoke = vi.fn().mockResolvedValue("signature_hex_128");
+    const gateway = createPlatformNativeGateway({ invoke });
+    const { createNativeSignFn } = await import("./NativePlatformGateway.js");
+
+    const signFn = createNativeSignFn(gateway);
+    const bytes = new Uint8Array([1, 2, 15, 255]); // 01020fff
+    const signature = await signFn(bytes);
+
+    expect(signature).toBe("signature_hex_128");
+    expect(invoke).toHaveBeenCalledWith("sign_message", {
+      request: { message_hex: "01020fff" },
+    });
+  });
+
+  it("createNativeVerifyFn delegates to native verifyMessage", async () => {
+    const invoke = vi.fn().mockResolvedValue(true);
+    const gateway = createPlatformNativeGateway({ invoke });
+    const { createNativeVerifyFn } = await import("./NativePlatformGateway.js");
+
+    const verifyFn = createNativeVerifyFn(gateway);
+    const bytes = new Uint8Array([10, 20]); // 0a14
+    const valid = await verifyFn("ed25519_pk_123", bytes, "sig_hex");
+
+    expect(valid).toBe(true);
+    expect(invoke).toHaveBeenCalledWith("verify_message", {
+      request: {
+        public_key: "ed25519_pk_123",
+        message_hex: "0a14",
+        signature_hex: "sig_hex",
+      },
+    });
   });
 });

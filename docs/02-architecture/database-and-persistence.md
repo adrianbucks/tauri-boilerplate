@@ -77,11 +77,11 @@ TypeScript unit tests
 
 Applied at native startup before any feature migrations:
 
-| Migration | Contents |
-|---|---|
-| `core-schema.sql` | `core_organisations`, `core_users`, `core_devices`, `core_roles`, `core_permissions`, `core_role_permissions`, `core_user_roles` |
-| `core-authentication.sql` | Authentication tables, credential verifiers, session state |
-| `core-replication.sql` | `core_sync_outbox`, `core_sync_inbox`, `core_sync_tombstones`, `core_sync_groups`, `core_sync_group_members` |
+| Migration                 | Contents                                                                                                                         |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `core-schema.sql`         | `core_organisations`, `core_users`, `core_devices`, `core_roles`, `core_permissions`, `core_role_permissions`, `core_user_roles` |
+| `core-authentication.sql` | Authentication tables, credential verifiers, session state                                                                       |
+| `core-replication.sql`    | `core_sync_outbox`, `core_sync_inbox`, `core_sync_tombstones`, `core_sync_groups`, `core_sync_group_members`                     |
 
 ### Feature migrations (`features/<name>/src/migrations/`)
 
@@ -131,24 +131,24 @@ delete_operation_id TEXT                   -- Stable operation ID for idempotent
 
 ## Core platform tables
 
-| Table | Purpose |
-|---|---|
-| `core_organisations` | Organisation records |
-| `core_users` | User accounts scoped to an organisation |
-| `core_devices` | Physical device registrations with Ed25519 public keys |
-| `core_roles` | Named permission bundles, organisation-scoped |
-| `core_permissions` | Hierarchical permission strings (`widgets.read`) |
-| `core_role_permissions` | Role → permission assignments with scope constraints |
-| `core_user_roles` | User → role assignments |
-| `core_sync_groups` | Replication peer groups |
-| `core_sync_group_members` | Device membership in sync groups |
-| `core_sync_outbox` | Durable signed outbound operation queue |
-| `core_sync_inbox` | Idempotent inbound operation queue |
-| `core_sync_tombstones` | Soft-delete records for replication-safe deletion |
-| `core_tasks` | Durable background task state |
-| `core_audit_events` | Append-only security audit log |
-| `core_migrations` | Platform migration tracking with checksums |
-| `core_feature_migrations` | Per-feature migration tracking |
+| Table                     | Purpose                                                |
+| ------------------------- | ------------------------------------------------------ |
+| `core_organisations`      | Organisation records                                   |
+| `core_users`              | User accounts scoped to an organisation                |
+| `core_devices`            | Physical device registrations with Ed25519 public keys |
+| `core_roles`              | Named permission bundles, organisation-scoped          |
+| `core_permissions`        | Hierarchical permission strings (`widgets.read`)       |
+| `core_role_permissions`   | Role → permission assignments with scope constraints   |
+| `core_user_roles`         | User → role assignments                                |
+| `core_sync_groups`        | Replication peer groups                                |
+| `core_sync_group_members` | Device membership in sync groups                       |
+| `core_sync_outbox`        | Durable signed outbound operation queue                |
+| `core_sync_inbox`         | Idempotent inbound operation queue                     |
+| `core_sync_tombstones`    | Soft-delete records for replication-safe deletion      |
+| `core_tasks`              | Durable background task state                          |
+| `core_audit_events`       | Append-only security audit log                         |
+| `core_migrations`         | Platform migration tracking with checksums             |
+| `core_feature_migrations` | Per-feature migration tracking                         |
 
 ---
 
@@ -318,8 +318,8 @@ Incoming envelopes are signature-verified before insertion and applied in HLC lo
 
 ## Future work
 
-| Enhancement | ADR | Status |
-|---|---|---|
-| Encrypted database layer (SQLCipher) | ADR-026 | Deferred — key hierarchy not yet defined |
-| Automated backup/restore | — | Not yet implemented |
-| Backup encryption | Depends on ADR-026 | Deferred |
+| Enhancement                          | ADR                | Status                                   |
+| ------------------------------------ | ------------------ | ---------------------------------------- |
+| Encrypted database layer (SQLCipher) | ADR-026            | Deferred — key hierarchy not yet defined |
+| Automated backup/restore             | —                  | Not yet implemented                      |
+| Backup encryption                    | Depends on ADR-026 | Deferred                                 |

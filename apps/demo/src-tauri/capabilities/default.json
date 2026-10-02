@@ -1,16 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "identifier": "main-window",
-  "description": "Scoped least-privilege capability set for the primary application window. Grants event listener and unlistener permissions required for asynchronous P2P replication event dispatch (sync://envelope-received, background://sync-tick) while omitting event emit from the webview. Does not grant broad core plugins or filesystem/shell access.",
-  "windows": [
-    "main"
-  ],
-  "permissions": [
-    "core:event:allow-listen",
-    "core:event:allow-unlisten",
-    "core:default:allow-invoke",
-    "allow-background-start",
-    "allow-background-stop",
-    "allow-background-status"
-  ]
+  "description": "Scoped least-privilege capability set for the primary application window. Grants event listener and unlistener permissions required for asynchronous P2P replication event dispatch (sync://envelope-received, background://sync-tick, background://sync-now-requested) while omitting event emit from the webview. The background://sync-now-requested event is emitted natively by the system tray 'Sync Now' menu item (WP-016b) and requires no additional webview-side capability — the existing core:event:allow-listen covers it. Does not grant broad core plugins or filesystem/shell access.",
+  "windows": ["main"],
+  "permissions": ["core:event:allow-listen", "core:event:allow-unlisten"]
 }

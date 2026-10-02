@@ -38,6 +38,7 @@ The repository is a pnpm/Turborepo monorepo with TypeScript platform packages (`
 ### Remaining Gaps to Production Readiness
 
 The foundational platform layers (persistence, identity, authentication, authorization, and background queues) are complete. The remaining gates to production readiness are:
+
 1. **Live P2P Transport (WP-014 / R-002)**: Replacing the simulated transport with a real `iroh` QUIC endpoint and multi-peer convergence tests.
 2. **OS Background Lifecycle Adapters (WP-016)**: Native Android WorkManager and Windows scheduling integrations so tasks run reliably outside active webview windows.
 3. **Release Signing & Provenance (WP-018)**: Automated code signing (Authenticode/Android keystore), SBOM generation, and artifact verification.

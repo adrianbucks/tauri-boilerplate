@@ -2,20 +2,20 @@
 
 ## Current repository declarations
 
-| Technology  | Current declaration         | Role                                                    |
-| ----------- | --------------------------- | ------------------------------------------------------- |
-| Tauri       | 2.x; demo CLI 2.11.4        | native application shell/IPC                            |
-| React       | 19.x                        | UI                                                      |
-| TypeScript  | 5.7.3                       | application/platform language                           |
-| Vite        | 6.2.0                       | frontend build                                          |
-| pnpm        | 10.26.0                     | workspace package manager                               |
-| Turborepo   | 2.4.4                       | task/build orchestration                                |
-| Drizzle ORM | 0.39.3                      | SQLite schema/ORM abstraction                           |
-| SQLite      | native `rusqlite`           | **primary durable store** (`NativeDatabaseConnection`)  |
-| sql.js      | 1.14.2                      | isolated unit test adapter (not production)             |
-| Vitest      | 3.0.7                       | unit and integration test runner                        |
-| Rust        | repository toolchain 1.98.1 | native core, key custody, and persistence layer         |
-| iroh        | *Research Gate (R-002)*     | target P2P transport (WP-014)                           |
+| Technology  | Current declaration         | Role                                                   |
+| ----------- | --------------------------- | ------------------------------------------------------ |
+| Tauri       | 2.x; demo CLI 2.11.4        | native application shell/IPC                           |
+| React       | 19.x                        | UI                                                     |
+| TypeScript  | 5.7.3                       | application/platform language                          |
+| Vite        | 6.2.0                       | frontend build                                         |
+| pnpm        | 10.26.0                     | workspace package manager                              |
+| Turborepo   | 2.4.4                       | task/build orchestration                               |
+| Drizzle ORM | 0.39.3                      | SQLite schema/ORM abstraction                          |
+| SQLite      | native `rusqlite`           | **primary durable store** (`NativeDatabaseConnection`) |
+| sql.js      | 1.14.2                      | isolated unit test adapter (not production)            |
+| Vitest      | 3.0.7                       | unit and integration test runner                       |
+| Rust        | repository toolchain 1.98.1 | native core, key custody, and persistence layer        |
+| iroh        | _Research Gate (R-002)_     | target P2P transport (WP-014)                          |
 
 ## Runtime policy
 

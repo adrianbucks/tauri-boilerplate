@@ -212,7 +212,8 @@ export class InboxService {
         applied++;
       } catch (err) {
         const isConflict =
-          err instanceof Error && err.message.toLowerCase().includes("conflict");
+          err instanceof Error &&
+          err.message.toLowerCase().includes("conflict");
         const newStatus = isConflict ? "CONFLICT" : "FAILED";
         await executor.execute(
           `UPDATE core_sync_inbox SET apply_status = ? WHERE id = ?`,

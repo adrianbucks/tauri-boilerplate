@@ -4,14 +4,14 @@
 
 `tauri-boilerplate` is an open-source **GitHub Template Repository and development scaffold** for building cross-platform, local-first business applications. It targets **Windows** and **Android** from a single codebase using:
 
-| Technology | Role |
-|---|---|
-| **Tauri 2** | Native shell, OS integration, protected native storage |
-| **React 19 + TypeScript + Vite** | Frontend application layer |
-| **SQLite + Drizzle ORM** | Durable local-first data layer |
-| **iroh (QUIC/P2P)** | Peer-to-peer data synchronisation |
-| **pnpm + Turborepo** | Monorepo management |
-| **Rust (Cargo workspace)** | Native backend crates |
+| Technology                       | Role                                                   |
+| -------------------------------- | ------------------------------------------------------ |
+| **Tauri 2**                      | Native shell, OS integration, protected native storage |
+| **React 19 + TypeScript + Vite** | Frontend application layer                             |
+| **SQLite + Drizzle ORM**         | Durable local-first data layer                         |
+| **iroh (QUIC/P2P)**              | Peer-to-peer data synchronisation                      |
+| **pnpm + Turborepo**             | Monorepo management                                    |
+| **Rust (Cargo workspace)**       | Native backend crates                                  |
 
 The repository is designed as an **opinionated platform**: identity, authorisation, data synchronisation, audit, import/export, hardware abstraction, and a UI component set are pre-built. Developers building business applications start here and add only their domain-specific features.
 
@@ -21,12 +21,12 @@ The repository is designed as an **opinionated platform**: identity, authorisati
 
 ## What this repository is and is not
 
-| ✅ This repository IS | ❌ This repository is NOT |
-|---|---|
-| A GitHub Template Repository | A monorepo of production applications |
-| The authoritative platform implementation | An npm-published library |
-| A running demo application (`apps/demo`) | A framework that generates application code |
-| A copy-paste starting point (`example-feature`) | A collection of WMS / ERP / logistics apps |
+| ✅ This repository IS                             | ❌ This repository is NOT                       |
+| ------------------------------------------------- | ----------------------------------------------- |
+| A GitHub Template Repository                      | A monorepo of production applications           |
+| The authoritative platform implementation         | An npm-published library                        |
+| A running demo application (`apps/demo`)          | A framework that generates application code     |
+| A copy-paste starting point (`example-feature`)   | A collection of WMS / ERP / logistics apps      |
 | The home of all platform packages and Rust crates | A one-size-fits-all solution for every use case |
 
 ---
@@ -106,10 +106,10 @@ Only demonstration composition and example domain behavior. It must not become t
 
 ## Target platforms
 
-| Platform | Target | Notes |
-|---|---|---|
-| Windows | Windows 10 22H2+ / Windows 11 | Primary development target |
-| Android | Latest stable Android (API 35+) | Target modern devices only |
+| Platform | Target                          | Notes                      |
+| -------- | ------------------------------- | -------------------------- |
+| Windows  | Windows 10 22H2+ / Windows 11   | Primary development target |
+| Android  | Latest stable Android (API 35+) | Target modern devices only |
 
 ---
 
@@ -137,13 +137,13 @@ The platform must remain fully functional locally if the peer/network is unavail
 
 ## Versioning strategy
 
-| Version | Tracks | Stored in |
-|---|---|---|
-| `platformVersion` | Boilerplate release | `package.json` (root) |
-| `applicationVersion` | Downstream app version | downstream `package.json` |
-| `databaseVersion` | SQLite migration sequence | `core_migrations` table |
-| `featureVersion` | Per-feature semver | each feature `package.json` |
-| `syncProtocolVersion` | Monotonic int, wire format | `packages/sync-protocol/` |
+| Version               | Tracks                     | Stored in                   |
+| --------------------- | -------------------------- | --------------------------- |
+| `platformVersion`     | Boilerplate release        | `package.json` (root)       |
+| `applicationVersion`  | Downstream app version     | downstream `package.json`   |
+| `databaseVersion`     | SQLite migration sequence  | `core_migrations` table     |
+| `featureVersion`      | Per-feature semver         | each feature `package.json` |
+| `syncProtocolVersion` | Monotonic int, wire format | `packages/sync-protocol/`   |
 
 Never assume `applicationVersion` equality implies sync compatibility — protocol versions are checked explicitly during the handshake.
 
@@ -152,6 +152,7 @@ Never assume `applicationVersion` equality implies sync compatibility — protoc
 ## Definition of production readiness
 
 Production readiness is not a single build-success flag. It requires:
+
 - All P0/P1 security and durability gaps in [`06-status/current-state.md`](../06-status/current-state.md) to be closed.
 - All acceptance gates in [`06-status/acceptance-gates.md`](../06-status/acceptance-gates.md) to pass on the supported Windows and Android matrix.
 - Release signing, checksums, and provenance attestation configured in CI.

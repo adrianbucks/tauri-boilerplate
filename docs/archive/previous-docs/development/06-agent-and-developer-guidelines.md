@@ -32,22 +32,23 @@ Every change to the codebase must uphold these 10 non-negotiable invariants:
 
 Before modifying any subsystem, read the relevant architectural document and current state evidence:
 
-| Task Area | Mandatory Documents |
-| :--- | :--- |
-| **Any Task** | [`docs/PROJECT_REFERENCE.md`](../PROJECT_REFERENCE.md), [`docs/verification/CURRENT_STATE.md`](../verification/CURRENT_STATE.md) |
-| **Architecture / Boundaries** | [`docs/architecture/SYSTEM_ARCHITECTURE.md`](../architecture/SYSTEM_ARCHITECTURE.md), [`docs/decisions/ADR_INDEX.md`](../decisions/ADR_INDEX.md) |
-| **Database & Migrations** | [`docs/architecture/DATA_AND_DATABASE.md`](../architecture/DATA_AND_DATABASE.md), [`packages/database`](../../packages/database), migration suites |
-| **Identity & Authentication** | [`docs/architecture/IDENTITY_AND_AUTHENTICATION.md`](../architecture/IDENTITY_AND_AUTHENTICATION.md), [`crates/identity-core`](../../crates/identity-core) |
-| **Authorization & Tenancy** | [`docs/architecture/SECURITY_ARCHITECTURE.md`](../architecture/SECURITY_ARCHITECTURE.md), [`packages/authorization`](../../packages/authorization) |
-| **Replication & Sync** | [`docs/architecture/SYNC_ARCHITECTURE.md`](../architecture/SYNC_ARCHITECTURE.md), [`packages/sync-protocol`](../../packages/sync-protocol), [`packages/sync`](../../packages/sync) |
-| **Background Execution** | [`docs/architecture/BACKGROUND_TASKS.md`](../architecture/BACKGROUND_TASKS.md), [`packages/tasks`](../../packages/tasks) |
-| **Native & Tauri IPC** | [`docs/architecture/SECURITY_ARCHITECTURE.md`](../architecture/SECURITY_ARCHITECTURE.md), `apps/demo/src-tauri` |
+| Task Area                     | Mandatory Documents                                                                                                                                                                |
+| :---------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Any Task**                  | [`docs/PROJECT_REFERENCE.md`](../PROJECT_REFERENCE.md), [`docs/verification/CURRENT_STATE.md`](../verification/CURRENT_STATE.md)                                                   |
+| **Architecture / Boundaries** | [`docs/architecture/SYSTEM_ARCHITECTURE.md`](../architecture/SYSTEM_ARCHITECTURE.md), [`docs/decisions/ADR_INDEX.md`](../decisions/ADR_INDEX.md)                                   |
+| **Database & Migrations**     | [`docs/architecture/DATA_AND_DATABASE.md`](../architecture/DATA_AND_DATABASE.md), [`packages/database`](../../packages/database), migration suites                                 |
+| **Identity & Authentication** | [`docs/architecture/IDENTITY_AND_AUTHENTICATION.md`](../architecture/IDENTITY_AND_AUTHENTICATION.md), [`crates/identity-core`](../../crates/identity-core)                         |
+| **Authorization & Tenancy**   | [`docs/architecture/SECURITY_ARCHITECTURE.md`](../architecture/SECURITY_ARCHITECTURE.md), [`packages/authorization`](../../packages/authorization)                                 |
+| **Replication & Sync**        | [`docs/architecture/SYNC_ARCHITECTURE.md`](../architecture/SYNC_ARCHITECTURE.md), [`packages/sync-protocol`](../../packages/sync-protocol), [`packages/sync`](../../packages/sync) |
+| **Background Execution**      | [`docs/architecture/BACKGROUND_TASKS.md`](../architecture/BACKGROUND_TASKS.md), [`packages/tasks`](../../packages/tasks)                                                           |
+| **Native & Tauri IPC**        | [`docs/architecture/SECURITY_ARCHITECTURE.md`](../architecture/SECURITY_ARCHITECTURE.md), `apps/demo/src-tauri`                                                                    |
 
 ---
 
 ## 4. Forbidden vs. Required Code Patterns
 
 ### Forbidden Anti-Patterns
+
 ```typescript
 // ❌ Hardcoded role checking
 if (user.role === "admin") { ... }
@@ -75,12 +76,18 @@ console.log("Device private key seed:", privateKeySeed);
 ```
 
 ### Required Patterns
+
 ```typescript
 // ✅ Centralized capability and permission enforcement
-await authorization.requireTrusted(trustedContext, "widgets.write", { organisationId });
+await authorization.requireTrusted(trustedContext, "widgets.write", {
+  organisationId,
+});
 
 // ✅ Tenant-scoped repository queries
-const widget = await widgetRepository.findByIdWithinOrganisation(id, trustedContext.organisationId);
+const widget = await widgetRepository.findByIdWithinOrganisation(
+  id,
+  trustedContext.organisationId,
+);
 
 // ✅ Atomic business mutations with transactional audit and outbox
 await db.transaction(async (tx) => {
@@ -94,12 +101,16 @@ await tombstoneService.markDeleted({
   entityId,
   namespace,
   deletedBy: trustedContext.userId,
-  deleteOperationId
+  deleteOperationId,
 });
 
 // ✅ Deterministic canonical serialization and cryptographic verification
 const canonicalBytes = canonicalSerialize(envelopeWithoutSignature);
-const isValid = await verifySignature(canonicalBytes, envelope.signature, peerPublicKey);
+const isValid = await verifySignature(
+  canonicalBytes,
+  envelope.signature,
+  peerPublicKey,
+);
 
 // ✅ Idempotent inbox processing
 await inboxService.receiveEnvelope(envelope);
@@ -110,6 +121,7 @@ await inboxService.receiveEnvelope(envelope);
 ## 5. Security Change Gate Protocol
 
 Human review and explicit verification are mandatory before merging changes that impact:
+
 1. Cryptographic algorithms, key generation, or native key custody (`crates/identity-core`, `crates/crypto-core`).
 2. Authentication, password verification (Argon2id), session issuance, and lockout policies.
 3. Authorization logic, RBAC evaluation, and tenant isolation filtering.
@@ -123,6 +135,7 @@ Human review and explicit verification are mandatory before merging changes that
 ## 6. Research Gate Protocol
 
 When an architectural or dependency milestone is designated as a **RESEARCH GATE** (e.g. `R-002: iroh P2P transport integration`):
+
 - Do not implement speculative APIs or install unverified packages.
 - Produce a structured research artifact with:
   1. Technical question and scope.
@@ -137,6 +150,7 @@ When an architectural or dependency milestone is designated as a **RESEARCH GATE
 ## 7. Development & Verification Workflow
 
 Before proposing or merging any change:
+
 1. **Pre-check**: Read `docs/verification/CURRENT_STATE.md` to confirm the baseline.
 2. **Execute tests**:
    ```bash

@@ -65,7 +65,6 @@ tauri-boilerplate/
 └── dist/                         # Generated installer and APK outputs
 ```
 
-
 ---
 
 ## Getting Started
@@ -218,7 +217,6 @@ Documentation is organized under [`docs/`](./docs/README.md):
 6. **[Reference](./docs/05-reference/README.md)** — API contracts, sync protocol, capability matrix, and dependency graphs.
 7. **[Status](./docs/06-status/README.md)** — Evidence-backed current state, roadmap, work packages (WP-001–WP-020), and acceptance gates.
 8. **[In-Development](./docs/07-in-development/README.md)** — Active development tracking, open gates (WP-016, WP-018), and research register.
-
 
 ---
 

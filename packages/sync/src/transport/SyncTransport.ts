@@ -76,7 +76,9 @@ export class SimulatedSyncTransport implements SyncTransport {
 
   async send(peerId: string, envelope: SyncEnvelope): Promise<void> {
     if (!this.connectedPeers.has(peerId)) {
-      throw new Error(`[SimulatedSyncTransport] Cannot send: peer '${peerId}' is not connected.`);
+      throw new Error(
+        `[SimulatedSyncTransport] Cannot send: peer '${peerId}' is not connected.`,
+      );
     }
 
     if (this.peerTransport) {

@@ -124,7 +124,9 @@ describe("TaskWorker", () => {
 
   it("cancels tasks for which no handler is registered", async () => {
     // Enqueue a task type for which NO handler is registered
-    const task = await queue.enqueue(makeDefinition({ taskType: "unknown.type" }));
+    const task = await queue.enqueue(
+      makeDefinition({ taskType: "unknown.type" }),
+    );
 
     // Register a dummy handler so the worker claims tasks at all (it filters by registered types)
     // — we need the worker to be willing to claim "unknown.type", so register a handler for it

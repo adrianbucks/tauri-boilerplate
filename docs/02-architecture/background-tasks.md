@@ -79,11 +79,7 @@ Background work is a **durable platform concern**, never an ephemeral React comp
 // packages/tasks/src/types.ts
 
 export type TaskState =
-  | 'PENDING'
-  | 'RUNNING'
-  | 'COMPLETED'
-  | 'FAILED'
-  | 'CANCELLED';
+  "PENDING" | "RUNNING" | "COMPLETED" | "FAILED" | "CANCELLED";
 
 export interface TaskRetryPolicy {
   readonly maxAttempts: number;
@@ -161,7 +157,7 @@ export interface TaskHandler<TPayload = unknown> {
 ### Example: Registering a Maintenance Task
 
 ```typescript
-import { TaskWorker, TaskQueueService } from '@platform/tasks';
+import { TaskWorker, TaskQueueService } from "@platform/tasks";
 
 const worker = new TaskWorker(taskQueueService, {
   pollIntervalMs: 2000,
@@ -169,7 +165,7 @@ const worker = new TaskWorker(taskQueueService, {
 });
 
 worker.registerHandler({
-  taskType: 'maintenance.cleanup_tombstones',
+  taskType: "maintenance.cleanup_tombstones",
   async execute(payload: { olderThanDays: number }, ctx) {
     if (ctx.signal.aborted) return;
     await repository.purgeOldTombstones(payload.olderThanDays);
@@ -233,23 +229,29 @@ A sync task execution strictly adheres to the following sequence:
 - Long-running sync operations transition to a Foreground Service with an active notification.
 - SQLite remains in a clean state if the OS kills the process mid-task; incomplete batches are automatically re-leased on next startup.
 
-### Windows (Desktop Background Tasks)
+### Windows (Desktop Background Tasks & System Tray — WP-016b)
 
-- Windows deployment executes workers within the Tauri host process.
-- When minimized to tray or running headless, the native background loop continues execution without webview dependency.
-- Uses Windows Task Scheduler or native service wrapper where background sync must continue when user logs out.
+- **System Tray Minimization**: On Windows, the main window `CloseRequested` event is intercepted via `on_window_event`. It calls `api.prevent_close()` followed by `window.hide()`, preventing process termination when the user closes the window.
+- **Native Runtime Continuity**: The native Rust Tokio runtime and `background-core::OutboxScheduler` remain active in the background, continuously driving outbox replication checks without requiring a visible webview.
+- **Tray Context Menu**:
+  - `Show`: Restores and focuses the main window (`window.show()`, `window.set_focus()`).
+  - `Sync Now`: Emits `background://sync-now-requested` over the native IPC event bus (carrying only a UTC timestamp, adhering to Invariant #5) to trigger an immediate batch sync.
+  - `Quit`: The sanctioned process exit path (`app.exit(0)`), ensuring background schedulers release leases gracefully before termination.
+- **Left-Click Restore**: Left-clicking the tray icon restores and focuses the window.
+- **Bootstrap Lifecycle**: `OutboxSyncWorker` is initiated during platform bootstrap (`usePlatform` hook), decoupled from individual UI view lifecycles.
+- **Security Validation**: Dedicated regression suite `tests/security/windows-tray-lifecycle.test.ts` validates that no private key material leaks into tray events and least-privilege capability boundaries are maintained.
 
 ---
 
 ## Failure Recovery & Retry Strategy
 
-| Error Class | Example | Handling Strategy |
-| :--- | :--- | :--- |
-| **Transient Network** | QUIC connection reset, timeout | Retry with exponential backoff + jitter up to `maxAttempts`. |
-| **Authentication Expired** | Session token expired | Pause worker queue; emit re-authentication event; do not discard task. |
-| **Permanent Protocol** | Envelope schema version mismatch | Fail immediately (`state = 'FAILED'`); emit alert; never retry infinitely. |
-| **Authorisation Denied** | Device removed from sync group | Mark task `FAILED`; trigger peer disconnection; do not retry. |
-| **Database Busy** | SQLite `SQLITE_BUSY` (WAL lock) | Immediate micro-backoff (50ms) and retry up to 5 times. |
+| Error Class                | Example                          | Handling Strategy                                                          |
+| :------------------------- | :------------------------------- | :------------------------------------------------------------------------- |
+| **Transient Network**      | QUIC connection reset, timeout   | Retry with exponential backoff + jitter up to `maxAttempts`.               |
+| **Authentication Expired** | Session token expired            | Pause worker queue; emit re-authentication event; do not discard task.     |
+| **Permanent Protocol**     | Envelope schema version mismatch | Fail immediately (`state = 'FAILED'`); emit alert; never retry infinitely. |
+| **Authorisation Denied**   | Device removed from sync group   | Mark task `FAILED`; trigger peer disconnection; do not retry.              |
+| **Database Busy**          | SQLite `SQLITE_BUSY` (WAL lock)  | Immediate micro-backoff (50ms) and retry up to 5 times.                    |
 
 ---
 

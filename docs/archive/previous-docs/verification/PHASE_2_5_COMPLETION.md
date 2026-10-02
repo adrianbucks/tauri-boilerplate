@@ -21,36 +21,36 @@ All 37 monorepo packages and features build cleanly (`pnpm build`, `cargo check`
 
 ### Phase 2: Trusted Identity & Authentication
 
-| Work Package | Deliverables | Verification Evidence | Status |
-| :--- | :--- | :--- | :--- |
-| **WP-004: Trusted Operation Context** | `packages/core/src/context/`, `packages/identity/src/UserSessionService.ts` | `tests/security/authentication-boundary.test.ts` (unauthenticated callers cannot fabricate context) | ✅ COMPLETE |
-| **WP-005: Device Key Provider** | `crates/identity-core/src/key_provider.rs`, `crates/crypto-core` | `cargo test -p identity-core` (4 passing tests: genuine 32-byte seed, restart persistence, native signing) | ✅ COMPLETE |
-| **WP-006: Offline Authentication** | `crates/native-core/src/database.rs` (`authenticate_user`) | `cargo test -p native-core` (Argon2id match, 5-failure lockout window, role permission derivation) | ✅ COMPLETE |
+| Work Package                          | Deliverables                                                                | Verification Evidence                                                                                      | Status      |
+| :------------------------------------ | :-------------------------------------------------------------------------- | :--------------------------------------------------------------------------------------------------------- | :---------- |
+| **WP-004: Trusted Operation Context** | `packages/core/src/context/`, `packages/identity/src/UserSessionService.ts` | `tests/security/authentication-boundary.test.ts` (unauthenticated callers cannot fabricate context)        | ✅ COMPLETE |
+| **WP-005: Device Key Provider**       | `crates/identity-core/src/key_provider.rs`, `crates/crypto-core`            | `cargo test -p identity-core` (4 passing tests: genuine 32-byte seed, restart persistence, native signing) | ✅ COMPLETE |
+| **WP-006: Offline Authentication**    | `crates/native-core/src/database.rs` (`authenticate_user`)                  | `cargo test -p native-core` (Argon2id match, 5-failure lockout window, role permission derivation)         | ✅ COMPLETE |
 
 ### Phase 3: Authorization & Native Boundary
 
-| Work Package | Deliverables | Verification Evidence | Status |
-| :--- | :--- | :--- | :--- |
-| **WP-007: Authorization Enforcement** | `packages/authorization`, `features/*` | `tests/security/rbac-security.test.ts` (12 tests) & `tests/security/tenant-isolation.test.ts` | ✅ COMPLETE |
-| **WP-008: Typed Native Gateway** | `apps/demo/src-tauri/src/lib.rs` | Typed Tauri IPC commands (`authenticate_user`, `list_widgets`, etc.) with server-side auth validation | ✅ COMPLETE |
-| **WP-009: Tauri Capability & CSP Hardening** | `apps/demo/src-tauri/capabilities/`, `apps/demo/index.html` | CSP `default-src 'self'`; no inline scripts or WASM eval allowances | ✅ COMPLETE |
+| Work Package                                 | Deliverables                                                | Verification Evidence                                                                                 | Status      |
+| :------------------------------------------- | :---------------------------------------------------------- | :---------------------------------------------------------------------------------------------------- | :---------- |
+| **WP-007: Authorization Enforcement**        | `packages/authorization`, `features/*`                      | `tests/security/rbac-security.test.ts` (12 tests) & `tests/security/tenant-isolation.test.ts`         | ✅ COMPLETE |
+| **WP-008: Typed Native Gateway**             | `apps/demo/src-tauri/src/lib.rs`                            | Typed Tauri IPC commands (`authenticate_user`, `list_widgets`, etc.) with server-side auth validation | ✅ COMPLETE |
+| **WP-009: Tauri Capability & CSP Hardening** | `apps/demo/src-tauri/capabilities/`, `apps/demo/index.html` | CSP `default-src 'self'`; no inline scripts or WASM eval allowances                                   | ✅ COMPLETE |
 
 ### Phase 4: Replication Protocol & Persistence
 
-| Work Package | Deliverables | Verification Evidence | Status |
-| :--- | :--- | :--- | :--- |
-| **WP-010: Canonical Sync Envelope** | `packages/sync-protocol/src/envelope/`, `canonical/` | Deterministic sorted-key UTF-8 JSON serialization; Ed25519 envelope signature validation | ✅ COMPLETE |
-| **WP-011: Authenticated Handshake** | `packages/sync-protocol/src/handshake/`, `packages/sync/src/pairing/` | 32-hex random nonces, 30s timestamp skew tolerance, replay rejection via seen-nonce cache | ✅ COMPLETE |
-| **WP-012: Durable Outbox / Inbox** | `packages/sync/src/outbox/`, `inbox/`, `core-replication.sql` | Transactional outbox queuing with business state, `ON CONFLICT DO NOTHING` inbox idempotency | ✅ COMPLETE |
-| **WP-013: Conflict & Tombstone Engine** | `packages/sync/src/conflict/`, `tombstone/`, `packages/sync-protocol` | Soft-delete tombstones (`deleted_at`, `deleted_by`, `delete_operation_id`); absolute LWW safety guard | ✅ COMPLETE |
-| **WP-014: Real iroh Transport** | `crates/sync-core`, `packages/sync/src/transport/` | `SimulatedSyncTransport` verified; live iroh endpoint retained as Phase 6 Research Gate R-002 | 🚧 OPEN GATE |
+| Work Package                            | Deliverables                                                          | Verification Evidence                                                                                 | Status       |
+| :-------------------------------------- | :-------------------------------------------------------------------- | :---------------------------------------------------------------------------------------------------- | :----------- |
+| **WP-010: Canonical Sync Envelope**     | `packages/sync-protocol/src/envelope/`, `canonical/`                  | Deterministic sorted-key UTF-8 JSON serialization; Ed25519 envelope signature validation              | ✅ COMPLETE  |
+| **WP-011: Authenticated Handshake**     | `packages/sync-protocol/src/handshake/`, `packages/sync/src/pairing/` | 32-hex random nonces, 30s timestamp skew tolerance, replay rejection via seen-nonce cache             | ✅ COMPLETE  |
+| **WP-012: Durable Outbox / Inbox**      | `packages/sync/src/outbox/`, `inbox/`, `core-replication.sql`         | Transactional outbox queuing with business state, `ON CONFLICT DO NOTHING` inbox idempotency          | ✅ COMPLETE  |
+| **WP-013: Conflict & Tombstone Engine** | `packages/sync/src/conflict/`, `tombstone/`, `packages/sync-protocol` | Soft-delete tombstones (`deleted_at`, `deleted_by`, `delete_operation_id`); absolute LWW safety guard | ✅ COMPLETE  |
+| **WP-014: Real iroh Transport**         | `crates/sync-core`, `packages/sync/src/transport/`                    | `SimulatedSyncTransport` verified; live iroh endpoint retained as Phase 6 Research Gate R-002         | 🚧 OPEN GATE |
 
 ### Phase 5: Background Execution
 
-| Work Package | Deliverables | Verification Evidence | Status |
-| :--- | :--- | :--- | :--- |
-| **WP-015: Durable Task Subsystem** | `packages/tasks` (`TaskQueueService`, `TaskWorker`, `OutboxSyncWorker`, `BackoffPolicy`) | `pnpm --filter @platform/tasks test` (33 unit & integration tests passing) | ✅ COMPLETE |
-| **WP-016: OS Background Adapters** | OS lifecycle adapters for Android (WorkManager) and Windows | Task worker operates in runtime loop; native OS platform adapters scheduled for Phase 6 | 🚧 OPEN GATE |
+| Work Package                       | Deliverables                                                                             | Verification Evidence                                                                   | Status       |
+| :--------------------------------- | :--------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------- | :----------- |
+| **WP-015: Durable Task Subsystem** | `packages/tasks` (`TaskQueueService`, `TaskWorker`, `OutboxSyncWorker`, `BackoffPolicy`) | `pnpm --filter @platform/tasks test` (33 unit & integration tests passing)              | ✅ COMPLETE  |
+| **WP-016: OS Background Adapters** | OS lifecycle adapters for Android (WorkManager) and Windows                              | Task worker operates in runtime loop; native OS platform adapters scheduled for Phase 6 | 🚧 OPEN GATE |
 
 ---
 

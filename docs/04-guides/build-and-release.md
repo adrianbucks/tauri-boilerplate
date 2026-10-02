@@ -19,6 +19,7 @@ pnpm --filter @apps/demo tauri:build
 ```
 
 Generated artifacts are located in:
+
 ```text
 apps/demo/src-tauri/target/release/bundle/
 ├── msi/Demo_x.y.z_x64_en-US.msi
@@ -35,6 +36,7 @@ pnpm --filter @apps/demo tauri -- android build --apk
 ```
 
 Generated artifacts are located in:
+
 ```text
 apps/demo/src-tauri/gen/android/app/build/outputs/apk/release/app-release-unsigned.apk
 ```
@@ -46,7 +48,9 @@ apps/demo/src-tauri/gen/android/app/build/outputs/apk/release/app-release-unsign
 The repository includes three automated GitHub Actions workflows:
 
 ### 1. `ci.yml` (Continuous Integration)
+
 Runs on all PRs and pushes to `main`:
+
 - Checks TypeScript formatting (`pnpm format:check`)
 - Verifies type safety across all packages (`pnpm turbo typecheck`)
 - Executes TypeScript unit, integration, security, and sync tests
@@ -55,13 +59,17 @@ Runs on all PRs and pushes to `main`:
 - Executes all Rust native unit tests (`cargo test --workspace`)
 
 ### 2. `build.yml` (Nightly / Artifact Verification)
+
 Builds production packages without publishing:
+
 - Compiles Windows MSI and NSIS installers on a `windows-latest` runner
 - Compiles Android APK on an Android SDK-enabled runner
 - Computes and records SHA-256 checksums
 
 ### 3. `release.yml` (Release Publisher)
+
 Triggered by pushing a version tag (e.g. `git push origin v1.2.0`):
+
 - Builds production Windows installers and Android APKs
 - Generates SHA-256 checksum files
 - Publishes a formal GitHub Release attaching all binaries and checksums
@@ -71,12 +79,16 @@ Triggered by pushing a version tag (e.g. `git push origin v1.2.0`):
 ## 3. Code Signing & Security Preparation
 
 ### Windows Authenticode Signing
+
 For production Windows distribution, binaries must be signed with an Authenticode certificate:
+
 - Configured in `tauri.conf.json` under `bundle.windows.certificateThumbprint` or via `signtool.exe`.
 - Prevents Windows SmartScreen warnings and guarantees publisher identity.
 
 ### Android APK Signing
+
 Production Android APKs must be signed using a release keystore:
+
 - Set environment variables `ANDROID_KEYSTORE_PATH`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`.
 - Gradle automatically invokes `zipalign` and `apksigner` during release builds.
 

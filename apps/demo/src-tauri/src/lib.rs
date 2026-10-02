@@ -12,6 +12,8 @@ use native_core::{
 };
 use sync_core::{EndpointAddr, IrohSyncEndpoint};
 use tauri::{Emitter, Manager};
+#[cfg(target_os = "windows")]
+use tauri::{menu::{Menu, MenuItem}, tray::TrayIconBuilder};
 use serde::{Deserialize, Serialize};
 
 const APPLICATION_ID: &str = "com.tauri.boilerplate.demo";
@@ -437,7 +439,111 @@ pub fn run() {
             app.manage(NativeSessionStore::new());
             app.manage(SyncState::default());
             app.manage(BackgroundLifecycleState::new(bg_db_path));
+
+            // --- WP-016b: Windows system tray (minimize-to-tray) ---
+            // Justification: Keeps the native Tauri/Tokio runtime and the
+            // OutboxScheduler alive when the user closes the main window,
+            // enabling background sync without a visible foreground process.
+            // Scoped exclusively to Windows desktop targets.
+            #[cfg(target_os = "windows")]
+            {
+                // Build a minimal context menu: Show | Sync Now | --- | Quit
+                // Each item is given a stable, unique string ID — changes to
+                // these IDs must be reflected in the on_menu_event handler below.
+                let show_item = MenuItem::with_id(
+                    app,
+                    "tray_show",       // stable event ID
+                    "Show",
+                    true,
+                    None::<&str>,      // no accelerator
+                )?;
+                let sync_item = MenuItem::with_id(
+                    app,
+                    "tray_sync_now",
+                    "Sync Now",
+                    true,
+                    None::<&str>,
+                )?;
+                let quit_item = MenuItem::with_id(
+                    app,
+                    "tray_quit",
+                    "Quit",
+                    true,
+                    None::<&str>,
+                )?;
+                let menu = Menu::with_items(
+                    app,
+                    &[&show_item, &sync_item, &quit_item],
+                )?;
+
+                TrayIconBuilder::new()
+                    .menu(&menu)
+                    // Left-click: restore the main window
+                    .on_tray_icon_event(|tray, event| {
+                        if let tauri::tray::TrayIconEvent::Click {
+                            button: tauri::tray::MouseButton::Left,
+                            button_state: tauri::tray::MouseButtonState::Up,
+                            ..
+                        } = event
+                        {
+                            let app = tray.app_handle();
+                            if let Some(window) = app.get_webview_window("main") {
+                                window.show().ok();
+                                window.set_focus().ok();
+                            }
+                        }
+                    })
+                    // Context menu click handler
+                    .on_menu_event(|app, event| match event.id.as_ref() {
+                        "tray_show" => {
+                            // Restore and focus the main window
+                            if let Some(window) = app.get_webview_window("main") {
+                                window.show().ok();
+                                window.set_focus().ok();
+                            }
+                        }
+                        "tray_sync_now" => {
+                            // Emit a background sync request event. The TypeScript
+                            // BackgroundLifecycleService listens on this channel and
+                            // enqueues an immediate OutboxSyncWorker batch.
+                            // SECURITY: this payload carries no credentials or private
+                            // key material — only a UTC timestamp for correlation.
+                            let ts = {
+                                use std::time::{SystemTime, UNIX_EPOCH};
+                                SystemTime::now()
+                                    .duration_since(UNIX_EPOCH)
+                                    .unwrap_or_default()
+                                    .as_secs()
+                                    .to_string()
+                            };
+                            let _ = app.emit("background://sync-now-requested", ts);
+                        }
+                        "tray_quit" => {
+                            // The ONLY sanctioned process exit path from the tray.
+                            // Stops the background scheduler before exit to ensure
+                            // all in-flight outbox leases are released gracefully.
+                            app.exit(0);
+                        }
+                        _ => {}
+                    })
+                    .tooltip("Tauri Boilerplate — running in background")
+                    .build(app)?;
+            }
+
             Ok(())
+        })
+        // --- WP-016b: Intercept window close on Windows — hide instead of exit ---
+        // Prevents the process from terminating when the user clicks X on the
+        // main window. The native Tokio runtime and OutboxScheduler remain alive.
+        // On all other platforms (Android) the event is passed through unmodified.
+        .on_window_event(|window, event| {
+            #[cfg(target_os = "windows")]
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if window.label() == "main" {
+                    api.prevent_close();
+                    window.hide().ok();
+                }
+            }
         })
         .invoke_handler(tauri::generate_handler![
             get_device_identity,

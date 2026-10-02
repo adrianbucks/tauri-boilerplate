@@ -12,7 +12,9 @@ export interface MinimalConsumerApp {
   notes: NotesService;
 }
 
-export async function createMinimalConsumerApp(options: PlatformOptions): Promise<MinimalConsumerApp> {
+export async function createMinimalConsumerApp(
+  options: PlatformOptions,
+): Promise<MinimalConsumerApp> {
   const platform = new Platform(options);
 
   // Register only the minimal consumer domain feature

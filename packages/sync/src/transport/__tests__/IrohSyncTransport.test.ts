@@ -28,32 +28,42 @@ describe("IrohSyncTransport", () => {
 
   it("initializes endpoint and connects to peer via Tauri IPC", async () => {
     const invokeCalls: Array<{ cmd: string; args?: unknown }> = [];
-    const mockInvoke = vi.fn(async (cmd: string, args?: Record<string, unknown>) => {
-      invokeCalls.push({ cmd, args });
-      if (cmd === "sync_start_endpoint") {
-        return {
-          endpoint_id: "local_node_id_123",
-          addr_json: JSON.stringify({ id: "local_node_id_123", relay_urls: [] }),
-        };
-      }
-      if (cmd === "sync_connect_peer") {
-        return "remote_node_id_456";
-      }
-      if (cmd === "sync_send_envelope") {
-        return undefined;
-      }
-      if (cmd === "sync_disconnect_peer") {
-        return undefined;
-      }
-      throw new Error(`Unexpected command: ${cmd}`);
-    });
+    const mockInvoke = vi.fn(
+      async (cmd: string, args?: Record<string, unknown>) => {
+        invokeCalls.push({ cmd, args });
+        if (cmd === "sync_start_endpoint") {
+          return {
+            endpoint_id: "local_node_id_123",
+            addr_json: JSON.stringify({
+              id: "local_node_id_123",
+              relay_urls: [],
+            }),
+          };
+        }
+        if (cmd === "sync_connect_peer") {
+          return "remote_node_id_456";
+        }
+        if (cmd === "sync_send_envelope") {
+          return undefined;
+        }
+        if (cmd === "sync_disconnect_peer") {
+          return undefined;
+        }
+        throw new Error(`Unexpected command: ${cmd}`);
+      },
+    );
 
     let eventHandler: ((event: { payload: unknown }) => void) | undefined;
     const unlistenFn = vi.fn();
-    const mockListen = vi.fn(async (_event: string, handler: (event: { payload: unknown }) => void) => {
-      eventHandler = handler;
-      return unlistenFn;
-    });
+    const mockListen = vi.fn(
+      async (
+        _event: string,
+        handler: (event: { payload: unknown }) => void,
+      ) => {
+        eventHandler = handler;
+        return unlistenFn;
+      },
+    );
 
     const transport = new IrohSyncTransport({
       invoke: mockInvoke as unknown as TauriInvokeFn,
@@ -64,10 +74,16 @@ describe("IrohSyncTransport", () => {
     const info = await transport.init();
     expect(info.endpoint_id).toBe("local_node_id_123");
     expect(mockInvoke).toHaveBeenCalledWith("sync_start_endpoint");
-    expect(mockListen).toHaveBeenCalledWith("sync://envelope-received", expect.any(Function));
+    expect(mockListen).toHaveBeenCalledWith(
+      "sync://envelope-received",
+      expect.any(Function),
+    );
 
     // 2. Connect
-    const peerAddr = JSON.stringify({ id: "remote_node_id_456", direct_addresses: ["127.0.0.1:12345"] });
+    const peerAddr = JSON.stringify({
+      id: "remote_node_id_456",
+      direct_addresses: ["127.0.0.1:12345"],
+    });
     await transport.connect("peer_warehouse", peerAddr);
     expect(transport.isConnected("peer_warehouse")).toBe(true);
     expect(mockInvoke).toHaveBeenCalledWith("sync_connect_peer", {
@@ -115,11 +131,12 @@ describe("IrohSyncTransport", () => {
 
   it("throws when sending to an unconnected peer", async () => {
     const mockInvoke = vi.fn();
-    const transport = new IrohSyncTransport({ invoke: mockInvoke as unknown as TauriInvokeFn });
+    const transport = new IrohSyncTransport({
+      invoke: mockInvoke as unknown as TauriInvokeFn,
+    });
 
     await expect(transport.send("unknown_peer", dummyEnvelope)).rejects.toThrow(
       "is not connected",
     );
   });
 });
-

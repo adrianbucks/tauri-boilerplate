@@ -27,7 +27,8 @@ export const notesFeatureManifest: FeatureManifest = {
   id: "notes",
   name: "Field Notes Feature",
   version: "1.0.0",
-  description: "Minimal consumer domain feature for offline field notes and sync",
+  description:
+    "Minimal consumer domain feature for offline field notes and sync",
   dependencies: [],
   optionalDependencies: [],
   permissions: [
@@ -53,4 +54,3 @@ export const notesFeatureManifest: FeatureManifest = {
     },
   ],
 };
-

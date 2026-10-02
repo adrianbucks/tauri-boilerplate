@@ -24,6 +24,15 @@ export interface NativeSessionView {
   permissions: string[];
 }
 
+export interface NativeBackgroundStatus {
+  running: boolean;
+}
+
+export interface NativeSyncEndpointInfo {
+  endpoint_id: string;
+  addr_json: string;
+}
+
 export interface AuthenticateUserRequest {
   user_id: string;
   password: string;
@@ -77,10 +86,20 @@ export interface CreateNativeWidgetsRequest {
   widgets: CreateNativeWidgetItem[];
 }
 
+export interface VerifyMessageInput {
+  public_key: string;
+  message_hex: string;
+  signature_hex: string;
+}
+
 export interface PlatformNativeGateway {
   getDeviceIdentity(): Promise<NativeDeviceIdentity>;
   getDatabaseHealth(): Promise<NativeDatabaseHealth>;
   getCurrentSession(): Promise<NativeSessionView | null>;
+  getBackgroundStatus(): Promise<NativeBackgroundStatus>;
+  getSyncEndpointInfo(): Promise<NativeSyncEndpointInfo>;
+  signMessage(messageHex: string): Promise<string>;
+  verifyMessage(request: VerifyMessageInput): Promise<boolean>;
   authenticateUser(
     request: AuthenticateUserRequest,
   ): Promise<NativeSessionView>;
@@ -106,6 +125,16 @@ export function createPlatformNativeGateway(
       invoker.invoke<NativeDatabaseHealth>("get_database_health"),
     getCurrentSession: () =>
       invoker.invoke<NativeSessionView | null>("get_current_session"),
+    getBackgroundStatus: () =>
+      invoker.invoke<NativeBackgroundStatus>("background_status"),
+    getSyncEndpointInfo: () =>
+      invoker.invoke<NativeSyncEndpointInfo>("sync_start_endpoint"),
+    signMessage: (messageHex) =>
+      invoker.invoke<string>("sign_message", {
+        request: { message_hex: messageHex },
+      }),
+    verifyMessage: (request) =>
+      invoker.invoke<boolean>("verify_message", { request }),
     authenticateUser: (request) =>
       invoker.invoke<NativeSessionView>("authenticate_user", { request }),
     logoutUser: () => invoker.invoke<void>("logout_user"),
@@ -123,5 +152,49 @@ export function createPlatformNativeGateway(
       invoker.invoke<NativeOrganisationRecord>("create_organisation", {
         request,
       }),
+  };
+}
+
+/**
+ * Creates a SignFn callback for SyncEnvelopeBuilder that delegates signing
+ * exclusively to native Rust memory custody via PlatformNativeGateway.
+ *
+ * Adheres strictly to Invariant #5: private keys never touch JavaScript.
+ */
+export function createNativeSignFn(
+  gateway: Pick<PlatformNativeGateway, "signMessage">,
+): (canonicalBytes: Uint8Array) => Promise<string> {
+  return async (canonicalBytes: Uint8Array): Promise<string> => {
+    const hex = Array.from(canonicalBytes)
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+    return gateway.signMessage(hex);
+  };
+}
+
+/**
+ * Creates a VerifyFn callback for SyncEnvelopeBuilder that delegates signature
+ * verification to native Rust Ed25519 primitives.
+ */
+export function createNativeVerifyFn(
+  gateway: Pick<PlatformNativeGateway, "verifyMessage">,
+): (
+  signerPublicKey: string,
+  canonicalBytes: Uint8Array,
+  signatureHex: string,
+) => Promise<boolean> {
+  return async (
+    signerPublicKey: string,
+    canonicalBytes: Uint8Array,
+    signatureHex: string,
+  ): Promise<boolean> => {
+    const hex = Array.from(canonicalBytes)
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+    return gateway.verifyMessage({
+      public_key: signerPublicKey,
+      message_hex: hex,
+      signature_hex: signatureHex,
+    });
   };
 }

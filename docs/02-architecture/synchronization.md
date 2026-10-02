@@ -95,14 +95,14 @@ impl IrohSyncEndpoint {
 
 ### Tauri IPC commands
 
-| Command | Purpose |
-|---|---|
-| `sync_start_endpoint` | Initialize iroh QUIC endpoint |
-| `sync_connect_peer` | Connect to a peer by `NodeAddr` |
-| `sync_disconnect_peer` | Disconnect from a peer |
-| `sync_send_envelope` | Transmit a signed envelope to a peer |
-| `sync_is_connected` | Check connection status |
-| Event: `sync://envelope-received` | Notify webview of incoming envelope |
+| Command                           | Purpose                              |
+| --------------------------------- | ------------------------------------ |
+| `sync_start_endpoint`             | Initialize iroh QUIC endpoint        |
+| `sync_connect_peer`               | Connect to a peer by `NodeAddr`      |
+| `sync_disconnect_peer`            | Disconnect from a peer               |
+| `sync_send_envelope`              | Transmit a signed envelope to a peer |
+| `sync_is_connected`               | Check connection status              |
+| Event: `sync://envelope-received` | Notify webview of incoming envelope  |
 
 ### TypeScript transport adapter (`packages/sync`)
 
@@ -127,15 +127,15 @@ Private keys never enter `IrohSyncTransport` — Invariant #5 is upheld.
 
 ```typescript
 interface SyncEnvelope {
-  envelopeId: string;        // Stable unique operation ID
-  schemaVersion: number;     // Protocol version
-  namespace: string;         // "appId/orgId/syncGroupId/featureId/entityType"
-  entityId: string;          // Stable entity identity
+  envelopeId: string; // Stable unique operation ID
+  schemaVersion: number; // Protocol version
+  namespace: string; // "appId/orgId/syncGroupId/featureId/entityType"
+  entityId: string; // Stable entity identity
   operationType: "create" | "update" | "delete" | "patch";
   payload: Record<string, unknown>;
-  logicalTimestamp: string;  // HLC timestamp (e.g., "2026-09-13T10:00:00Z+1")
-  signerPublicKey: string;   // "ed25519_pk_<hex>"
-  signature: string;         // 128-hex Ed25519 signature
+  logicalTimestamp: string; // HLC timestamp (e.g., "2026-09-13T10:00:00Z+1")
+  signerPublicKey: string; // "ed25519_pk_<hex>"
+  signature: string; // 128-hex Ed25519 signature
   // signature covers: canonicalSerialize(envelope without signature field)
 }
 ```
@@ -172,11 +172,11 @@ const envelope = await SyncEnvelopeBuilder.build({
 interface HandshakeMessage {
   applicationId: string;
   protocolVersion: string;
-  platform: string;             // "windows" | "android"
-  signerPublicKey: string;      // "ed25519_pk_<hex>"
-  nonce: string;                // 32-hex random nonce
-  timestamp: string;            // ISO-8601 UTC
-  signature: string;            // 128-hex Ed25519 over canonical handshake bytes
+  platform: string; // "windows" | "android"
+  signerPublicKey: string; // "ed25519_pk_<hex>"
+  nonce: string; // 32-hex random nonce
+  timestamp: string; // ISO-8601 UTC
+  signature: string; // 128-hex Ed25519 over canonical handshake bytes
 }
 ```
 
@@ -222,14 +222,14 @@ await inboxService.receiveEnvelope(envelope);
 
 ### Supported strategies
 
-| Strategy | Use case | Example |
-|---|---|---|
-| `lww` | Last-write-wins by HLC | Widget name, status fields |
-| `append-only` | Audit events, logs | History entries |
-| `immutable` | Primary keys, identifiers | Entity IDs |
-| `additive` | Delta quantities | Stock movements (deltas only) |
-| `manual` | Requires human resolution | Approval decisions |
-| `crdt` | Collaborative documents | Future use |
+| Strategy      | Use case                  | Example                       |
+| ------------- | ------------------------- | ----------------------------- |
+| `lww`         | Last-write-wins by HLC    | Widget name, status fields    |
+| `append-only` | Audit events, logs        | History entries               |
+| `immutable`   | Primary keys, identifiers | Entity IDs                    |
+| `additive`    | Delta quantities          | Stock movements (deltas only) |
+| `manual`      | Requires human resolution | Approval decisions            |
+| `crdt`        | Collaborative documents   | Future use                    |
 
 ### Safety guard
 
@@ -238,8 +238,8 @@ Applying an `additive` strategy to a field registered as an absolute quantity th
 ```typescript
 // ❌ This will throw at registry setup time:
 conflictRegistry.registerPolicy("widgets", {
-  field: "totalQuantity",   // registered as absolute
-  strategy: "additive",     // → ConflictError thrown
+  field: "totalQuantity", // registered as absolute
+  strategy: "additive", // → ConflictError thrown
 });
 ```
 
@@ -300,6 +300,7 @@ HLC format: `<ISO-8601 timestamp>+<monotonic counter>` — e.g., `2026-09-13T10:
 ```
 
 Examples:
+
 ```
 demo/org_abc123/sg_xyz/example-feature/widgets
 minimal-consumer/org_def456/sg_pqr/field-notes/notes
@@ -329,10 +330,10 @@ OS background lifecycle adapters (WP-016) — Android WorkManager and Windows sc
 
 ## Open work
 
-| Item | Work Package | Status |
-|---|---|---|
-| Android WorkManager adapter | WP-016a | 🚧 Open |
-| Windows background task adapter | WP-016b | 🚧 Open |
-| Multi-device NAT traversal benchmarking | WP-014 follow-up | 🚧 Open |
-| Production relay policy (self-hosted) | ADR-030 | Deferred |
-| iroh-docs evaluation completed | ADR-013 | ✅ Closed — custom operation log selected |
+| Item                                    | Work Package     | Status                                    |
+| --------------------------------------- | ---------------- | ----------------------------------------- |
+| Android WorkManager adapter             | WP-016a          | 🚧 Open                                   |
+| Windows background task adapter         | WP-016b          | 🚧 Open                                   |
+| Multi-device NAT traversal benchmarking | WP-014 follow-up | 🚧 Open                                   |
+| Production relay policy (self-hosted)   | ADR-030          | Deferred                                  |
+| iroh-docs evaluation completed          | ADR-013          | ✅ Closed — custom operation log selected |

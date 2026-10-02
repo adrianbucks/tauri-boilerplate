@@ -53,28 +53,28 @@ The native boundary establishes the security and communication barrier between t
 
 All commands registered in `apps/demo/src-tauri/src/lib.rs`:
 
-| Command Name | Category | Input Payload | Return Type | Security Enforcement |
-| :--- | :--- | :--- | :--- | :--- |
-| `get_device_identity` | Identity | None | `DeviceIdentity` | Returns device ID and Ed25519 public key. Private key is never returned. |
-| `get_database_health` | Diagnostic | None | `DatabaseHealth` | Reports WAL status, foreign keys, and integrity check without exposing DB handles. |
-| `authenticate_user` | Auth | `AuthenticateUserInput` | `NativeSessionView` | Argon2id verification with 5-failure lockout cooldown. Issues session token bound to device. |
-| `get_current_session` | Session | None | `Option<NativeSessionView>` | Returns active principal view with derived role permissions. |
-| `logout_user` | Session | None | `()` | Clears active in-memory principal. Does not revoke device identity. |
-| `list_widgets` | Domain | `NativeWidgetListRequest` | `Vec<NativeWidgetRecord>` | Enforces authenticated session; rejects queries across organisation boundaries. |
-| `create_widget` | Domain | `NativeWidgetCreateRequest` | `NativeWidgetRecord` | Validates input format; scopes entity to principal's organisation. |
-| `create_widgets` | Domain | `NativeWidgetBulkCreateRequest` | `Vec<NativeWidgetRecord>` | Atomic rollback on partial failure; enforces tenant boundary. |
-| `list_organisations` | Domain | None | `Vec<NativeOrganisationRecord>` | Restricted to organisations authorized for the active session. |
-| `create_organisation` | Domain | `NativeOrganisationCreateRequest` | `NativeOrganisationRecord` | Enforces unique slug/domain; requires valid correlation ID. |
-| `db_query` | DB Gateway | `DbQueryRequest` | `serde_json::Value` | Validates SQL safety via `validate_safe_sql`. Rejects PRAGMAs, ATTACH, DETACH, VACUUM INTO. |
-| `db_execute` | DB Gateway | `DbQueryRequest` | `serde_json::Value` | Validates SQL safety via `validate_safe_sql`. Rejects dangerous administrative commands. |
-| `db_transaction` | DB Gateway | `DbTransactionRequest` | `serde_json::Value` | Validates every statement in the batch; rolls back atomically on failure. |
-| `sign_message` | Crypto | `{ message: Vec<u8> }` | `Vec<u8>` | Signs payload bytes using device private key. Key remains in Rust memory. |
-| `verify_message` | Crypto | `{ message: Vec<u8>, signature: Vec<u8>, public_key: String }` | `bool` | Cryptographic Ed25519 verification against public key. |
-| `sync_start_endpoint` | P2P Replication | None | `EndpointAddr` | Binds native iroh endpoint; exposes Node ID and relay address JSON. |
-| `sync_connect_peer` | P2P Replication | `{ peer_addr: EndpointAddr }` | `()` | Connects to remote iroh peer using ALPN `tauri-boilerplate-sync/1.0`. |
-| `sync_disconnect_peer`| P2P Replication | `{ node_id: String }` | `()` | Closes active QUIC connection for specified peer. |
-| `sync_send_envelope` | P2P Replication | `{ node_id: String, payload: String }` | `()` | Sends length-prefixed JSON envelope over bidirectional QUIC stream with 1-byte ACK. |
-| `sync_is_connected` | P2P Replication | `{ node_id: String }` | `bool` | Queries connection manager state without side-effects. |
+| Command Name           | Category        | Input Payload                                                  | Return Type                     | Security Enforcement                                                                         |
+| :--------------------- | :-------------- | :------------------------------------------------------------- | :------------------------------ | :------------------------------------------------------------------------------------------- |
+| `get_device_identity`  | Identity        | None                                                           | `DeviceIdentity`                | Returns device ID and Ed25519 public key. Private key is never returned.                     |
+| `get_database_health`  | Diagnostic      | None                                                           | `DatabaseHealth`                | Reports WAL status, foreign keys, and integrity check without exposing DB handles.           |
+| `authenticate_user`    | Auth            | `AuthenticateUserInput`                                        | `NativeSessionView`             | Argon2id verification with 5-failure lockout cooldown. Issues session token bound to device. |
+| `get_current_session`  | Session         | None                                                           | `Option<NativeSessionView>`     | Returns active principal view with derived role permissions.                                 |
+| `logout_user`          | Session         | None                                                           | `()`                            | Clears active in-memory principal. Does not revoke device identity.                          |
+| `list_widgets`         | Domain          | `NativeWidgetListRequest`                                      | `Vec<NativeWidgetRecord>`       | Enforces authenticated session; rejects queries across organisation boundaries.              |
+| `create_widget`        | Domain          | `NativeWidgetCreateRequest`                                    | `NativeWidgetRecord`            | Validates input format; scopes entity to principal's organisation.                           |
+| `create_widgets`       | Domain          | `NativeWidgetBulkCreateRequest`                                | `Vec<NativeWidgetRecord>`       | Atomic rollback on partial failure; enforces tenant boundary.                                |
+| `list_organisations`   | Domain          | None                                                           | `Vec<NativeOrganisationRecord>` | Restricted to organisations authorized for the active session.                               |
+| `create_organisation`  | Domain          | `NativeOrganisationCreateRequest`                              | `NativeOrganisationRecord`      | Enforces unique slug/domain; requires valid correlation ID.                                  |
+| `db_query`             | DB Gateway      | `DbQueryRequest`                                               | `serde_json::Value`             | Validates SQL safety via `validate_safe_sql`. Rejects PRAGMAs, ATTACH, DETACH, VACUUM INTO.  |
+| `db_execute`           | DB Gateway      | `DbQueryRequest`                                               | `serde_json::Value`             | Validates SQL safety via `validate_safe_sql`. Rejects dangerous administrative commands.     |
+| `db_transaction`       | DB Gateway      | `DbTransactionRequest`                                         | `serde_json::Value`             | Validates every statement in the batch; rolls back atomically on failure.                    |
+| `sign_message`         | Crypto          | `{ message: Vec<u8> }`                                         | `Vec<u8>`                       | Signs payload bytes using device private key. Key remains in Rust memory.                    |
+| `verify_message`       | Crypto          | `{ message: Vec<u8>, signature: Vec<u8>, public_key: String }` | `bool`                          | Cryptographic Ed25519 verification against public key.                                       |
+| `sync_start_endpoint`  | P2P Replication | None                                                           | `EndpointAddr`                  | Binds native iroh endpoint; exposes Node ID and relay address JSON.                          |
+| `sync_connect_peer`    | P2P Replication | `{ peer_addr: EndpointAddr }`                                  | `()`                            | Connects to remote iroh peer using ALPN `tauri-boilerplate-sync/1.0`.                        |
+| `sync_disconnect_peer` | P2P Replication | `{ node_id: String }`                                          | `()`                            | Closes active QUIC connection for specified peer.                                            |
+| `sync_send_envelope`   | P2P Replication | `{ node_id: String, payload: String }`                         | `()`                            | Sends length-prefixed JSON envelope over bidirectional QUIC stream with 1-byte ACK.          |
+| `sync_is_connected`    | P2P Replication | `{ node_id: String }`                                          | `bool`                          | Queries connection manager state without side-effects.                                       |
 
 ---
 
@@ -117,12 +117,14 @@ app_handle.emit("sync://envelope-received", &envelope_json)?;
 Frontend consumption follows a strict subscribe/unsubscribe pattern:
 
 ```typescript
-import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 let unlisten: UnlistenFn | null = null;
 
-export async function startListening(onEnvelope: (env: CanonicalSyncEnvelope) => void) {
-  unlisten = await listen<string>('sync://envelope-received', (event) => {
+export async function startListening(
+  onEnvelope: (env: CanonicalSyncEnvelope) => void,
+) {
+  unlisten = await listen<string>("sync://envelope-received", (event) => {
     const parsed = JSON.parse(event.payload);
     onEnvelope(parsed);
   });

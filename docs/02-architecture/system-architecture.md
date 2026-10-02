@@ -154,9 +154,9 @@ A lower-level package must not import a higher-level application feature. Domain
 
 ## Remaining gaps to production readiness
 
-| Gap | Work Package | Status |
-|---|---|---|
-| OS Background Lifecycle Adapters (Android WorkManager + Windows scheduler) | WP-016 | 🚧 Open |
-| Release signing, checksums, provenance | WP-018 | 🚧 Open |
+| Gap                                                                        | Work Package | Status  |
+| -------------------------------------------------------------------------- | ------------ | ------- |
+| OS Background Lifecycle Adapters (Android WorkManager + Windows scheduler) | WP-016       | 🚧 Open |
+| Release signing, checksums, provenance                                     | WP-018       | 🚧 Open |
 
 All other P0/P1 gates are resolved. See [`06-status/current-state.md`](../06-status/current-state.md) for the full evidence-backed status matrix.

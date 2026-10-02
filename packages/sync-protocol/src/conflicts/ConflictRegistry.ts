@@ -1,8 +1,5 @@
 import { HybridLogicalClock } from "../hlc/HybridLogicalClock.js";
-import type {
-  ConflictPolicy,
-  ConflictRecord,
-} from "../types.js";
+import type { ConflictPolicy, ConflictRecord } from "../types.js";
 
 export interface ResolveConflictInput {
   entityId: string;

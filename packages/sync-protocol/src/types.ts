@@ -1,11 +1,6 @@
 export type OperationType = "create" | "update" | "delete";
 
-export type DevicePlatform =
-  | "windows"
-  | "android"
-  | "linux"
-  | "darwin"
-  | "web";
+export type DevicePlatform = "windows" | "android" | "linux" | "darwin" | "web";
 
 export interface SyncOperation {
   readonly operationId: string; // Globally unique ID (ULID/UUID)

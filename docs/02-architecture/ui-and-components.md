@@ -10,7 +10,7 @@ Implemented in `packages/ui` (`@platform/ui`) with full styling isolation and de
 
 ## 1. Design Philosophy: React-First, Not Schema-Driven
 
-The platform intentionally rejects generic "JSON-to-entire-screen" declarative UI engines. 
+The platform intentionally rejects generic "JSON-to-entire-screen" declarative UI engines.
 
 - **Ordinary React Components**: Business screens are standard React components with clear JSX, typed hooks, and predictable render cycles.
 - **Metadata for Infrastructure Only**: Manifest metadata is reserved strictly for column formatting, form validation rules, permission visibility checks, import mappings, and shell navigation routing.
@@ -52,19 +52,19 @@ packages/ui/src/
 // packages/ui/src/shell/AppShell.tsx
 
 export type AppSyncState =
-  | 'IDLE'
-  | 'SYNCING'
-  | 'CONNECTING'
-  | 'CONNECTED'
-  | 'AUTHENTICATING'
-  | 'AUTHORISED'
-  | 'DISCOVERED'
-  | 'IDENTIFIED'
-  | 'DISCONNECTED'
-  | 'REVOKED'
-  | 'EXPIRED'
-  | 'INCOMPATIBLE'
-  | 'ERROR';
+  | "IDLE"
+  | "SYNCING"
+  | "CONNECTING"
+  | "CONNECTED"
+  | "AUTHENTICATING"
+  | "AUTHORISED"
+  | "DISCOVERED"
+  | "IDENTIFIED"
+  | "DISCONNECTED"
+  | "REVOKED"
+  | "EXPIRED"
+  | "INCOMPATIBLE"
+  | "ERROR";
 
 export interface AppShellNavGroup {
   label: string;
@@ -113,13 +113,13 @@ export interface AppShellProps {
 
 The sidebar displays a live sync status indicator that reflects current transport and replication diagnostics:
 
-| State | Badge Variant | Dot Color | Meaning |
-| :--- | :--- | :--- | :--- |
-| `IDLE` / `CONNECTED` | `outline` | Green (`#22c55e`) | Peer connected, outbox empty, up to date |
-| `SYNCING` | `secondary` | Blue (`#3b82f6`) | Actively transmitting or ingesting envelopes |
-| `CONNECTING` / `AUTHENTICATING` | `secondary` | Amber (`#f59e0b`) | Establishing transport / handshaking |
-| `DISCONNECTED` | `outline` | Muted (`#6b7280`) | Offline, local-first mode operational |
-| `REVOKED` / `ERROR` | `destructive` | Red (`#ef4444`) | Device revoked or protocol incompatibility |
+| State                           | Badge Variant | Dot Color         | Meaning                                      |
+| :------------------------------ | :------------ | :---------------- | :------------------------------------------- |
+| `IDLE` / `CONNECTED`            | `outline`     | Green (`#22c55e`) | Peer connected, outbox empty, up to date     |
+| `SYNCING`                       | `secondary`   | Blue (`#3b82f6`)  | Actively transmitting or ingesting envelopes |
+| `CONNECTING` / `AUTHENTICATING` | `secondary`   | Amber (`#f59e0b`) | Establishing transport / handshaking         |
+| `DISCONNECTED`                  | `outline`     | Muted (`#6b7280`) | Offline, local-first mode operational        |
+| `REVOKED` / `ERROR`             | `destructive` | Red (`#ef4444`)   | Device revoked or protocol incompatibility   |
 
 ---
 
@@ -159,10 +159,10 @@ The `DataTable` component abstracts tabular display, sorting, filtering, and row
 ```tsx
 <DataTable
   columns={[
-    { key: 'name', label: 'Widget Name', sortable: true },
-    { key: 'sku', label: 'SKU' },
-    { key: 'quantity', label: 'Stock Level', align: 'right' },
-    { key: 'status', label: 'Status', render: (val) => <Badge>{val}</Badge> },
+    { key: "name", label: "Widget Name", sortable: true },
+    { key: "sku", label: "SKU" },
+    { key: "quantity", label: "Stock Level", align: "right" },
+    { key: "status", label: "Status", render: (val) => <Badge>{val}</Badge> },
   ]}
   data={widgets}
   keyExtractor={(w) => w.id}
@@ -178,6 +178,8 @@ The `DataTable` component abstracts tabular display, sorting, filtering, and row
 2. **Permission-Aware Rendering**: Action buttons (Delete, Edit, Export) evaluate permissions via `useAuthorization()`:
    ```tsx
    const { can } = useAuthorization();
-   return can('widgets.delete', widget) ? <Button variant="destructive">Delete</Button> : null;
+   return can("widgets.delete", widget) ? (
+     <Button variant="destructive">Delete</Button>
+   ) : null;
    ```
 3. **No Secret Ingestion**: Forms and UI memory never retain cleartext credentials longer than required for immediate authentication.

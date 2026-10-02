@@ -10,11 +10,7 @@
 // ---------------------------------------------------------------------------
 
 export type TaskState =
-  | "PENDING"
-  | "RUNNING"
-  | "COMPLETED"
-  | "FAILED"
-  | "CANCELLED";
+  "PENDING" | "RUNNING" | "COMPLETED" | "FAILED" | "CANCELLED";
 
 // ---------------------------------------------------------------------------
 // Retry Policy

@@ -84,7 +84,8 @@ function rowToRecord<TPayload>(row: TaskRow): TaskRecord<TPayload> {
   };
 }
 
-type Executor = Pick<DatabaseConnection, "query" | "execute"> | TransactionClient;
+type Executor =
+  Pick<DatabaseConnection, "query" | "execute"> | TransactionClient;
 
 // ---------------------------------------------------------------------------
 // TaskQueueService
@@ -208,9 +209,10 @@ export class TaskQueueService {
         ? `AND task_type IN (${taskTypes.map(() => "?").join(",")})`
         : "";
 
-    const params: unknown[] = taskTypes && taskTypes.length > 0
-      ? [now, ...taskTypes, limit]
-      : [now, limit];
+    const params: unknown[] =
+      taskTypes && taskTypes.length > 0
+        ? [now, ...taskTypes, limit]
+        : [now, limit];
 
     const eligible = await executor.query<{ id: string }>(
       `SELECT id FROM core_background_tasks
@@ -304,9 +306,12 @@ export class TaskQueueService {
       jitter: 0.25,
     };
 
-    const decision = this.retryCalculator.decide(error, row.attempt_count, policy);
-    const errorMessage =
-      error instanceof Error ? error.message : String(error);
+    const decision = this.retryCalculator.decide(
+      error,
+      row.attempt_count,
+      policy,
+    );
+    const errorMessage = error instanceof Error ? error.message : String(error);
 
     if (decision.retryable && decision.delayMs !== undefined) {
       // Reschedule: push scheduled_at forward by delayMs from now
@@ -421,7 +426,9 @@ export class TaskQueueService {
   /**
    * Finds a single task by id.
    */
-  async findById<TPayload = unknown>(taskId: string): Promise<TaskRecord<TPayload> | null> {
+  async findById<TPayload = unknown>(
+    taskId: string,
+  ): Promise<TaskRecord<TPayload> | null> {
     const rows = await this.db.query<TaskRow>(
       `SELECT * FROM core_background_tasks WHERE id = ?`,
       [taskId],

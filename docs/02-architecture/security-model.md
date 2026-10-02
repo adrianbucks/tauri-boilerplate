@@ -25,7 +25,7 @@ We operate under an adversarial threat model:
 
 ## 2. Seven-Layer Admission Model
 
-> **Core Security Invariant #4**: *A peer being reachable does not mean it is authorised.* Never allow the sync layer to become the security layer.
+> **Core Security Invariant #4**: _A peer being reachable does not mean it is authorised._ Never allow the sync layer to become the security layer.
 
 Every incoming synchronization request must successfully pass **all 7 layers** in order before any application data is ingested or exchanged:
 
@@ -129,12 +129,12 @@ When an administrator revokes a device or user:
 
 ## 6. Data Classification Matrix
 
-| Classification | Definition | Replication Rule | Local Storage |
-| :--- | :--- | :--- | :--- |
-| `PUBLIC` | Metadata, public organization details | Unrestricted to authenticated peers | SQLite standard |
-| `INTERNAL` | Business entities, inventory, widgets | Scoped to authorized Sync Groups | SQLite standard |
-| `CONFIDENTIAL`| Audit logs, user profiles, permissions | Scoped to administrative Sync Groups | SQLite standard |
-| `RESTRICTED` | Cryptographic keys, credentials | **NEVER SYNCHRONIZED** | Native Rust memory / OS secure storage |
+| Classification | Definition                             | Replication Rule                     | Local Storage                          |
+| :------------- | :------------------------------------- | :----------------------------------- | :------------------------------------- |
+| `PUBLIC`       | Metadata, public organization details  | Unrestricted to authenticated peers  | SQLite standard                        |
+| `INTERNAL`     | Business entities, inventory, widgets  | Scoped to authorized Sync Groups     | SQLite standard                        |
+| `CONFIDENTIAL` | Audit logs, user profiles, permissions | Scoped to administrative Sync Groups | SQLite standard                        |
+| `RESTRICTED`   | Cryptographic keys, credentials        | **NEVER SYNCHRONIZED**               | Native Rust memory / OS secure storage |
 
 ---
 

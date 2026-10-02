@@ -104,7 +104,9 @@ describe("TaskQueueService", () => {
 
     it("uses scheduledAt override when provided", async () => {
       const future = new Date(Date.now() + 60_000).toISOString();
-      const task = await service.enqueue(makeDefinition({ scheduledAt: future }));
+      const task = await service.enqueue(
+        makeDefinition({ scheduledAt: future }),
+      );
       expect(task.scheduledAt).toBe(future);
     });
   });

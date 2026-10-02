@@ -46,7 +46,11 @@ export class TaskRetryCalculator {
    * @param policy   - The task's retry policy.
    * @returns A `RetryDecision` describing what to do next.
    */
-  decide(error: unknown, attempt: number, policy: TaskRetryPolicy): RetryDecision {
+  decide(
+    error: unknown,
+    attempt: number,
+    policy: TaskRetryPolicy,
+  ): RetryDecision {
     // 1. If the error is a PlatformError with an explicit retryable flag, honour it.
     if (error instanceof PlatformError) {
       if (!error.retryable) {

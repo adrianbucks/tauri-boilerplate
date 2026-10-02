@@ -9,21 +9,27 @@ This is the central documentation hub for the **Tauri Local-First Platform Boile
 ## Quick Navigation
 
 ### I am a developer new to this project
+
 → Start with [`01-overview/project-overview.md`](./01-overview/project-overview.md), then [`04-guides/getting-started.md`](./04-guides/getting-started.md).
 
 ### I am building a feature or fixing a bug
+
 → Read the [`04-guides/developer-guide.md`](./04-guides/developer-guide.md) and the relevant [`02-architecture/`](./02-architecture/) section.
 
 ### I am an AI agent contributing to the codebase
+
 → Start with [`04-guides/agent-guide.md`](./04-guides/agent-guide.md) — this is mandatory reading. Then read the architecture section for the subsystem you are modifying.
 
 ### I want to use this as a template for my own application
+
 → Read [`04-guides/downstream-adoption.md`](./04-guides/downstream-adoption.md).
 
 ### I want to understand the current implementation status
+
 → See [`06-status/current-state.md`](./06-status/current-state.md) and [`06-status/roadmap.md`](./06-status/roadmap.md).
 
 ### I want to understand what's still in development
+
 → See [`07-in-development/README.md`](./07-in-development/README.md).
 
 ---
@@ -31,6 +37,7 @@ This is the central documentation hub for the **Tauri Local-First Platform Boile
 ## Documentation Map
 
 ### [`01-overview/`](./01-overview/) — Project overview
+
 High-level purpose, technology stack, distribution model, and full repository tour.
 
 - [Project overview & goals](./01-overview/project-overview.md)
@@ -38,6 +45,7 @@ High-level purpose, technology stack, distribution model, and full repository to
 - [Repository structure](./01-overview/repository-structure.md)
 
 ### [`02-architecture/`](./02-architecture/) — Architecture
+
 In-depth technical architecture for every platform subsystem.
 
 - [System architecture](./02-architecture/system-architecture.md)
@@ -54,11 +62,13 @@ In-depth technical architecture for every platform subsystem.
 - [UI & components](./02-architecture/ui-and-components.md)
 
 ### [`03-decisions/`](./03-decisions/) — Architecture Decision Records
+
 Formal ADRs explaining every major technology and design decision.
 
 - [ADR index](./03-decisions/README.md)
 
 ### [`04-guides/`](./04-guides/) — Developer & agent guides
+
 Step-by-step guides for developers, AI agents, and downstream users.
 
 - [Getting started](./04-guides/getting-started.md)
@@ -70,6 +80,7 @@ Step-by-step guides for developers, AI agents, and downstream users.
 - [Build & release guide](./04-guides/build-and-release.md)
 
 ### [`05-reference/`](./05-reference/) — Technical reference
+
 Precise specifications, contracts, and reference tables.
 
 - [API & native command contracts](./05-reference/api-contracts.md)
@@ -78,6 +89,7 @@ Precise specifications, contracts, and reference tables.
 - [Dependency map](./05-reference/dependency-map.md)
 
 ### [`06-status/`](./06-status/) — Implementation status
+
 Evidence-backed view of what is implemented, what passes gates, and what remains.
 
 - [**Current state (evidence-backed)**](./06-status/current-state.md)
@@ -86,6 +98,7 @@ Evidence-backed view of what is implemented, what passes gates, and what remains
 - [Acceptance gates](./06-status/acceptance-gates.md)
 
 ### [`07-in-development/`](./07-in-development/) — Active development
+
 Tracks everything still in progress: open gates, open research questions, known limitations.
 
 - [In-development overview](./07-in-development/README.md)
@@ -94,6 +107,7 @@ Tracks everything still in progress: open gates, open research questions, known 
 - [Known limitations](./07-in-development/known-limitations.md)
 
 ### [`archive/`](./archive/) — Historical documents
+
 Superseded documents preserved for historical context. Do not use for implementation guidance.
 
 ---

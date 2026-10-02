@@ -232,7 +232,7 @@ mod tests {
     }
 
     fn outbox_schema(db: &DurableDatabase) {
-        db.execute_raw(
+        db.execute_batch(
             "CREATE TABLE IF NOT EXISTS core_sync_outbox (\
               id TEXT PRIMARY KEY,\
               envelope_id TEXT NOT NULL,\
@@ -301,7 +301,7 @@ mod tests {
     async fn scheduler_emits_tick_when_outbox_has_pending_rows() {
         let (db, path) = temp_db();
         outbox_schema(&db);
-        db.execute_raw(
+        db.execute_batch(
             "INSERT INTO core_sync_outbox \
               (id, envelope_id, organisation_id, sync_group_id, payload_json, \
                signer_public_key, signature, status, created_at) \

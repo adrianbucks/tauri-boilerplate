@@ -2,21 +2,21 @@
 
 ## Current versions (pinned)
 
-| Technology | Version | Role |
-|---|---|---|
-| **Tauri** | `@tauri-apps/cli` 2.11.4 | Native desktop/mobile shell |
-| **React** | 19 | Frontend framework |
-| **TypeScript** | Latest stable | Frontend language |
-| **Vite** | 6 | Frontend build tool |
-| **pnpm** | 10.26.0 | Package manager |
-| **Turborepo** | 2.4.4 | Monorepo task orchestration |
-| **Drizzle ORM** | 0.39.3 | TypeScript schema definitions and ORM abstractions |
-| **sql.js** | Latest | In-memory database adapter (tests and web dev only) |
-| **Rust** | Edition 2021, repo-pinned toolchain | Native backend |
-| **rusqlite** | Latest | Rust SQLite bindings (native persistence) |
-| **iroh** | 1.2.0 | P2P QUIC transport (production sync) |
-| **Vitest** | 3 | TypeScript unit and integration tests |
-| **Node.js** | 24 LTS | CI runtime |
+| Technology      | Version                             | Role                                                |
+| --------------- | ----------------------------------- | --------------------------------------------------- |
+| **Tauri**       | `@tauri-apps/cli` 2.11.4            | Native desktop/mobile shell                         |
+| **React**       | 19                                  | Frontend framework                                  |
+| **TypeScript**  | Latest stable                       | Frontend language                                   |
+| **Vite**        | 6                                   | Frontend build tool                                 |
+| **pnpm**        | 10.26.0                             | Package manager                                     |
+| **Turborepo**   | 2.4.4                               | Monorepo task orchestration                         |
+| **Drizzle ORM** | 0.39.3                              | TypeScript schema definitions and ORM abstractions  |
+| **sql.js**      | Latest                              | In-memory database adapter (tests and web dev only) |
+| **Rust**        | Edition 2021, repo-pinned toolchain | Native backend                                      |
+| **rusqlite**    | Latest                              | Rust SQLite bindings (native persistence)           |
+| **iroh**        | 1.2.0                               | P2P QUIC transport (production sync)                |
+| **Vitest**      | 3                                   | TypeScript unit and integration tests               |
+| **Node.js**     | 24 LTS                              | CI runtime                                          |
 
 The exact Rust toolchain version is pinned in [`rust-toolchain.toml`](../../rust-toolchain.toml).
 
@@ -26,14 +26,14 @@ The exact Rust toolchain version is pinned in [`rust-toolchain.toml`](../../rust
 
 All major technology choices are documented as Architecture Decision Records (ADRs) in [`03-decisions/`](../03-decisions/). Key decisions:
 
-| Decision | ADR | Summary |
-|---|---|---|
-| Monorepo + pnpm/Turborepo | [ADR-001](../03-decisions/ADR-001-monorepo-structure.md) | Shared packages across apps; unified CI |
-| Tauri 2 (not Electron) | [ADR-002](../03-decisions/ADR-002-tauri-architecture.md) | Smaller binary, native OS security, multi-platform |
-| Native SQLite via rusqlite | [ADR-003](../03-decisions/ADR-003-native-sqlite.md) | Durable file-backed storage with WAL and foreign keys |
-| Drizzle ORM | [ADR-004](../03-decisions/ADR-004-drizzle-integration.md) | TypeScript schema types without ORM abstraction overhead |
-| React 19 + shadcn/ui | [ADR-005](../03-decisions/ADR-005-ui-and-styling.md) | Composable, accessible, customisable components |
-| iroh for P2P transport | [ADR-012](../03-decisions/ADR-012-iroh-transport.md) | Signed operation logs over direct iroh QUIC streams |
+| Decision                   | ADR                                                       | Summary                                                  |
+| -------------------------- | --------------------------------------------------------- | -------------------------------------------------------- |
+| Monorepo + pnpm/Turborepo  | [ADR-001](../03-decisions/ADR-001-monorepo-structure.md)  | Shared packages across apps; unified CI                  |
+| Tauri 2 (not Electron)     | [ADR-002](../03-decisions/ADR-002-tauri-architecture.md)  | Smaller binary, native OS security, multi-platform       |
+| Native SQLite via rusqlite | [ADR-003](../03-decisions/ADR-003-native-sqlite.md)       | Durable file-backed storage with WAL and foreign keys    |
+| Drizzle ORM                | [ADR-004](../03-decisions/ADR-004-drizzle-integration.md) | TypeScript schema types without ORM abstraction overhead |
+| React 19 + shadcn/ui       | [ADR-005](../03-decisions/ADR-005-ui-and-styling.md)      | Composable, accessible, customisable components          |
+| iroh for P2P transport     | [ADR-012](../03-decisions/ADR-012-iroh-transport.md)      | Signed operation logs over direct iroh QUIC streams      |
 
 ---
 
@@ -67,15 +67,15 @@ See [ADR-012](../03-decisions/ADR-012-iroh-transport.md) and the [research gate 
 
 ## Development tooling
 
-| Tool | Purpose |
-|---|---|
-| `pnpm` | Package installation and workspace script execution |
-| `turbo` | Parallel task execution with caching (`build`, `test`, `typecheck`) |
-| `cargo` | Rust compilation, testing, formatting, and linting |
-| `prettier` | TypeScript/CSS code formatting |
-| `eslint` | TypeScript linting |
-| `clippy` | Rust linting |
-| `vitest` | TypeScript test runner |
+| Tool       | Purpose                                                             |
+| ---------- | ------------------------------------------------------------------- |
+| `pnpm`     | Package installation and workspace script execution                 |
+| `turbo`    | Parallel task execution with caching (`build`, `test`, `typecheck`) |
+| `cargo`    | Rust compilation, testing, formatting, and linting                  |
+| `prettier` | TypeScript/CSS code formatting                                      |
+| `eslint`   | TypeScript linting                                                  |
+| `clippy`   | Rust linting                                                        |
+| `vitest`   | TypeScript test runner                                              |
 
 ### Key scripts
 

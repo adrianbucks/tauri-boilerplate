@@ -98,4 +98,3 @@ The platform remains fully functional locally if the peer/network is unavailable
 ## 6. Definition of production readiness
 
 Production readiness is not a single build-success flag. It requires all P0/P1 security and durability work packages in [`docs/06-status/current-state.md`](./06-status/current-state.md) to be closed and the acceptance gates in [`docs/06-status/acceptance-gates.md`](./06-status/acceptance-gates.md) to pass on the supported Windows and Android matrix.
-

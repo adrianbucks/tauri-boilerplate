@@ -115,11 +115,8 @@ describe("SyncEnvelopeBuilder", () => {
       const signFn = async (_bytes: Uint8Array) => FAKE_SIG;
       const envelope = await SyncEnvelopeBuilder.build(op, FAKE_PK, signFn);
 
-      const verifyFn = async (
-        _pk: string,
-        _bytes: Uint8Array,
-        _sig: string,
-      ) => true;
+      const verifyFn = async (_pk: string, _bytes: Uint8Array, _sig: string) =>
+        true;
       const isValid = await SyncEnvelopeBuilder.verify(envelope, verifyFn);
       expect(isValid).toBe(true);
     });
@@ -129,11 +126,8 @@ describe("SyncEnvelopeBuilder", () => {
       const signFn = async (_bytes: Uint8Array) => FAKE_SIG;
       const envelope = await SyncEnvelopeBuilder.build(op, FAKE_PK, signFn);
 
-      const verifyFn = async (
-        _pk: string,
-        _bytes: Uint8Array,
-        _sig: string,
-      ) => false;
+      const verifyFn = async (_pk: string, _bytes: Uint8Array, _sig: string) =>
+        false;
       const isValid = await SyncEnvelopeBuilder.verify(envelope, verifyFn);
       expect(isValid).toBe(false);
     });
@@ -162,11 +156,7 @@ describe("SyncEnvelopeBuilder", () => {
         capturedSignBytes.push(bytes);
         return FAKE_SIG;
       };
-      const verifyFn = async (
-        _pk: string,
-        bytes: Uint8Array,
-        _sig: string,
-      ) => {
+      const verifyFn = async (_pk: string, bytes: Uint8Array, _sig: string) => {
         capturedVerifyBytes.push(bytes);
         return true;
       };

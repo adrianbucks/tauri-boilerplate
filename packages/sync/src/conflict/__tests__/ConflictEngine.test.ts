@@ -82,7 +82,11 @@ describe("ConflictEngine", () => {
         logicalTimestamp: tsNewerLocal,
       },
     };
-    const res2 = engine.resolve({ strategy: "lww" }, newerLocal, baseRemoteEnvelope);
+    const res2 = engine.resolve(
+      { strategy: "lww" },
+      newerLocal,
+      baseRemoteEnvelope,
+    );
     expect(res2.winner).toBe("local");
     expect(res2.resolvedEnvelope?.envelopeId).toBe("env_local");
   });
@@ -144,7 +148,10 @@ describe("ConflictEngine", () => {
       "adjustments",
     );
     expect(res.winner).toBe("merge");
-    expect((res.resolvedEnvelope?.operation.payload as { adjustments: number }).adjustments).toBe(15);
+    expect(
+      (res.resolvedEnvelope?.operation.payload as { adjustments: number })
+        .adjustments,
+    ).toBe(15);
   });
 
   it("enforces CS-010: throws ConflictError if additive strategy is attempted on an absolute value field", () => {

@@ -45,6 +45,23 @@ jobs:
       - name: Sync Tests
         run: pnpm test:sync
 
+      # WP-018a: NPM supply-chain audit (production dependencies only)
+      # Fails CI if any vulnerability with severity >= moderate is detected.
+      # Add entries to .npmrc or use `pnpm audit --ignore-cves` for known
+      # non-applicable advisories after documented team review.
+      - name: NPM Supply Chain Audit (WP-018a)
+        run: pnpm audit --prod
+
+      # WP-021: Build-time feature manifest & permission enforcement gate (G-013)
+      # Verifies:
+      #   1. All feature manifests pass schema validation.
+      #   2. Dependency load order is acyclic and complete.
+      #   3. Every permission used in feature source code (can/require/requireTrusted)
+      #      is declared in the feature's FeatureManifest.permissions[] array.
+      # Fails CI if any undeclared permission reference is found.
+      - name: Feature Manifest & Permission Validation (WP-021)
+        run: pnpm feature-validate
+
   rust-check:
     name: Rust Crates Check
     runs-on: windows-latest
@@ -66,3 +83,13 @@ jobs:
 
       - name: Rust Tests
         run: cargo test --workspace
+
+      # WP-018a: Rust supply-chain audit via cargo-audit.
+      # Checks all workspace crates against the RustSec advisory database.
+      # To suppress a known non-applicable advisory, add it to audit.toml:
+      #   [advisories]
+      #   ignore = ["RUSTSEC-XXXX-YYYY"]
+      - name: Rust Supply Chain Audit (WP-018a)
+        run: |
+          cargo install cargo-audit --quiet 2>$null || true
+          cargo audit

@@ -9,6 +9,7 @@ This guide defines how downstream development teams and product engineers should
 When creating a new application from this boilerplate:
 
 1. **Clone & Detach Git Remote**:
+
    ```bash
    git clone https://github.com/adrianbucks/tauri-boilerplate.git my-enterprise-app
    cd my-enterprise-app
@@ -57,6 +58,7 @@ features/
 ```
 
 Each feature encapsulates:
+
 - Drizzle table definitions & versioned SQL migrations
 - Hierarchical permissions (`inventory.read`, `inventory.transfer`)
 - Scoped repositories extending `BaseRepository`

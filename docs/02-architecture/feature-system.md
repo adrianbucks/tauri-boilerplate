@@ -2,16 +2,17 @@
 
 ## Current Implementation
 
-**Status**: ✅ Feature manifest registration, dependency ordering, and lifecycle implemented.
+**Status**: ✅ Feature manifest registration, dependency ordering, lifecycle, and build-time source-level permission enforcement implemented (WP-021 / G-013).
 
 `packages/feature-system` supports:
+
 - Explicit registration with manifest validation.
 - Dependency graph resolution with cycle detection.
 - Duplicate feature and permission rejection.
 - Migration owner assignment.
 - Sync policy and navigation aggregation.
 
-Feature validator (`tooling/feature-validator`) validates manifests and dependency resolution. Build-time source scanning (proving `can()` calls match declared permissions) is not yet a CI gate.
+Feature validator (`tooling/feature-validator`) validates manifests, dependency resolution, and source-level permission coverage. Every `can()`, `require()`, and `requireTrusted()` call site in `features/*/src/` is scanned at build time and cross-referenced against the feature's `FeatureManifest.permissions[]` array. This check runs as a required CI gate (`pnpm feature-validate`, WP-021).
 
 ---
 
@@ -20,6 +21,7 @@ Feature validator (`tooling/feature-validator`) validates manifests and dependen
 The feature system is the mechanism by which domain-specific capabilities are added to a platform application **without modifying the platform packages**.
 
 A feature is a self-contained package that declares its:
+
 - Identity and version
 - Dependencies on other features
 - Permissions it uses
@@ -63,10 +65,10 @@ interface FeatureManifest {
 }
 
 interface SyncPolicyDefinition {
-  entityType: string;     // Must match a table in this feature's schema
-  namespace: string;      // "{application}/{organisation}/{syncGroup}/{feature}/{entityType}"
+  entityType: string; // Must match a table in this feature's schema
+  namespace: string; // "{application}/{organisation}/{syncGroup}/{feature}/{entityType}"
   conflictPolicy: ConflictPolicy;
-  syncable: boolean;      // Must be true to include in replication
+  syncable: boolean; // Must be true to include in replication
 }
 ```
 
@@ -79,7 +81,10 @@ Features are registered **explicitly** at application startup. No magic file dis
 ```typescript
 // apps/demo/src/bootstrap/features.ts
 import { platform } from "@platform/platform";
-import { exampleFeatureManifest, exampleFeatureRoutes } from "@features/example-feature";
+import {
+  exampleFeatureManifest,
+  exampleFeatureRoutes,
+} from "@features/example-feature";
 import { organisationsManifest } from "@features/organisations";
 import { identityAdminManifest } from "@features/identity-admin";
 
@@ -116,7 +121,8 @@ Resolve optional dependencies (skip if absent)
         ↓
 Validate migrations (versions unique per feature, no gaps)
         ↓
-Validate permissions (all can()/require() calls reference declared permissions) [target]
+Validate permissions ✅ (WP-021: AST scanner cross-checks all can()/require()/requireTrusted()
+        │ call sites in features/*/src/ against manifest.permissions[].name — CI enforced)
         ↓
 Validate sync policies (any syncable entity must have a registered policy)
         ↓
@@ -159,18 +165,18 @@ features/example-feature/
 
 ### What example-feature demonstrates
 
-| Capability | Where |
-|---|---|
-| Manifest declaration | `manifest.ts` |
-| Permission constants | `permissions.ts` |
-| Drizzle schema | `schema/widgets.ts` |
-| Feature migrations | `migrations/` |
-| Repository with BaseRepository | `repositories/WidgetRepository.ts` |
-| Service with auth + audit + sync | `services/WidgetService.ts` |
-| Tombstone delete | `services/WidgetService.ts` — `softDelete()` |
-| React page with DataTable | `pages/WidgetListPage.tsx` |
-| Sync policy registration | `manifest.ts` — `syncPolicies` |
-| Unit + integration tests | `tests/` |
+| Capability                       | Where                                        |
+| -------------------------------- | -------------------------------------------- |
+| Manifest declaration             | `manifest.ts`                                |
+| Permission constants             | `permissions.ts`                             |
+| Drizzle schema                   | `schema/widgets.ts`                          |
+| Feature migrations               | `migrations/`                                |
+| Repository with BaseRepository   | `repositories/WidgetRepository.ts`           |
+| Service with auth + audit + sync | `services/WidgetService.ts`                  |
+| Tombstone delete                 | `services/WidgetService.ts` — `softDelete()` |
+| React page with DataTable        | `pages/WidgetListPage.tsx`                   |
+| Sync policy registration         | `manifest.ts` — `syncPolicies`               |
+| Unit + integration tests         | `tests/`                                     |
 
 Every comment in `example-feature` explains _why_ the code is written the way it is, not just what it does.
 
@@ -193,11 +199,11 @@ cp -r features/example-feature features/my-domain
 # 5. Add to pnpm workspace
 # pnpm-workspace.yaml already includes features/* — no change needed
 
-# 6. Run the validator
-pnpm turbo feature-validator
+# 6. Run the build-time permission validator (WP-021)
+pnpm feature-validate
 ```
 
-The validator catches: missing sync policies, undeclared permissions, duplicate migration versions, broken dependencies.
+The validator catches: missing sync policies, undeclared permissions (permission used in source but not declared in manifest), duplicate migration versions, broken dependencies, and dependency cycles.
 
 ---
 
@@ -219,7 +225,9 @@ Features communicate through services, not direct database access:
 const warehouse = await warehouseService.findById(warehouseId, ctx);
 
 // ❌ Forbidden: Feature B queries Feature A's tables directly
-const warehouse = await db.query("SELECT * FROM warehouse_sites WHERE id = ?", [id]);
+const warehouse = await db.query("SELECT * FROM warehouse_sites WHERE id = ?", [
+  id,
+]);
 ```
 
 Optional dependencies allow a feature to behave differently based on whether another feature is installed:
@@ -236,8 +244,8 @@ if (featureRegistry.isInstalled("barcode-scanning")) {
 
 These features are part of the boilerplate and must not contain domain-specific business logic:
 
-| Feature | Package | Purpose |
-|---|---|---|
-| Identity Admin | `@features/identity-admin` | User, device, role, and sync group management UI |
-| Organisations | `@features/organisations` | Organisation management and membership lifecycle |
-| Example Feature | `@features/example-feature` | Reference implementation template |
+| Feature         | Package                     | Purpose                                          |
+| --------------- | --------------------------- | ------------------------------------------------ |
+| Identity Admin  | `@features/identity-admin`  | User, device, role, and sync group management UI |
+| Organisations   | `@features/organisations`   | Organisation management and membership lifecycle |
+| Example Feature | `@features/example-feature` | Reference implementation template                |

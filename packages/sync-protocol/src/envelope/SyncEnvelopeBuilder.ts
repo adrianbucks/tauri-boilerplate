@@ -79,7 +79,11 @@ export class SyncEnvelopeBuilder {
       return false;
     }
     const canonicalBytes = SyncEnvelopeBuilder.canonicalize(envelope.operation);
-    return verifyFn(envelope.signerPublicKey, canonicalBytes, envelope.signature);
+    return verifyFn(
+      envelope.signerPublicKey,
+      canonicalBytes,
+      envelope.signature,
+    );
   }
 
   /**

@@ -12,7 +12,11 @@ import { SyncManager, OutboxService, TombstoneService } from "@platform/sync";
 import type { SyncEnvelope } from "@platform/sync-protocol";
 import { NotesRepository } from "./NotesRepository.js";
 import { NOTES_PERMISSIONS } from "./NotesManifest.js";
-import type { NoteRecord, CreateNoteInput, UpdateNoteInput } from "./NotesTypes.js";
+import type {
+  NoteRecord,
+  CreateNoteInput,
+  UpdateNoteInput,
+} from "./NotesTypes.js";
 
 export interface NotesServiceOptions {
   db: DatabaseConnection;
@@ -33,7 +37,10 @@ export class NotesService {
     this.db = options.db;
     this.repo = new NotesRepository(options.db);
     this.auth = options.auth ?? new AuthorizationEngine(options.db);
-    this.outbox = options.outbox ?? options.sync?.getOutboxService() ?? new OutboxService(options.db);
+    this.outbox =
+      options.outbox ??
+      options.sync?.getOutboxService() ??
+      new OutboxService(options.db);
     this.tombstones = options.tombstones ?? new TombstoneService(options.db);
   }
 
@@ -67,7 +74,9 @@ export class NotesService {
       tx,
     );
     if (!decision.granted) {
-      throw new Error(`Subject does not hold permission '${permission}': ${decision.reason}`);
+      throw new Error(
+        `Subject does not hold permission '${permission}': ${decision.reason}`,
+      );
     }
   }
 
@@ -173,7 +182,11 @@ export class NotesService {
     const subject = extractContextSubject(ctx);
 
     const doUpdate = async (client: TransactionClient) => {
-      const existing = await this.repo.findByIdWithinOrganisation(input.id, subject.organisationId, client);
+      const existing = await this.repo.findByIdWithinOrganisation(
+        input.id,
+        subject.organisationId,
+        client,
+      );
       if (!existing) {
         throw new Error(`Note '${input.id}' not found`);
       }
@@ -231,7 +244,11 @@ export class NotesService {
     const subject = extractContextSubject(ctx);
 
     const doDelete = async (client: TransactionClient) => {
-      const existing = await this.repo.findByIdWithinOrganisation(id, subject.organisationId, client);
+      const existing = await this.repo.findByIdWithinOrganisation(
+        id,
+        subject.organisationId,
+        client,
+      );
       if (!existing) {
         return;
       }
@@ -284,4 +301,3 @@ export class NotesService {
     }
   }
 }
-

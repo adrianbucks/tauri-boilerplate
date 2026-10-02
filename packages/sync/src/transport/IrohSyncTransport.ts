@@ -65,7 +65,9 @@ export class IrohSyncTransport implements SyncTransport {
 
     this.isInitializing = true;
     try {
-      this.endpointInfo = await this.invoke<SyncEndpointInfo>("sync_start_endpoint");
+      this.endpointInfo = await this.invoke<SyncEndpointInfo>(
+        "sync_start_endpoint",
+      );
 
       if (this.listen && !this.unlistenFn) {
         this.unlistenFn = await this.listen<InboundEnvelopeMessage>(
@@ -131,7 +133,9 @@ export class IrohSyncTransport implements SyncTransport {
    */
   async send(peerId: string, envelope: SyncEnvelope): Promise<void> {
     if (!this.connectedPeers.has(peerId)) {
-      throw new Error(`[IrohSyncTransport] Cannot send: peer '${peerId}' is not connected.`);
+      throw new Error(
+        `[IrohSyncTransport] Cannot send: peer '${peerId}' is not connected.`,
+      );
     }
 
     const endpointId = this.connectedPeers.get(peerId)!;
@@ -172,7 +176,10 @@ export class IrohSyncTransport implements SyncTransport {
         await handler(peerId, envelope);
       }
     } catch (err) {
-      console.error("[IrohSyncTransport] Failed to process incoming envelope:", err);
+      console.error(
+        "[IrohSyncTransport] Failed to process incoming envelope:",
+        err,
+      );
     }
   }
 
@@ -186,4 +193,3 @@ export class IrohSyncTransport implements SyncTransport {
     }
   }
 }
-

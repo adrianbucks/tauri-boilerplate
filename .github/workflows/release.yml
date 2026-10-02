@@ -84,8 +84,18 @@ jobs:
         with:
           targets: aarch64-linux-android, armv7-linux-androideabi, i686-linux-android, x86_64-linux-android
 
-      - name: Install Dependencies
-        run: pnpm install --frozen-lockfile
+      - name: Configure Android Release Keystore
+        if: env.ANDROID_KEYSTORE_BASE64 != ''
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > apps/demo/src-tauri/gen/android/app/release.jks
+          echo "ANDROID_KEYSTORE_PATH=release.jks" >> $GITHUB_ENV
+          echo "ANDROID_KEYSTORE_PASSWORD=$ANDROID_KEYSTORE_PASSWORD" >> $GITHUB_ENV
+          echo "ANDROID_KEY_ALIAS=$ANDROID_KEY_ALIAS" >> $GITHUB_ENV
 
       - name: Build Android APK
         run: pnpm --filter @apps/demo tauri -- android build --apk
@@ -110,6 +120,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write
+      attestations: write
     steps:
       - name: Download Windows Artifacts
         uses: actions/download-artifact@v4
@@ -122,6 +134,14 @@ jobs:
         with:
           name: android-release-${{ github.ref_name }}
           path: release/android
+
+      - name: Generate Cryptographic SLSA Build Provenance Attestation
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            release/windows/**/*.msi
+            release/windows/**/*.exe
+            release/android/**/*.apk
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

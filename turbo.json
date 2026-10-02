@@ -23,6 +23,11 @@
     "test:sync": {
       "dependsOn": ["^build"]
     },
+    "feature-validate": {
+      "dependsOn": ["^build"],
+      "inputs": ["src/**/*.ts", "src/**/*.tsx", "../../features/*/src/**/*.ts"],
+      "cache": true
+    },
     "dev": {
       "cache": false,
       "persistent": true

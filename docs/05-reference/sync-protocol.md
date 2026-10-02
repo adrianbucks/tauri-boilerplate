@@ -7,7 +7,7 @@ This document specifies the wire format, 7-layer admission handshake, envelope s
 ## 1. Protocol Identity & Wire Framing
 
 - **Transport**: QUIC over UDP (via iroh `v1.2.0`) with ALPN `tauri-boilerplate-sync/1.0`.
-- **Wire Framing**: 
+- **Wire Framing**:
   - Each message is transmitted over a bidirectional QUIC stream.
   - Frame structure: `[ 4-byte Big-Endian Length Prefix ] + [ UTF-8 JSON Canonical Envelope ]`.
   - Recipient transmits a 1-byte acknowledgement `0x06` (ACK) or `0x15` (NAK) upon stream completion.
@@ -35,7 +35,7 @@ export interface CanonicalSyncEnvelope<TPayload = unknown> {
   /** Unique entity identifier within the namespace */
   readonly entityId: string;
   /** Replication operation type */
-  readonly operation: 'UPSERT' | 'TOMBSTONE';
+  readonly operation: "UPSERT" | "TOMBSTONE";
   /** Node ID of transmitting peer */
   readonly senderNodeId: string;
   /** Cryptographic Ed25519 signature of the canonical JSON bytes */

@@ -78,10 +78,14 @@ const { publicKey, deviceId } = await invoke("get_device_identity");
 
 ```typescript
 // ❌ FORBIDDEN
-if (user.role === "admin") { deleteWidget(id); }
+if (user.role === "admin") {
+  deleteWidget(id);
+}
 
 // ✅ CORRECT
-await authorization.requireTrusted(trustedContext, "widgets.delete", { organisationId });
+await authorization.requireTrusted(trustedContext, "widgets.delete", {
+  organisationId,
+});
 ```
 
 **Rule 9: Permissions are hierarchical dot-separated strings.** Roles are collections of permissions — not permissions themselves.
@@ -115,7 +119,7 @@ sync.manage
 
 ## Local-first rules
 
-**Rule 16: A normal user write must never wait for network.** 
+**Rule 16: A normal user write must never wait for network.**
 
 ```
 Validate → Authorise → Write local SQLite → Done
@@ -129,18 +133,18 @@ Validate → Authorise → Write local SQLite → Done
 
 ## Offline availability matrix
 
-| Action | Offline behaviour |
-|---|---|
-| Read locally authorised data | ✅ Full availability |
-| Create a local record | ✅ Writes locally; sync pending |
-| Update a local record | ✅ Writes locally; sync pending |
-| Request sync group membership | ✅ Request stored locally; forwarded when connected |
-| Approve another device | ⚠️ Policy-dependent — may require connectivity to propagate |
-| Revoke a device | ✅ Local revocation immediate; propagation deferred |
-| Change organisation security policy | ❌ Restricted — requires admin connectivity |
-| Access newly authorised data | ❌ Requires sync + authorisation after reconnection |
-| Import from file | ✅ Local only |
-| Export to file | ✅ Local only |
+| Action                              | Offline behaviour                                           |
+| ----------------------------------- | ----------------------------------------------------------- |
+| Read locally authorised data        | ✅ Full availability                                        |
+| Create a local record               | ✅ Writes locally; sync pending                             |
+| Update a local record               | ✅ Writes locally; sync pending                             |
+| Request sync group membership       | ✅ Request stored locally; forwarded when connected         |
+| Approve another device              | ⚠️ Policy-dependent — may require connectivity to propagate |
+| Revoke a device                     | ✅ Local revocation immediate; propagation deferred         |
+| Change organisation security policy | ❌ Restricted — requires admin connectivity                 |
+| Access newly authorised data        | ❌ Requires sync + authorisation after reconnection         |
+| Import from file                    | ✅ Local only                                               |
+| Export to file                      | ✅ Local only                                               |
 
 ---
 
@@ -165,8 +169,8 @@ type PlatformErrorCode =
 
 type PlatformError = {
   code: PlatformErrorCode;
-  message: string;         // Technical message for logs
-  userMessage: string;     // Localisation-ready user-facing message
+  message: string; // Technical message for logs
+  userMessage: string; // Localisation-ready user-facing message
   technicalDetails?: string;
   retryable: boolean;
   correlationId: string;
@@ -195,6 +199,7 @@ pub struct PlatformError {
 ## Correlation IDs
 
 Every significant operation (import, sync session, pairing request, membership decision) generates a correlation ID at the point it begins. That ID must appear in:
+
 - The UI error message (if the operation fails)
 - All log lines for the operation
 - The audit event
@@ -228,13 +233,13 @@ TypeScript validation and database constraints are **complementary, not alternat
 
 ## Performance targets
 
-| Operation | Target |
-|---|---|
-| Application cold start | < 2 seconds on target hardware |
-| Page navigation | < 200 ms |
-| Filtered table (10k rows) | < 100 ms query + render |
-| Import (10k rows) | < 10 seconds |
-| Sync (1k entities) | < 30 seconds on LAN |
+| Operation                 | Target                         |
+| ------------------------- | ------------------------------ |
+| Application cold start    | < 2 seconds on target hardware |
+| Page navigation           | < 200 ms                       |
+| Filtered table (10k rows) | < 100 ms query + render        |
+| Import (10k rows)         | < 10 seconds                   |
+| Sync (1k entities)        | < 30 seconds on LAN            |
 
 The UI must never load all rows into React state. Use SQLite pagination + TanStack Table + TanStack Virtual for large datasets.
 
@@ -244,14 +249,14 @@ The UI must never load all rows into React state. Use SQLite pagination + TanSta
 
 Every new Tauri command must be reviewed against these questions before merging:
 
-| Question | Required answer |
-|---|---|
-| Who can call this command? | Named and minimal — not "anyone with webview access" |
-| What data can it access? | Scoped, not the entire database |
-| Does it require a valid session? | Yes, unless it is an explicit pre-auth bootstrap command |
-| Does it access the filesystem? | Only through narrowly scoped capability grants |
-| Does it expose secrets? | Never — private keys, credentials must not be returned |
-| Can it be called by an untrusted webview context? | Must be evaluated explicitly for each command |
+| Question                                          | Required answer                                          |
+| ------------------------------------------------- | -------------------------------------------------------- |
+| Who can call this command?                        | Named and minimal — not "anyone with webview access"     |
+| What data can it access?                          | Scoped, not the entire database                          |
+| Does it require a valid session?                  | Yes, unless it is an explicit pre-auth bootstrap command |
+| Does it access the filesystem?                    | Only through narrowly scoped capability grants           |
+| Does it expose secrets?                           | Never — private keys, credentials must not be returned   |
+| Can it be called by an untrusted webview context? | Must be evaluated explicitly for each command            |
 
 All capability grants in `capabilities/*.json` must be narrowly scoped. No `allow-all` grants. Every grant must have a comment explaining why it is needed.
 

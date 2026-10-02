@@ -115,14 +115,15 @@ can(ctx, "inventory.read", { warehouseId: "COV" });
 ### Scope resolution rule
 
 A permission is granted if **any** role assignment for the subject matches both:
+
 - The permission name (exact or hierarchical parent match).
 - The resource scope constraints (scoped grants must be at least as specific as the request).
 
 ```typescript
 // Subject has: inventory.read scoped to { warehouseId: 'COV' }
-can(ctx, "inventory.read", { warehouseId: "BHM" }) // → DENIED
-can(ctx, "inventory.read", { warehouseId: "COV" }) // → GRANTED
-can(ctx, "inventory.read")                          // → DENIED (unscoped vs scoped grant)
+can(ctx, "inventory.read", { warehouseId: "BHM" }); // → DENIED
+can(ctx, "inventory.read", { warehouseId: "COV" }); // → GRANTED
+can(ctx, "inventory.read"); // → DENIED (unscoped vs scoped grant)
 ```
 
 ---
@@ -133,11 +134,17 @@ can(ctx, "inventory.read")                          // → DENIED (unscoped vs s
 
 ```typescript
 // ❌ Hardcoded role checking
-if (user.role === "admin") { deleteWidget(id); }
-if (user.roles.includes("manager")) { approve(req); }
+if (user.role === "admin") {
+  deleteWidget(id);
+}
+if (user.roles.includes("manager")) {
+  approve(req);
+}
 
 // ❌ Session-identity comparison as authorization
-if (session.userId === ownerId) { update(widget); }
+if (session.userId === ownerId) {
+  update(widget);
+}
 
 // ❌ Caller-constructed operation context with trust
 const ctx = { userId: req.body.userId, permissions: ["widgets.delete"] };
@@ -177,13 +184,13 @@ export const exampleFeatureManifest: FeatureManifest = {
   version: "1.0.0",
   dependencies: ["organisations"],
   permissions: [
-    { name: "widgets.read",   description: "View widget records" },
+    { name: "widgets.read", description: "View widget records" },
     { name: "widgets.create", description: "Create widget records" },
     { name: "widgets.update", description: "Update widget records" },
     { name: "widgets.delete", description: "Delete widget records" },
   ],
-  syncPolicy: { /* ... */ },
-  migrations: { /* ... */ },
+  syncPolicy: {/* ... */},
+  migrations: {/* ... */},
 };
 ```
 
@@ -229,11 +236,26 @@ Sync groups determine which replication streams a device participates in.
 
 ```typescript
 interface SyncGroupService {
-  createGroup(input: CreateGroupInput, ctx: TrustedOperationContext): Promise<SyncGroup>;
-  requestMembership(groupId: string, ctx: TrustedOperationContext): Promise<MembershipRequest>;
+  createGroup(
+    input: CreateGroupInput,
+    ctx: TrustedOperationContext,
+  ): Promise<SyncGroup>;
+  requestMembership(
+    groupId: string,
+    ctx: TrustedOperationContext,
+  ): Promise<MembershipRequest>;
   approve(requestId: string, ctx: TrustedOperationContext): Promise<void>;
-  reject(requestId: string, reason: string, ctx: TrustedOperationContext): Promise<void>;
-  revoke(deviceId: string, groupId: string, reason: string, ctx: TrustedOperationContext): Promise<void>;
+  reject(
+    requestId: string,
+    reason: string,
+    ctx: TrustedOperationContext,
+  ): Promise<void>;
+  revoke(
+    deviceId: string,
+    groupId: string,
+    reason: string,
+    ctx: TrustedOperationContext,
+  ): Promise<void>;
   listMembers(groupId: string): Promise<SyncGroupMember[]>;
   getAuthorisedNamespaces(deviceId: string): Promise<string[]>;
   canSync(deviceId: string, groupId: string): Promise<boolean>;
@@ -256,13 +278,13 @@ REQUESTED
    REVOKED
 ```
 
-| Transition | Actor |
-|---|---|
-| REQUESTED → APPROVED/REJECTED | Admin |
-| APPROVED → ACTIVE | System (on first sync) |
-| ACTIVE → SUSPENDED | Admin |
-| SUSPENDED → ACTIVE | Admin |
-| ACTIVE/SUSPENDED → REVOKED | Admin |
+| Transition                    | Actor                  |
+| ----------------------------- | ---------------------- |
+| REQUESTED → APPROVED/REJECTED | Admin                  |
+| APPROVED → ACTIVE             | System (on first sync) |
+| ACTIVE → SUSPENDED            | Admin                  |
+| SUSPENDED → ACTIVE            | Admin                  |
+| ACTIVE/SUSPENDED → REVOKED    | Admin                  |
 
 Invalid transitions throw `ValidationError`. `REVOKED → ACTIVE` is not permitted.
 
@@ -275,12 +297,16 @@ Invalid transitions throw `ValidationError`. `REVOKED → ACTIVE` is not permitt
 const { can } = useAuthorization();
 
 // Navigation item visibility
-{can("widgets.read") && <NavItem href="/widgets" label="Widgets" />}
+{
+  can("widgets.read") && <NavItem href="/widgets" label="Widgets" />;
+}
 
 // Button visibility
-{can("widgets.create", { organisationId }) && (
-  <Button onClick={handleCreate}>Add Widget</Button>
-)}
+{
+  can("widgets.create", { organisationId }) && (
+    <Button onClick={handleCreate}>Add Widget</Button>
+  );
+}
 ```
 
 UI hiding is a **UX convenience only** — the backend service always re-checks permissions independently. UI hiding does not constitute a security boundary.

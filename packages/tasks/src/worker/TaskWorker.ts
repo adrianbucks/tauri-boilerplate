@@ -32,7 +32,11 @@ export class TaskWorker {
   private readonly concurrency: number;
   private readonly pollIntervalMs: number;
   private readonly gracefulShutdownTimeoutMs: number;
-  private readonly onNonRetryableError: (taskId: string, taskType: string, error: unknown) => void;
+  private readonly onNonRetryableError: (
+    taskId: string,
+    taskType: string,
+    error: unknown,
+  ) => void;
   private readonly onPollComplete: (claimed: number) => void;
 
   private readonly handlers = new Map<string, TaskHandler<unknown, unknown>>();
@@ -51,7 +55,8 @@ export class TaskWorker {
     this.logger = logger ?? new ConsoleLogger("info");
     this.concurrency = options.concurrency ?? 3;
     this.pollIntervalMs = options.pollIntervalMs ?? 5_000;
-    this.gracefulShutdownTimeoutMs = options.gracefulShutdownTimeoutMs ?? 30_000;
+    this.gracefulShutdownTimeoutMs =
+      options.gracefulShutdownTimeoutMs ?? 30_000;
     this.onNonRetryableError = options.onNonRetryableError ?? (() => {});
     this.onPollComplete = options.onPollComplete ?? (() => {});
   }
@@ -133,7 +138,10 @@ export class TaskWorker {
         const registeredTypes =
           this.handlers.size > 0 ? [...this.handlers.keys()] : undefined;
 
-        const claimed = await this.queue.claimNextBatch(available, registeredTypes);
+        const claimed = await this.queue.claimNextBatch(
+          available,
+          registeredTypes,
+        );
         this.onPollComplete(claimed.length);
 
         for (const task of claimed) {
