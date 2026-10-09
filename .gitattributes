@@ -1,0 +1,31 @@
+# Normalize line endings to LF in the repository for all text files.
+# This ensures `pnpm format:check` (Prettier endOfLine: "lf") produces
+# consistent results on both Windows local machines and Linux CI runners.
+
+* text=auto eol=lf
+
+# Explicit overrides for well-known binary types
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.icns binary
+*.ttf binary
+*.woff binary
+*.woff2 binary
+*.exe binary
+*.msi binary
+*.apk binary
+*.aab binary
+*.dll binary
+*.so binary
+*.dylib binary
+*.a binary
+*.lib binary
+*.zip binary
+*.tar binary
+*.gz binary
+*.lock binary
+Cargo.lock binary
