@@ -1,4 +1,4 @@
-import { DatabaseError } from "@platform/core";
+import { DatabaseError, generateCorrelationId } from "@platform/core";
 import type {
   DatabaseConnection,
   DatabaseHealth,
@@ -60,7 +60,7 @@ export class NativeDatabaseConnection implements DatabaseConnection {
       throw new DatabaseError({
         message: `Failed to initialize native database connection: ${err instanceof Error ? err.message : String(err)}`,
         userMessage: "Failed to connect to local database",
-        correlationId: "db_native_init_err",
+        correlationId: generateCorrelationId("db-init"),
         cause: err,
       });
     }
@@ -78,7 +78,7 @@ export class NativeDatabaseConnection implements DatabaseConnection {
       throw new DatabaseError({
         message: `Database query failed: ${err instanceof Error ? err.message : String(err)}`,
         userMessage: "Failed to retrieve data",
-        correlationId: "db_query_err",
+        correlationId: generateCorrelationId("db-query"),
         cause: err,
         technicalDetails: `SQL: ${sql}`,
       });
@@ -100,7 +100,7 @@ export class NativeDatabaseConnection implements DatabaseConnection {
       throw new DatabaseError({
         message: `Database execute failed: ${err instanceof Error ? err.message : String(err)}`,
         userMessage: "Failed to execute database operation",
-        correlationId: "db_exec_err",
+        correlationId: generateCorrelationId("db-exec"),
         cause: err,
         technicalDetails: `SQL: ${sql}`,
       });
@@ -110,7 +110,10 @@ export class NativeDatabaseConnection implements DatabaseConnection {
   async transaction<T>(fn: (tx: TransactionClient) => Promise<T>): Promise<T> {
     await this.init();
 
-    // For native transactions, we collect operations and execute them atomically on the Rust side
+    // The Tauri IPC bridge uses a two-phase model: SQL operations are collected
+    // during fn() and then executed atomically on the Rust side. Reads inside
+    // the callback cannot return real data across the IPC boundary.
+    // → Perform all reads BEFORE calling db.transaction().
     const operations: Array<{
       type: "query" | "execute";
       sql: string;
@@ -118,11 +121,20 @@ export class NativeDatabaseConnection implements DatabaseConnection {
     }> = [];
 
     const txClient: TransactionClient = {
-      query: async <R>(sql: string, params: unknown[] = []) => {
-        // Collect the operation
-        operations.push({ type: "query", sql, params });
-        // Return empty for now - actual results come back after transaction
-        return [];
+      query: async (_sql: string, _params: unknown[] = []) => {
+        // Reads inside a transaction are not supported by the Tauri IPC bridge.
+        // All reads must be performed outside the transaction boundary.
+        throw new DatabaseError({
+          message:
+            "db.transaction(): query() is not supported inside a transaction callback. " +
+            "The Tauri IPC bridge collects operations and executes them atomically on the " +
+            "Rust side — intermediate reads cannot be returned across the IPC boundary. " +
+            "Perform all reads before calling db.transaction().",
+          userMessage:
+            "A database read was attempted inside a write transaction.",
+          correlationId: generateCorrelationId("db-tx-read"),
+          technicalDetails: `SQL attempted: ${_sql}`,
+        });
       },
       execute: async (sql: string, params: unknown[] = []) => {
         operations.push({ type: "execute", sql, params });
@@ -131,20 +143,22 @@ export class NativeDatabaseConnection implements DatabaseConnection {
     };
 
     try {
-      // Run the function to collect operations
+      // Run the function to collect write operations
       const result = await fn(txClient);
 
-      // Execute all operations atomically on the native side
+      // Execute all collected operations atomically on the native side
       await this.invoke("db_transaction", {
         operations,
       });
 
       return result;
     } catch (error) {
+      // Re-throw DatabaseErrors (e.g. the query() guard) as-is
+      if (error instanceof DatabaseError) throw error;
       throw new DatabaseError({
         message: `Database transaction failed: ${error instanceof Error ? error.message : String(error)}`,
         userMessage: "Failed to execute database transaction",
-        correlationId: "db_transaction_err",
+        correlationId: generateCorrelationId("db-tx"),
         cause: error,
       });
     }
@@ -178,39 +192,6 @@ export class NativeDatabaseConnection implements DatabaseConnection {
         integrityCheck: err instanceof Error ? err.message : String(err),
       };
     }
-  }
-
-  /**
-   * Signs arbitrary message bytes using the native device key provider via Tauri IPC.
-   * Enforces Invariant #5: private key never crosses into TypeScript runtime.
-   */
-  async signMessage(messageBytes: Uint8Array): Promise<string> {
-    const messageHex = Array.from(messageBytes)
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
-    const signature = (await this.invoke("sign_message", {
-      message_hex: messageHex,
-    })) as string;
-    return signature;
-  }
-
-  /**
-   * Verifies an Ed25519 signature against a public key using native crypto via Tauri IPC.
-   */
-  async verifyMessage(
-    publicKey: string,
-    messageBytes: Uint8Array,
-    signatureHex: string,
-  ): Promise<boolean> {
-    const messageHex = Array.from(messageBytes)
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
-    const isValid = (await this.invoke("verify_message", {
-      public_key: publicKey,
-      message_hex: messageHex,
-      signature_hex: signatureHex,
-    })) as boolean;
-    return isValid;
   }
 
   async close(): Promise<void> {

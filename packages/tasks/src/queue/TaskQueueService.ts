@@ -285,7 +285,7 @@ export class TaskQueueService {
     taskId: string,
     error: unknown,
     tx?: TransactionClient,
-  ): Promise<void> {
+  ): Promise<{ willRetry: boolean }> {
     const executor: Executor = tx ?? this.db;
     const now = getUtcIsoTimestamp();
 
@@ -295,7 +295,7 @@ export class TaskQueueService {
       [taskId],
     );
 
-    if (rows.length === 0) return; // Task not found — nothing to update
+    if (rows.length === 0) return { willRetry: false }; // Task not found — nothing to update
 
     const row = rows[0]!;
     const policy: TaskRetryPolicy = {
@@ -329,6 +329,7 @@ export class TaskQueueService {
          WHERE id = ? AND state = 'RUNNING'`,
         [nextScheduledAt, errorMessage, now, taskId],
       );
+      return { willRetry: true };
     } else {
       await executor.execute(
         `UPDATE core_background_tasks
@@ -339,6 +340,7 @@ export class TaskQueueService {
          WHERE id = ? AND state = 'RUNNING'`,
         [now, errorMessage, now, taskId],
       );
+      return { willRetry: false };
     }
   }
 

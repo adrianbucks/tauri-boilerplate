@@ -93,14 +93,13 @@ mod tests {
             .await
             .expect("Send envelope from A to B");
 
-        let received_by_b = tokio::time::timeout(Duration::from_secs(5), node_b.next_inbound_envelope())
-            .await
-            .expect("Timeout waiting for envelope on Node B")
-            .expect("Received envelope message on Node B");
+        let received_by_b =
+            tokio::time::timeout(Duration::from_secs(5), node_b.next_inbound_envelope())
+                .await
+                .expect("Timeout waiting for envelope on Node B")
+                .expect("Received envelope message on Node B");
 
         assert_eq!(received_by_b.sender_endpoint_id, node_a.endpoint_id());
         assert_eq!(received_by_b.payload_json, response_payload);
     }
 }
-
-

@@ -12,3 +12,6 @@ export * from "./worker/TaskWorker.js";
 
 // Sync worker
 export * from "./sync/OutboxSyncWorker.js";
+
+// Storage maintenance worker
+export * from "./maintenance/StorageMaintenanceWorker.js";

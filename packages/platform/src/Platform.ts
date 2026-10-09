@@ -1,5 +1,5 @@
 import type { AppConfig, Logger } from "@platform/core";
-import { ConsoleLogger, createDefaultConfig } from "@platform/core";
+import { ConsoleLogger, createDefaultConfig, SyncError } from "@platform/core";
 import type { DatabaseConnection } from "@platform/database";
 import { MigrationEngine, type MigrationScript } from "@platform/database";
 import { DeviceIdentityService, UserSessionService } from "@platform/identity";
@@ -17,7 +17,13 @@ import {
   TaskQueueService,
   TaskWorker,
   type TaskWorkerOptions,
+  StorageMaintenanceWorker,
 } from "@platform/tasks";
+import {
+  MaintenanceRegistry,
+  MaintenanceOrchestrator,
+  type MaintenanceReport,
+} from "@platform/maintenance";
 import type { SignFn } from "@platform/sync-protocol";
 import type { SyncTransport } from "@platform/sync";
 import { coreMigrations } from "./migrations/coreMigrations.js";
@@ -46,7 +52,8 @@ export class Platform {
   readonly auth: AuthorizationEngine;
   readonly syncGroups: SyncGroupService;
   readonly audit: AuditService;
-  readonly sync: SyncManager;
+  /** @see configureSync — must be called before accessing this. */
+  private _sync: SyncManager | null = null;
   readonly pairing: PairingService;
   readonly importEngine: ImportEngine;
   readonly conflicts: ConflictRegistry;
@@ -55,6 +62,12 @@ export class Platform {
   readonly tasks: TaskQueueService;
   /** Background task execution supervisor — register handlers and call start(). */
   readonly taskWorker: TaskWorker;
+  /** Storage compaction registry — register core and feature pruning policies here. */
+  readonly maintenanceRegistry: MaintenanceRegistry;
+  /** Storage compaction execution orchestrator — inspect or prune storage. */
+  readonly maintenance: MaintenanceOrchestrator;
+  /** Background task worker wrapper for periodic storage compaction. */
+  readonly maintenanceWorker: StorageMaintenanceWorker;
   private readonly migrationEngine: MigrationEngine;
   private isInitialised = false;
 
@@ -75,17 +88,68 @@ export class Platform {
     this.pairing = new PairingService(this.db);
     this.importEngine = new ImportEngine(this.db);
 
-    this.sync = new SyncManager({
-      db: this.db,
-      deviceId: options.syncOptions?.deviceId ?? "pending_init",
-      organisationId: options.syncOptions?.organisationId ?? "pending_init",
-      signerPublicKey: options.syncOptions?.signerPublicKey,
-      signFn: options.syncOptions?.signFn,
-      transport: options.syncOptions?.transport,
-    });
+    // Sync is configured lazily via configureSync().
+    // If syncOptions are provided at construction time, configure immediately.
+    if (options.syncOptions) {
+      this._sync = new SyncManager({
+        db: this.db,
+        deviceId: options.syncOptions.deviceId,
+        organisationId: options.syncOptions.organisationId,
+        signerPublicKey: options.syncOptions.signerPublicKey,
+        signFn: options.syncOptions.signFn,
+        transport: options.syncOptions.transport,
+      });
+    }
 
     this.tasks = new TaskQueueService(this.db);
     this.taskWorker = new TaskWorker(this.db, {}, this.logger);
+
+    this.maintenanceRegistry = new MaintenanceRegistry({
+      includeCoreDefaults: true,
+    });
+    this.maintenance = new MaintenanceOrchestrator({
+      connection: this.db,
+      registry: this.maintenanceRegistry,
+      logger: this.logger,
+    });
+    this.maintenanceWorker = new StorageMaintenanceWorker({
+      orchestrator: this.maintenance,
+      taskQueue: this.tasks,
+      logger: this.logger,
+    });
+    this.taskWorker.register(
+      StorageMaintenanceWorker.TASK_TYPE,
+      this.maintenanceWorker.handle,
+    );
+  }
+
+  /**
+   * Returns the configured SyncManager.
+   *
+   * @throws {SyncError} if `configureSync()` has not been called yet.
+   *   Always call `configureSync()` during platform bootstrap (after a verified
+   *   session is established) before accessing the sync API.
+   */
+  get sync(): SyncManager {
+    if (!this._sync) {
+      throw new SyncError({
+        message:
+          "[Platform] SyncManager is not configured. " +
+          "Call platform.configureSync({ deviceId, organisationId, ... }) " +
+          "before accessing platform.sync.",
+        userMessage: "Sync is not yet initialised.",
+        correlationId: "platform_sync_not_configured",
+      });
+    }
+    return this._sync;
+  }
+
+  /**
+   * Returns true if `configureSync()` has been called and the SyncManager
+   * is available. Use this as a guard before accessing `platform.sync`.
+   */
+  isSyncConfigured(): boolean {
+    return this._sync !== null;
   }
 
   /**
@@ -93,7 +157,7 @@ export class Platform {
    * organisation scope, native signing delegate, and active transport.
    */
   configureSync(options: PlatformSyncOptions): void {
-    (this as { sync: SyncManager }).sync = new SyncManager({
+    this._sync = new SyncManager({
       db: this.db,
       deviceId: options.deviceId,
       organisationId: options.organisationId,
@@ -115,6 +179,23 @@ export class Platform {
         );
       }
     }
+
+    // Register any declared pruning policies
+    if (options.manifest.pruningPolicies) {
+      for (const policy of options.manifest.pruningPolicies) {
+        this.maintenanceRegistry.registerPolicy(policy);
+      }
+    }
+  }
+
+  /**
+   * Convenience method to trigger a storage maintenance compaction cycle.
+   */
+  async runMaintenance(options?: {
+    skipVacuum?: boolean | undefined;
+    batchSize?: number | undefined;
+  }): Promise<MaintenanceReport> {
+    return await this.maintenance.pruneAll(options);
   }
 
   async init(): Promise<void> {
@@ -162,17 +243,26 @@ export class Platform {
    *
    * Call this AFTER `init()` and after registering all handlers via
    * `platform.taskWorker.register(type, handler)`.
+   *
+   * Providing `options` reconfigures the existing worker (poll interval,
+   * concurrency, callbacks) without discarding registered handlers.
    */
   startTaskWorker(options?: TaskWorkerOptions): void {
     if (options) {
-      // Re-create worker with updated options if overrides are provided
-      (this as { taskWorker: TaskWorker }).taskWorker = new TaskWorker(
-        this.db,
-        options,
-        this.logger,
-      );
+      // Reconfigure the existing worker so registered handlers are preserved.
+      // Do NOT re-create the TaskWorker — that would unregister all handlers
+      // including the StorageMaintenanceWorker (B-04).
+      this.taskWorker.reconfigure(options);
     }
     this.taskWorker.start();
+  }
+
+  /**
+   * Convenience method: stops the background task worker and waits for
+   * in-flight tasks to drain.
+   */
+  async stopTaskWorker(): Promise<void> {
+    await this.taskWorker.stop();
   }
 
   getRegisteredFeatures(): FeatureManifest[] {

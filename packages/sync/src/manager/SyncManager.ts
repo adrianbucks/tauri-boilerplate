@@ -27,6 +27,8 @@ export class SyncManager {
   private readonly transport?: SyncTransport | undefined;
   private readonly peerStates = new Map<string, SyncStateMachine>();
   private readonly diagnosticsMap = new Map<string, SyncDiagnostic>();
+  private currentState: SyncState = "DISCONNECTED";
+  private readonly stateListeners = new Set<(state: SyncState) => void>();
 
   constructor(options: SyncManagerOptions) {
     this.db = options.db;
@@ -36,6 +38,30 @@ export class SyncManager {
     this.signFn = options.signFn;
     this.outboxService = options.outboxService ?? new OutboxService(options.db);
     this.transport = options.transport;
+    this.currentState = options.transport ? "IDLE" : "DISCONNECTED";
+  }
+
+  getState(): SyncState {
+    return this.currentState;
+  }
+
+  setState(state: SyncState): void {
+    if (this.currentState === state) return;
+    this.currentState = state;
+    for (const listener of this.stateListeners) {
+      try {
+        listener(state);
+      } catch {
+        // Suppress listener errors
+      }
+    }
+  }
+
+  onStateChange(listener: (state: SyncState) => void): () => void {
+    this.stateListeners.add(listener);
+    return () => {
+      this.stateListeners.delete(listener);
+    };
   }
 
   getPeerState(peerId: string): SyncState {
@@ -90,20 +116,30 @@ export class SyncManager {
       this.peerStates.set(peer.peerId, sm);
     }
 
-    sm.transition("DISCOVERED");
-    sm.transition("IDENTIFIED");
-    sm.transition("CONNECTING");
-    sm.transition("CONNECTED");
-    sm.transition("AUTHENTICATING");
+    const transitions: SyncState[] = [
+      "DISCOVERED",
+      "IDENTIFIED",
+      "CONNECTING",
+      "CONNECTED",
+      "AUTHENTICATING",
+    ];
+
+    for (const st of transitions) {
+      sm.transition(st);
+      this.setState(st);
+    }
 
     // 7-layer auth verification: must match organisation
     if (peer.organisationId !== this.organisationId) {
       sm.transition("ERROR", "Organisation mismatch");
+      this.setState("ERROR");
       return;
     }
 
     sm.transition("AUTHORISED");
+    this.setState("AUTHORISED");
     sm.transition("IDLE");
+    this.setState("IDLE");
 
     this.diagnosticsMap.set(peer.peerId, {
       peerId: peer.peerId,
@@ -125,6 +161,16 @@ export class SyncManager {
     if (sm) {
       sm.transition("DISCONNECTED");
     }
+    const anyConnected = Array.from(this.peerStates.values()).some(
+      (s) => s.getState() !== "DISCONNECTED",
+    );
+    this.setState(
+      anyConnected
+        ? this.currentState
+        : this.transport
+          ? "IDLE"
+          : "DISCONNECTED",
+    );
   }
 
   getDiagnostics(): SyncDiagnostic[] {

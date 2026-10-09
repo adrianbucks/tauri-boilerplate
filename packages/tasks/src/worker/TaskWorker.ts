@@ -29,15 +29,15 @@ import { TaskQueueService } from "../queue/TaskQueueService.js";
 export class TaskWorker {
   private readonly queue: TaskQueueService;
   private readonly logger: Logger;
-  private readonly concurrency: number;
-  private readonly pollIntervalMs: number;
-  private readonly gracefulShutdownTimeoutMs: number;
-  private readonly onNonRetryableError: (
+  private concurrency: number;
+  private pollIntervalMs: number;
+  private gracefulShutdownTimeoutMs: number;
+  private onNonRetryableError: (
     taskId: string,
     taskType: string,
     error: unknown,
   ) => void;
-  private readonly onPollComplete: (claimed: number) => void;
+  private onPollComplete: (claimed: number) => void;
 
   private readonly handlers = new Map<string, TaskHandler<unknown, unknown>>();
 
@@ -74,6 +74,34 @@ export class TaskWorker {
     handler: TaskHandler<TPayload, TResult>,
   ): void {
     this.handlers.set(taskType, handler as TaskHandler<unknown, unknown>);
+  }
+
+  /**
+   * Updates worker options without re-creating the instance or losing registered
+   * handlers. Changes take effect from the next poll cycle.
+   *
+   * Call this instead of creating a new TaskWorker when you need to adjust
+   * polling behaviour after construction.
+   */
+  reconfigure(options: TaskWorkerOptions): void {
+    if (options.concurrency !== undefined) {
+      this.concurrency = options.concurrency;
+    }
+    if (options.pollIntervalMs !== undefined) {
+      this.pollIntervalMs = options.pollIntervalMs;
+    }
+    if (options.gracefulShutdownTimeoutMs !== undefined) {
+      this.gracefulShutdownTimeoutMs = options.gracefulShutdownTimeoutMs;
+    }
+    if (options.onNonRetryableError !== undefined) {
+      this.onNonRetryableError = options.onNonRetryableError;
+    }
+    if (options.onPollComplete !== undefined) {
+      this.onPollComplete = options.onPollComplete;
+    }
+    this.logger.info(
+      "[TaskWorker] Options reconfigured. Changes take effect from next poll cycle.",
+    );
   }
 
   // -------------------------------------------------------------------------
@@ -212,8 +240,10 @@ export class TaskWorker {
         this.logger.error(`[TaskWorker] Task ${task.id} failed:`, err);
       }
 
-      await this.queue.markFailed(task.id, err);
-      this.onNonRetryableError(task.id, task.taskType, err);
+      const { willRetry } = await this.queue.markFailed(task.id, err);
+      if (!willRetry) {
+        this.onNonRetryableError(task.id, task.taskType, err);
+      }
     } finally {
       clearTimeout(timeoutHandle);
     }

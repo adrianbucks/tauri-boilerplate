@@ -41,3 +41,22 @@ This document tracks known architectural limitations, technical debt, and pendin
 - **Limitation**: SheetJS workbook parsing is currently executed synchronously within the webview or worker thread.
 - **Impact**: While bounded by size and row limits (10MB / 10,000 rows) with a 5-second timeout check, hard CPU interruption mid-parse requires worker thread isolation.
 - **Path to Resolution**: Move large file parsing to a dedicated Web Worker or native Rust parser (`calamine`).
+
+---
+
+## 6. Native Transaction Read Constraint (B-01)
+
+- **Limitation**: `db.transaction()` callbacks use a two-phase IPC model: SQL `execute()` operations are collected during the callback, then dispatched atomically to the Rust `rusqlite` layer in a single IPC call. Calling `txClient.query()` (a read) inside the callback is not supported and will throw a `DatabaseError`.
+- **Impact**: Any code that attempts to read data within a `db.transaction()` callback will fail at runtime with a clear error message. All reads must be performed **before** entering the transaction boundary.
+- **Correct pattern**:
+  ```typescript
+  // ✅ Read first, then write in transaction
+  const existing = await db.query<Row>("SELECT * FROM widgets WHERE id = ?", [id]);
+  if (existing.length === 0) throw new Error("Not found");
+
+  await db.transaction(async (tx) => {
+    await tx.execute("UPDATE widgets SET name = ? WHERE id = ?", [name, id]);
+    await tx.execute("INSERT INTO core_audit_log ...", [...]);
+  });
+  ```
+- **Path to Resolution**: If a read-then-write sequence must be strictly atomic (to prevent race conditions), create a dedicated Rust Tauri command that executes the full read-then-write sequence inside a single `rusqlite` transaction on the Rust side.

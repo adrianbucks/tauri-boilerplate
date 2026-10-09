@@ -27,7 +27,7 @@ export async function createMinimalConsumerApp(
   const notes = new NotesService({
     db: platform.db,
     auth: platform.auth,
-    sync: platform.sync,
+    sync: platform.isSyncConfigured() ? platform.sync : undefined,
   });
 
   return {

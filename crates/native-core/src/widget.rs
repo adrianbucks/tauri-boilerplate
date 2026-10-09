@@ -39,7 +39,9 @@ impl NativePrincipal {
     }
 
     pub(crate) fn can(&self, permission: &str) -> bool {
-        self.permissions.iter().any(|value| value == permission || value == "*")
+        self.permissions
+            .iter()
+            .any(|value| value == permission || value == "*")
     }
 }
 

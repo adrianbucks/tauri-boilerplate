@@ -35,8 +35,14 @@ import {
   UserPlus,
   Link2,
   Unlink,
+  Trash2,
+  Sparkles,
 } from "lucide-react";
 import type { SyncOperation } from "@platform/sync-protocol";
+import type {
+  PruningCandidateStats,
+  MaintenanceReport,
+} from "@platform/maintenance";
 import { usePlatform } from "../hooks/usePlatform.js";
 import type {
   NativeDatabaseHealth,
@@ -144,6 +150,13 @@ export function DiagnosticsPage() {
   const [syncTriggering, setSyncTriggering] = useState(false);
   const [lastRefreshed, setLastRefreshed] = useState<Date>(new Date());
 
+  const [maintenanceStats, setMaintenanceStats] = useState<
+    PruningCandidateStats[]
+  >([]);
+  const [isCompacting, setIsCompacting] = useState(false);
+  const [maintenanceReport, setMaintenanceReport] =
+    useState<MaintenanceReport | null>(null);
+
   const [peerInput, setPeerInput] = useState("");
   const [isConnecting, setIsConnecting] = useState(false);
   const [isEnqueuing, setIsEnqueuing] = useState(false);
@@ -215,17 +228,50 @@ export function DiagnosticsPage() {
         console.warn("Failed to query table counts:", err);
       }
 
+      // 6. Maintenance & Pruning Candidate Stats
+      if (platform) {
+        try {
+          const stats = await platform.maintenance.inspectAll();
+          setMaintenanceStats(stats);
+        } catch (err) {
+          console.warn("Failed to inspect pruning candidates:", err);
+        }
+      }
+
       setLastRefreshed(new Date());
     } finally {
       setIsLoading(false);
     }
-  }, [nativeGateway]);
+  }, [nativeGateway, platform]);
 
   useEffect(() => {
     if (isReady) {
       fetchDiagnostics();
     }
   }, [isReady, fetchDiagnostics]);
+
+  const handleRunStorageMaintenance = async () => {
+    if (!platform) return;
+    setIsCompacting(true);
+    setActionAlert(null);
+    try {
+      const report = await platform.runMaintenance({ skipVacuum: false });
+      setMaintenanceReport(report);
+      setActionAlert({
+        type: report.success ? "success" : "warning",
+        message: `Compaction completed: ${report.totalRowsPruned} row(s) pruned in ${report.durationMs}ms across ${report.results.length} handler(s). SQLite VACUUM: ${report.vacuumExecuted ? "executed" : "skipped"}.`,
+      });
+      await fetchDiagnostics();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setActionAlert({
+        type: "destructive",
+        message: `Storage compaction failed: ${msg}`,
+      });
+    } finally {
+      setIsCompacting(false);
+    }
+  };
 
   const handleTriggerSyncNow = async () => {
     setSyncTriggering(true);
@@ -799,6 +845,143 @@ export function DiagnosticsPage() {
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Detailed Section: Database Compaction & Extensible Data Pruning */}
+      <Card>
+        <CardHeader>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Trash2 className="h-5 w-5 text-amber-500" />
+                Database Compaction & Data Pruning (WP-022 / Gate G-014)
+              </CardTitle>
+              <CardDescription>
+                Transaction-safe batch pruning of expired outbox, inbox, audit,
+                task, and feature records with SQLite page reclamation (VACUUM)
+              </CardDescription>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <Badge variant="outline" className="font-mono">
+                {maintenanceStats.reduce(
+                  (sum, s) => sum + s.eligibleRowCount,
+                  0,
+                )}{" "}
+                Eligible Rows
+              </Badge>
+              <Button
+                size="sm"
+                variant="default"
+                onClick={handleRunStorageMaintenance}
+                disabled={isCompacting}
+                className="gap-1.5"
+              >
+                <Sparkles
+                  className={`h-3.5 w-3.5 ${isCompacting ? "animate-spin" : ""}`}
+                />
+                {isCompacting ? "Compacting..." : "Run Storage Maintenance"}
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm text-left border-collapse">
+              <thead>
+                <tr className="border-b border-border text-xs text-muted-foreground">
+                  <th className="py-2 px-3 font-medium">Pruning Handler</th>
+                  <th className="py-2 px-3 font-medium">Description</th>
+                  <th className="py-2 px-3 font-medium">Retention</th>
+                  <th className="py-2 px-3 font-medium">Cutoff Date</th>
+                  <th className="py-2 px-3 font-medium text-right">
+                    Eligible Candidates
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/50">
+                {maintenanceStats.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={5}
+                      className="py-4 text-center text-muted-foreground text-xs"
+                    >
+                      No registered pruning handlers discovered.
+                    </td>
+                  </tr>
+                ) : (
+                  maintenanceStats.map((stat) => (
+                    <tr
+                      key={stat.handlerId}
+                      className="hover:bg-muted/30 transition-colors"
+                    >
+                      <td className="py-2.5 px-3">
+                        <div className="font-medium text-foreground">
+                          {stat.displayName}
+                        </div>
+                        <div className="font-mono text-[11px] text-muted-foreground">
+                          {stat.handlerId}
+                        </div>
+                      </td>
+                      <td className="py-2.5 px-3 text-xs text-muted-foreground max-w-xs truncate">
+                        {stat.description}
+                      </td>
+                      <td className="py-2.5 px-3 text-xs font-mono">
+                        {stat.retentionDays}{" "}
+                        {stat.retentionDays === 1 ? "day" : "days"}
+                      </td>
+                      <td className="py-2.5 px-3 text-xs font-mono text-muted-foreground">
+                        {new Date(stat.cutoffDate).toLocaleDateString()}
+                      </td>
+                      <td className="py-2.5 px-3 text-right">
+                        <Badge
+                          variant={
+                            stat.eligibleRowCount > 0 ? "warning" : "secondary"
+                          }
+                          className="font-mono text-xs"
+                        >
+                          {stat.eligibleRowCount}{" "}
+                          {stat.eligibleRowCount === 1 ? "row" : "rows"}
+                        </Badge>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {maintenanceReport && (
+            <div className="mt-4 p-3 bg-muted/40 rounded-lg border border-border flex flex-col sm:flex-row sm:items-center justify-between text-xs gap-2">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
+                <span>
+                  Last Run:{" "}
+                  <span className="font-mono font-medium">
+                    {new Date(maintenanceReport.timestamp).toLocaleTimeString()}
+                  </span>{" "}
+                  · Pruned{" "}
+                  <span className="font-semibold text-foreground">
+                    {maintenanceReport.totalRowsPruned}
+                  </span>{" "}
+                  total rows in{" "}
+                  <span className="font-mono">
+                    {maintenanceReport.durationMs}ms
+                  </span>
+                </span>
+              </div>
+              <Badge
+                variant={
+                  maintenanceReport.vacuumExecuted ? "success" : "secondary"
+                }
+                className="self-start sm:self-auto text-[10px]"
+              >
+                {maintenanceReport.vacuumExecuted
+                  ? "VACUUM Reclaimed"
+                  : "VACUUM Skipped"}
+              </Badge>
             </div>
           )}
         </CardContent>

@@ -1,15 +1,15 @@
 # Current Implementation State & Verification Evidence
 
-**Snapshot Date**: 2026-10-02  
+**Snapshot Date**: 2026-10-09  
 **Methodology**: Static inspection of the workspace plus verified test suite execution across TypeScript and Rust workspace packages. No component or behavior is marked verified without concrete test evidence.
 
 ---
 
 ## 1. Overall Platform Status
 
-**Production-Ready 1.0 Foundation — All Acceptance Gates Passed (G-01 through G-13)**
+**Production-Ready 1.0 Foundation — All Acceptance Gates Passed (G-01 through G-014)**
 
-The repository contains a fully verified, production-grade local-first platform foundation. All 21 Work Packages (WP-001 through WP-021) and 13 acceptance gates (G-01 through G-13) are resolved and passing:
+The repository contains a fully verified, production-grade local-first platform foundation. All 22 Work Packages (WP-001 through WP-022) and 14 acceptance gates (G-01 through G-014) are resolved and passing:
 
 - File-backed durable SQLite persistence with WAL mode and foreign keys (`crates/native-core`).
 - Platform-owned schema migrations executed in topological order (`@platform/platform`).
@@ -25,41 +25,43 @@ The repository contains a fully verified, production-grade local-first platform 
 - Production P2P relay infrastructure policy decided (ADR-030 / R-009).
 - Multi-consumer domain neutrality verified via secondary application `apps/minimal-consumer` (Gate G-12 passed).
 - Build-time feature permission enforcement gate: AST scanner verifies all `can()`/`require()`/`requireTrusted()` call sites against manifest declarations (WP-021 / G-13).
+- Extensible storage compaction & data pruning subsystem with declarative feature-level retention policies and cooperative VACUUM reclamation (WP-022 / G-014).
 
 ---
 
 ## 2. Platform Status Matrix
 
-| Subsystem                   | Current State                                                                                                                                     | Verification Evidence                                                                                      | Status                        |
-| :-------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------ | :--------------------------------------------------------------------------------------------------------- | :---------------------------- |
-| **Monorepo / Workspace**    | pnpm 10 workspaces + Turborepo + Cargo workspace                                                                                                  | `pnpm turbo build` passes across all 13 packages, 3 apps, 4 crates                                         | ✅ Implemented                |
-| **Durable SQLite**          | File-backed `rusqlite` at `{app_data_dir}/platform.sqlite3`                                                                                       | 5 regression tests in `crates/native-core` (WAL, FKs, rollback, persistence)                               | ✅ RESOLVED (WP-001)          |
-| **Database Migrations**     | Platform migrations applied in strict version order before features                                                                               | Verified checksum validation in `crates/native-core/src/schema.rs`                                         | ✅ RESOLVED (WP-002)          |
-| **Device Identity**         | Native Ed25519 `DeviceKeyProvider` with restricted-permission file custody                                                                        | 4 tests in `crates/identity-core` (genuine seed, signing, restart persistence)                             | ✅ RESOLVED (WP-005)          |
-| **User Authentication**     | Native Argon2id verification + device binding + lockout cooldown                                                                                  | `crates/native-core` tests + `@tests/security` test suite                                                  | ✅ RESOLVED (WP-006)          |
-| **Session Trust**           | Native-issued `NativeSessionView` mapped to `TrustedOperationContext`                                                                             | `tests/security/authentication-boundary.test.ts`                                                           | ✅ RESOLVED (WP-004)          |
-| **Authorization Engine**    | Central `requireTrusted()` enforced at all mutation boundaries                                                                                    | `tests/security/rbac-security.test.ts` (12 tests passing)                                                  | ✅ RESOLVED (WP-007)          |
-| **Tenant Isolation**        | Mandatory `organisationId` scope in all repository queries                                                                                        | `tests/security/tenant-isolation.test.ts` (7 tests passing)                                                | ✅ RESOLVED (WP-003)          |
-| **Audit Logging**           | Append-only `core_audit_events` with correlation IDs                                                                                              | `packages/audit/src/index.test.ts`, transactional commit tests                                             | ✅ RESOLVED (WP-008)          |
-| **Canonical Envelopes**     | Deterministic key-sorted JSON with Ed25519 signature verification                                                                                 | `packages/sync-protocol/src/canonical/` tests                                                              | ✅ RESOLVED (WP-010)          |
-| **Mutual Handshake**        | Authenticated handshake with 32-hex nonce freshness and skew window                                                                               | `packages/sync-protocol/src/handshake/` tests                                                              | ✅ RESOLVED (WP-011)          |
-| **Live P2P Transport**      | Native `iroh` 1.2.0 QUIC endpoint over ALPN `tauri-boilerplate-sync/1.0`                                                                          | `crates/sync-core` loopback test, `IrohSyncTransport.test.ts`                                              | ✅ RESOLVED (WP-014)          |
-| **Outbox / Inbox**          | Durable SQLite queues with transactional enqueue and idempotent receive                                                                           | `packages/sync/src/__tests__/`, `core-replication.sql`                                                     | ✅ RESOLVED (WP-012)          |
-| **Conflict & Tombstones**   | Multi-strategy engine (LWW, additive guard) + soft-delete tombstones                                                                              | `packages/sync/src/conflict/ConflictEngine.test.ts`                                                        | ✅ RESOLVED (WP-013)          |
-| **Background Tasks**        | SQLite task queue, TaskWorker, OutboxSyncWorker, backoff with jitter                                                                              | 33 passing tests in `packages/tasks`                                                                       | ✅ RESOLVED (WP-015)          |
-| **Windows OS Lifecycle**    | System tray minimize-to-tray; native Tokio runtime stays alive on close                                                                           | `tests/security/windows-tray-lifecycle.test.ts` (8 tests passing)                                          | ✅ RESOLVED (WP-016b)         |
-| **Android OS Lifecycle**    | WorkManager `SyncWorker` with NetworkType.CONNECTED & BatteryNotLow constraints                                                                   | `tests/security/android-lifecycle-governance.test.ts` (7 tests passing)                                    | ✅ RESOLVED (WP-016a)         |
-| **Tauri Capabilities**      | Least-privilege matrix, explicit window targeting, SQL safety guard                                                                               | `tests/security/tauri-capability-governance.test.ts`                                                       | ✅ RESOLVED (WP-020)          |
-| **Webview CSP**             | Strict CSP: `default-src 'self'`, no inline scripts or WASM eval                                                                                  | Verified in `tauri.conf.json` and demo `index.html`                                                        | ✅ RESOLVED (WP-009)          |
-| **Import / Export**         | Hostile input limits (10MB, 10k rows) and formula injection neutralization                                                                        | `packages/import-export/src/index.test.ts`                                                                 | ✅ RESOLVED (WP-017)          |
-| **Release Signing**         | Android keystore CI-automated; SLSA provenance attestations; Authenticode optional                                                                | `release.yml` keystore + SLSA steps; `pnpm audit --prod` 0 CVEs                                            | ✅ RESOLVED (WP-018a/c/d)     |
-| **P2P Relay Policy**        | Self-hosted `iroh-relay` mandated for production; public relay staging only                                                                       | ADR-030 accepted; R-009 closed                                                                             | ✅ RESOLVED (ADR-030 / R-009) |
-| **Downstream Adoption**     | Multi-consumer test verified via `apps/minimal-consumer` (Field Notes)                                                                            | `apps/minimal-consumer/src/index.test.ts`, Gate G-12 passed                                                | ✅ RESOLVED (WP-019)          |
-| **Feature Permission Gate** | AST scanner: all `can()`/`require()`/`requireTrusted()` call sites in `features/*/src/` cross-checked against manifest declarations at build time | `tests/security/feature-permission-governance.test.ts` (11 tests passing), `pnpm feature-validate` CI gate | ✅ RESOLVED (WP-021)          |
+| Subsystem                   | Current State                                                                                                                                                                           | Verification Evidence                                                                                      | Status                        |
+| :-------------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :--------------------------------------------------------------------------------------------------------- | :---------------------------- |
+| **Monorepo / Workspace**    | pnpm 10 workspaces + Turborepo + Cargo workspace                                                                                                                                        | `pnpm turbo build` passes across all 13 packages, 3 apps, 4 crates                                         | ✅ Implemented                |
+| **Durable SQLite**          | File-backed `rusqlite` at `{app_data_dir}/platform.sqlite3`                                                                                                                             | 5 regression tests in `crates/native-core` (WAL, FKs, rollback, persistence)                               | ✅ RESOLVED (WP-001)          |
+| **Database Migrations**     | Platform migrations applied in strict version order before features                                                                                                                     | Verified checksum validation in `crates/native-core/src/schema.rs`                                         | ✅ RESOLVED (WP-002)          |
+| **Device Identity**         | Native Ed25519 `DeviceKeyProvider` with restricted-permission file custody                                                                                                              | 4 tests in `crates/identity-core` (genuine seed, signing, restart persistence)                             | ✅ RESOLVED (WP-005)          |
+| **User Authentication**     | Native Argon2id verification + device binding + lockout cooldown                                                                                                                        | `crates/native-core` tests + `@tests/security` test suite                                                  | ✅ RESOLVED (WP-006)          |
+| **Session Trust**           | Native-issued `NativeSessionView` mapped to `TrustedOperationContext`                                                                                                                   | `tests/security/authentication-boundary.test.ts`                                                           | ✅ RESOLVED (WP-004)          |
+| **Authorization Engine**    | Central `requireTrusted()` enforced at all mutation boundaries                                                                                                                          | `tests/security/rbac-security.test.ts` (12 tests passing)                                                  | ✅ RESOLVED (WP-007)          |
+| **Tenant Isolation**        | Mandatory `organisationId` scope in all repository queries                                                                                                                              | `tests/security/tenant-isolation.test.ts` (7 tests passing)                                                | ✅ RESOLVED (WP-003)          |
+| **Audit Logging**           | Append-only `core_audit_events` with correlation IDs                                                                                                                                    | `packages/audit/src/index.test.ts`, transactional commit tests                                             | ✅ RESOLVED (WP-008)          |
+| **Canonical Envelopes**     | Deterministic key-sorted JSON with Ed25519 signature verification                                                                                                                       | `packages/sync-protocol/src/canonical/` tests                                                              | ✅ RESOLVED (WP-010)          |
+| **Mutual Handshake**        | Authenticated handshake with 32-hex nonce freshness and skew window                                                                                                                     | `packages/sync-protocol/src/handshake/` tests                                                              | ✅ RESOLVED (WP-011)          |
+| **Live P2P Transport**      | Native `iroh` 1.2.0 QUIC endpoint over ALPN `tauri-boilerplate-sync/1.0`                                                                                                                | `crates/sync-core` loopback test, `IrohSyncTransport.test.ts`                                              | ✅ RESOLVED (WP-014)          |
+| **Outbox / Inbox**          | Durable SQLite queues with transactional enqueue and idempotent receive                                                                                                                 | `packages/sync/src/__tests__/`, `core-replication.sql`                                                     | ✅ RESOLVED (WP-012)          |
+| **Conflict & Tombstones**   | Multi-strategy engine (LWW, additive guard) + soft-delete tombstones                                                                                                                    | `packages/sync/src/conflict/ConflictEngine.test.ts`                                                        | ✅ RESOLVED (WP-013)          |
+| **Background Tasks**        | SQLite task queue, TaskWorker, OutboxSyncWorker, backoff with jitter                                                                                                                    | 33 passing tests in `packages/tasks`                                                                       | ✅ RESOLVED (WP-015)          |
+| **Windows OS Lifecycle**    | System tray minimize-to-tray; native Tokio runtime stays alive on close                                                                                                                 | `tests/security/windows-tray-lifecycle.test.ts` (8 tests passing)                                          | ✅ RESOLVED (WP-016b)         |
+| **Android OS Lifecycle**    | WorkManager `SyncWorker` with NetworkType.CONNECTED & BatteryNotLow constraints                                                                                                         | `tests/security/android-lifecycle-governance.test.ts` (7 tests passing)                                    | ✅ RESOLVED (WP-016a)         |
+| **Tauri Capabilities**      | Least-privilege matrix, explicit window targeting, SQL safety guard                                                                                                                     | `tests/security/tauri-capability-governance.test.ts`                                                       | ✅ RESOLVED (WP-020)          |
+| **Webview CSP**             | Strict CSP: `default-src 'self'`, no inline scripts or WASM eval                                                                                                                        | Verified in `tauri.conf.json` and demo `index.html`                                                        | ✅ RESOLVED (WP-009)          |
+| **Import / Export**         | Hostile input limits (10MB, 10k rows) and formula injection neutralization                                                                                                              | `packages/import-export/src/index.test.ts`                                                                 | ✅ RESOLVED (WP-017)          |
+| **Release Signing**         | Android keystore CI-automated; SLSA provenance attestations; Authenticode optional                                                                                                      | `release.yml` keystore + SLSA steps; `pnpm audit --prod` 0 CVEs                                            | ✅ RESOLVED (WP-018a/c/d)     |
+| **P2P Relay Policy**        | Self-hosted `iroh-relay` mandated for production; public relay staging only                                                                                                             | ADR-030 accepted; R-009 closed                                                                             | ✅ RESOLVED (ADR-030 / R-009) |
+| **Downstream Adoption**     | Multi-consumer test verified via `apps/minimal-consumer` (Field Notes)                                                                                                                  | `apps/minimal-consumer/src/index.test.ts`, Gate G-12 passed                                                | ✅ RESOLVED (WP-019)          |
+| **Feature Permission Gate** | AST scanner: all `can()`/`require()`/`requireTrusted()` call sites in `features/*/src/` cross-checked against manifest declarations at build time                                       | `tests/security/feature-permission-governance.test.ts` (11 tests passing), `pnpm feature-validate` CI gate | ✅ RESOLVED (WP-021)          |
+| **Storage Compaction**      | `@platform/maintenance` pruning subsystem: 6 core handlers (outbox, inbox, tasks, audit, tombstones, declarative), `MaintenanceOrchestrator` with cooperative abort and SQLite `VACUUM` | `packages/maintenance/src/__tests__/` (8 tests), `tests/security/storage-governance.test.ts` (5 tests)     | ✅ RESOLVED (WP-022 / G-014)  |
 
 ---
 
-## 3. Detailed Audit Resolutions (CS-001 through CS-016)
+## 3. Detailed Audit Resolutions (CS-001 through CS-019)
 
 ### CS-001: Durable Persistence Absent ✅ RESOLVED (WP-001)
 
@@ -139,6 +141,22 @@ Integrated `cargo audit` (checking against RustSec advisory database) and `pnpm 
 
 - **Evidence**: `pnpm audit --prod` reports 0 vulnerabilities; `ci.yml` audit steps executed in CI.
 
+### CS-019: Extensible Storage Maintenance & Data Pruning Subsystem ✅ RESOLVED (WP-022 / G-014)
+
+Implemented `@platform/maintenance` package providing six core pruning handlers and a `MaintenanceOrchestrator`:
+
+- **`SyncOutboxPruner`**: Prunes `SENT` outbox records past the retention cutoff; never touches `PENDING` or `FAILED` envelopes (Compaction Invariant #1).
+- **`SyncInboxPruner`**: Prunes `APPLIED`/`CONFLICT` inbox records past cutoff; protects `PENDING` records still awaiting processing (Compaction Invariant #2).
+- **`BackgroundTasksPruner`**: Prunes `COMPLETED`/`CANCELLED` tasks past cutoff; protects `PENDING`/`RUNNING` tasks (Compaction Invariant #4).
+- **`AuditEventsPruner`**: Prunes `core_audit_events` records past the configurable retention window.
+- **`ReplicatedTombstonePruner`**: Prunes cluster-acknowledged tombstones past cutoff; protects tombstones where `replicated_at IS NULL` (Compaction Invariant #3 / #6).
+- **`DeclarativeTablePruner`**: Sanitizes table/column identifiers and applies feature-declared `DeclarativePruningPolicy` entries — downstream features extend pruning without modifying platform core (Invariant #10).
+- **`MaintenanceOrchestrator`**: Coordinates all handlers, batches deletions within transactions, supports cooperative `AbortSignal` cancellation, and runs `PRAGMA wal_checkpoint(TRUNCATE)` + `VACUUM` post-pruning to release reclaimed pages back to the host filesystem (Compaction Invariant #5).
+- **`StorageMaintenanceWorker`**: Wraps the orchestrator as a deduplicated background task (`platform.maintenance.storage`) enqueued via `@platform/tasks`.
+- **Feature System integration**: `FeatureManifest.pruningPolicies` and `ManifestValidator` validation; `FeatureRegistry.getAllPruningPolicies()` consumed by `Platform.registerFeature()`.
+
+- **Evidence**: `packages/maintenance/src/__tests__/maintenance.test.ts` (8 unit tests passing); `tests/security/storage-governance.test.ts` (5 security regression tests passing).
+
 ---
 
 ## 4. Latest Executable Verification Evidence
@@ -146,7 +164,7 @@ Integrated `cargo audit` (checking against RustSec advisory database) and `pnpm 
 The full repository verification suite demonstrates 100% pass rate:
 
 - **Rust Native Workspace**: `cargo test --workspace` (42 tests passed across all crates).
-- **TypeScript Typecheck**: `pnpm turbo typecheck` (38 tasks passed across all packages and apps).
-- **TypeScript Test Suites**: `pnpm turbo test` (37 tasks passed including unit, integration, and 52 security suite tests across 7 files).
+- **TypeScript Typecheck**: `pnpm turbo typecheck` (39 tasks passed across all packages and apps).
+- **TypeScript Test Suites**: `pnpm turbo test` (40 tasks passed including unit, integration, and 66 security suite tests across 9 files).
 - **Feature Permission Gate**: `pnpm feature-validate` (3 features validated — schema, dependency order, and source coverage pass).
 - **Supply Chain Security**: `pnpm audit --prod` (0 vulnerabilities found).

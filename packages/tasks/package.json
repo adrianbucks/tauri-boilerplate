@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@platform/core": "workspace:*",
-    "@platform/database": "workspace:*"
+    "@platform/database": "workspace:*",
+    "@platform/maintenance": "workspace:*"
   }
 }

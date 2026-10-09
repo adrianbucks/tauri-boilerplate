@@ -38,11 +38,8 @@ impl NativeSessionStore {
         database: &DurableDatabase,
         request: AuthenticateUserRequest,
     ) -> Result<NativeSessionView, PlatformError> {
-        let principal = database.authenticate_user(
-            &request.user_id,
-            &request.device_id,
-            &request.password,
-        )?;
+        let principal =
+            database.authenticate_user(&request.user_id, &request.device_id, &request.password)?;
         let view = session_view(&principal);
         let mut current = self
             .current

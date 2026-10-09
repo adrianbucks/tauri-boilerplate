@@ -1,7 +1,7 @@
-use std::fs;
-use std::path::Path;
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use rand_core::{OsRng, RngCore};
+use std::fs;
+use std::path::Path;
 use thiserror::Error;
 
 use crate::DeviceIdentity;
@@ -67,7 +67,7 @@ impl DeviceKeyProvider {
             OsRng.fill_bytes(&mut seed);
 
             // Write seed with restricted access
-            fs::write(path, &seed)?;
+            fs::write(path, seed)?;
 
             #[cfg(unix)]
             {
@@ -142,7 +142,9 @@ impl DeviceKeyProvider {
         message: &[u8],
         signature_bytes: &[u8],
     ) -> Result<bool, DeviceKeyError> {
-        let clean_hex = public_key_str.strip_prefix("ed25519_pk_").unwrap_or(public_key_str);
+        let clean_hex = public_key_str
+            .strip_prefix("ed25519_pk_")
+            .unwrap_or(public_key_str);
         let pub_bytes = hex::decode(clean_hex).map_err(|e| {
             DeviceKeyError::InvalidPublicKey(format!("Failed to decode hex public key: {e}"))
         })?;
@@ -213,7 +215,8 @@ mod tests {
 
         // Tampered message must fail verification
         let is_valid_tampered =
-            DeviceKeyProvider::verify(provider.public_key(), b"tampered message", &signature).unwrap();
+            DeviceKeyProvider::verify(provider.public_key(), b"tampered message", &signature)
+                .unwrap();
         assert!(!is_valid_tampered);
     }
 
@@ -235,7 +238,7 @@ mod tests {
 
     #[test]
     fn test_restart_persistence_with_protected_file() {
-        let unique_id = hex::encode(&rand_core::OsRng.next_u64().to_le_bytes());
+        let unique_id = hex::encode(rand_core::OsRng.next_u64().to_le_bytes());
         let dir = std::env::temp_dir().join(format!("id_test_{unique_id}"));
         fs::create_dir_all(&dir).unwrap();
         let key_file = dir.join("device_identity.key");

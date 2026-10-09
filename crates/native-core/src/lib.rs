@@ -5,20 +5,20 @@ pub mod schema;
 pub mod session;
 pub mod widget;
 
-pub use database::{DatabaseHealth, DurableDatabase, NativeMigration, DbJsonOperation};
+pub use database::{DatabaseHealth, DbJsonOperation, DurableDatabase, NativeMigration};
 pub use error::PlatformError;
+pub use identity_core::{DeviceIdentity, DeviceKeyError, DeviceKeyProvider};
+pub use organisation::{NativeOrganisationCreateRequest, NativeOrganisationRecord};
 pub use schema::{core_migration, core_migrations};
 pub use session::{
     create_organisation_for_session, create_widget_for_session, create_widgets_for_session,
-    list_organisations_for_session, list_widgets_for_session, session_view, AuthenticateUserRequest,
-    NativeSessionStore, NativeSessionView,
+    list_organisations_for_session, list_widgets_for_session, session_view,
+    AuthenticateUserRequest, NativeSessionStore, NativeSessionView,
 };
 pub use widget::{
     NativePrincipal, NativeWidgetBulkCreateRequest, NativeWidgetCreateItem,
     NativeWidgetCreateRequest, NativeWidgetListRequest, NativeWidgetRecord,
 };
-pub use organisation::{NativeOrganisationCreateRequest, NativeOrganisationRecord};
-pub use identity_core::{DeviceIdentity, DeviceKeyError, DeviceKeyProvider};
 
 #[cfg(test)]
 mod tests {

@@ -4,4 +4,3 @@
 fn main() {
     minimal_consumer_lib::run();
 }
-

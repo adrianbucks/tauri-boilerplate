@@ -10,6 +10,7 @@ import type {
   MigrationDefinition,
   SyncPolicyDefinition,
   NavigationItem,
+  DeclarativePruningPolicy,
 } from "../manifest/FeatureManifest.js";
 
 export interface RegisterFeatureOptions {
@@ -81,6 +82,16 @@ export class FeatureRegistry {
       }
     }
     return items.sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
+  }
+
+  getAllPruningPolicies(): DeclarativePruningPolicy[] {
+    const policies: DeclarativePruningPolicy[] = [];
+    for (const feature of this.getAllFeatures()) {
+      if (feature.pruningPolicies) {
+        policies.push(...feature.pruningPolicies);
+      }
+    }
+    return policies;
   }
 
   private ensureResolved(): void {

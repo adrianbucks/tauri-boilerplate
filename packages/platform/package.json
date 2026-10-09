@@ -23,6 +23,7 @@
     "@platform/sync": "workspace:*",
     "@platform/import-export": "workspace:*",
     "@platform/feature-system": "workspace:*",
-    "@platform/tasks": "workspace:*"
+    "@platform/tasks": "workspace:*",
+    "@platform/maintenance": "workspace:*"
   }
 }

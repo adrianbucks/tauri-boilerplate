@@ -43,7 +43,10 @@ mod tests {
 
         assert_eq!(database.apply_migrations(&core_migrations()).unwrap(), 2);
         for table in ["core_organisations", "core_users", "core_audit_events"] {
-            assert!(database.table_exists(table).unwrap(), "expected {table} to exist");
+            assert!(
+                database.table_exists(table).unwrap(),
+                "expected {table} to exist"
+            );
         }
         for column in [
             "credential_verifier",

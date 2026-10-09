@@ -16,18 +16,21 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 24
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v3
-        with:
-          version: 10
+          cache: "pnpm"
 
       - name: Setup Rust Toolchain
-        uses: dtolnay/rust-toolchain@1.98.1
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.98.1
 
       - name: Install Dependencies
         run: pnpm install --frozen-lockfile
@@ -38,7 +41,7 @@ jobs:
       - name: Inspect Windows Artifacts
         shell: pwsh
         run: |
-          $artifacts = @(Get-ChildItem "target/release/bundle/msi/*.msi") + @(Get-ChildItem "target/release/bundle/nsis/*.exe")
+          $artifacts = @(Get-ChildItem -Path . -Recurse -Filter *.msi | Where-Object { $_.FullName -match 'bundle[\\/]msi' }) + @(Get-ChildItem -Path . -Recurse -Filter *.exe | Where-Object { $_.FullName -match 'bundle[\\/]nsis' })
           if ($artifacts.Count -eq 0) { throw "No Windows installer artifacts were generated." }
           $artifacts | ForEach-Object { Get-FileHash $_.FullName -Algorithm SHA256 } | Format-Table
 
@@ -49,10 +52,16 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 24
+          cache: "pnpm"
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -65,20 +74,24 @@ jobs:
         with:
           packages: "platform-tools platforms;android-36 build-tools;35.0.0"
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v3
+      - name: Setup Android NDK
+        uses: nttld/setup-ndk@v1
+        id: setup-ndk
         with:
-          version: 10
+          ndk-version: r26d
 
       - name: Setup Rust & Android Targets
-        uses: dtolnay/rust-toolchain@1.98.1
+        uses: dtolnay/rust-toolchain@stable
         with:
+          toolchain: 1.98.1
           targets: aarch64-linux-android, armv7-linux-androideabi, i686-linux-android, x86_64-linux-android
 
       - name: Install Dependencies
         run: pnpm install --frozen-lockfile
 
       - name: Build Android APK
+        env:
+          NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: pnpm --filter @apps/demo tauri -- android build --apk
 
       - name: Inspect Android Artifact
@@ -86,3 +99,4 @@ jobs:
           apk=$(find apps/demo/src-tauri/gen -type f -name '*.apk' | head -n 1)
           test -n "$apk"
           sha256sum "$apk"
+

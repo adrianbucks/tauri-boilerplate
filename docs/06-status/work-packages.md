@@ -29,6 +29,7 @@ This document tracks the progress, implementation locations, verification eviden
 | **WP-019** | Downstream Adoption Test       | ✅ RESOLVED                    | `apps/minimal-consumer`                           | Field Notes app, Gate G-12 passed, Invariant #10 verified                                    |
 | **WP-020** | Fine-Grained Capability Matrix | ✅ RESOLVED                    | `capabilities/default.json`, `crates/native-core` | `tauri-capability-governance.test.ts`, SQL safety guard                                      |
 | **WP-021** | Feature Permission Enforcement | ✅ RESOLVED                    | `@tooling/feature-validator`                      | Gate G-013, 13 security regression tests, CI `feature-validate` task                         |
+| **WP-022** | Storage Compaction & Pruning   | ✅ RESOLVED                    | `@platform/maintenance`, `@platform/tasks`        | Gate G-014, 5 compaction invariants, 8 package unit tests, 5 security regression tests       |
 
 ---
 
@@ -59,3 +60,18 @@ This document tracks the progress, implementation locations, verification eviden
   - **CLI & Turborepo Task**: Created standalone CLI executable (`pnpm feature-validate`) with ANSI reporting, wired into `turbo.json` and root `pnpm verify`.
   - **CI Workflow**: Enforced in `.github/workflows/ci.yml` as a blocking gate before PR merge.
   - **Security Regression Suite**: 13 automated tests in `tests/security/feature-permission-governance.test.ts` covering constant resolution, string literals, negative cases, and manifest diffing.
+
+### WP-022: Extensible Storage Maintenance & Data Pruning Subsystem ✅ RESOLVED
+
+- **Objective**: Establish transaction-safe lifecycle compaction and pruning for accumulating operational, replication, and domain tables with SQLite page reclamation (VACUUM) without violating synchronization or authorization invariants.
+- **Scope & Resolution**:
+  - **Standalone Package (`@platform/maintenance`)**: Implemented pluggable `PruningHandler` SPI, `DeclarativeTablePruner` with SQL safety checks, `MaintenanceRegistry`, and `MaintenanceOrchestrator` supporting batch deletion, AbortSignal cooperative cancellation, and post-prune `VACUUM`.
+  - **Core Handlers**: Implemented 5 platform table pruners adhering to the 5 Compaction Invariants:
+    - `SyncOutboxPruner`: Strictly preserves `PENDING` and `FAILED` records; only removes `SENT` past retention cutoff.
+    - `SyncInboxPruner`: Strictly preserves `PENDING` records; only removes `APPLIED`/`CONFLICT` outside the replay guard window.
+    - `BackgroundTasksPruner`: Strictly preserves active `PENDING` and `RUNNING` tasks; only removes `COMPLETED`/`CANCELLED`.
+    - `AuditEventsPruner`: Prunes operational audit events older than retention cutoff.
+    - `ReplicatedTombstonePruner`: Strictly protects tombstones where `replicated_at IS NULL`; only prunes cluster-acknowledged tombstones past cutoff.
+  - **Feature Extensibility & Background Execution**: Added optional `pruningPolicies` to `FeatureManifest` in `@platform/feature-system`, integrated `StorageMaintenanceWorker` in `@platform/tasks` for deduplicated background scheduling, and exposed `platform.runMaintenance()` and `platform.maintenance`.
+  - **Security & Unit Verification**: Verified with 8 unit tests in `packages/maintenance/src/__tests__/maintenance.test.ts` and 5 security governance tests in `tests/security/storage-governance.test.ts` (Gate G-014).
+  - **Diagnostics UI Integration**: Added live "Database Compaction & Data Pruning" card and registered pruners candidate table to `apps/demo/src/pages/DiagnosticsPage.tsx` with one-click manual execution.

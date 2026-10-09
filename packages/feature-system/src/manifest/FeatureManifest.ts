@@ -25,6 +25,9 @@ export interface SyncPolicyDefinition {
   syncable: boolean;
 }
 
+import type { DeclarativePruningPolicy } from "@platform/core";
+export type { DeclarativePruningPolicy };
+
 export interface NavigationItem {
   id: string;
   label: string;
@@ -45,4 +48,5 @@ export interface FeatureManifest {
   readonly migrations: readonly MigrationDefinition[];
   readonly syncPolicies?: readonly SyncPolicyDefinition[] | undefined;
   readonly navigation?: readonly NavigationItem[] | undefined;
+  readonly pruningPolicies?: readonly DeclarativePruningPolicy[] | undefined;
 }

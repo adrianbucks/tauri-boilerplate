@@ -55,5 +55,53 @@ export class ManifestValidator {
       }
       seenVersions.add(mig.version);
     }
+
+    // Validate Pruning Policies
+    if (manifest.pruningPolicies) {
+      const IDENTIFIER_REGEX = /^[a-zA-Z0-9_]+$/;
+      const seenPolicyIds = new Set<string>();
+
+      for (const policy of manifest.pruningPolicies) {
+        if (!policy.id) {
+          throw new ValidationError({
+            message: `Pruning policy in feature '${manifest.id}' must have a valid non-empty id.`,
+            userMessage: "Invalid pruning policy configuration",
+            correlationId: `val_prune_${manifest.id}`,
+          });
+        }
+        if (seenPolicyIds.has(policy.id)) {
+          throw new ValidationError({
+            message: `Duplicate pruning policy id '${policy.id}' in feature '${manifest.id}'.`,
+            userMessage: "Duplicate pruning policy in feature",
+            correlationId: `val_prune_${manifest.id}`,
+          });
+        }
+        seenPolicyIds.add(policy.id);
+
+        if (!IDENTIFIER_REGEX.test(policy.tableName)) {
+          throw new ValidationError({
+            message: `Pruning policy '${policy.id}' in feature '${manifest.id}' has invalid tableName '${policy.tableName}'.`,
+            userMessage: "Invalid pruning policy table",
+            correlationId: `val_prune_${manifest.id}`,
+          });
+        }
+
+        if (!IDENTIFIER_REGEX.test(policy.timestampColumn)) {
+          throw new ValidationError({
+            message: `Pruning policy '${policy.id}' in feature '${manifest.id}' has invalid timestampColumn '${policy.timestampColumn}'.`,
+            userMessage: "Invalid pruning policy timestamp column",
+            correlationId: `val_prune_${manifest.id}`,
+          });
+        }
+
+        if (policy.defaultRetentionDays <= 0) {
+          throw new ValidationError({
+            message: `Pruning policy '${policy.id}' in feature '${manifest.id}' must have positive defaultRetentionDays (got ${policy.defaultRetentionDays}).`,
+            userMessage: "Invalid pruning policy retention days",
+            correlationId: `val_prune_${manifest.id}`,
+          });
+        }
+      }
+    }
   }
 }

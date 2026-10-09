@@ -1,5 +1,5 @@
-pub mod password;
 pub mod hlc;
+pub mod password;
 
 pub use hlc::{HlcTimestamp, HybridLogicalClock};
 pub use password::{PasswordHashError, PasswordVerifier};

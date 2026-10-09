@@ -1,8 +1,8 @@
-use std::collections::HashMap;
-use std::sync::Arc;
 use iroh::endpoint::presets;
 use iroh::{Endpoint, EndpointAddr, EndpointId, SecretKey};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex, RwLock};
 
 pub const SYNC_ALPN: &[u8] = b"tauri-boilerplate-sync/1.0";
@@ -64,7 +64,8 @@ impl IrohSyncEndpoint {
         let listener_connections = connections.clone();
         let listener_tx = inbound_sender.clone();
         tokio::spawn(async move {
-            Self::listen_incoming_streams(listener_endpoint, listener_connections, listener_tx).await;
+            Self::listen_incoming_streams(listener_endpoint, listener_connections, listener_tx)
+                .await;
         });
 
         Ok(instance)
@@ -106,11 +107,12 @@ impl IrohSyncEndpoint {
 
     /// Disconnects an active peer connection.
     pub async fn disconnect(&self, endpoint_id_str: &str) -> Result<(), SyncTransportError> {
-        let endpoint_id: EndpointId = endpoint_id_str
-            .parse()
-            .map_err(|e: iroh::KeyParsingError| {
-                SyncTransportError::InvalidEndpointId(e.to_string())
-            })?;
+        let endpoint_id: EndpointId =
+            endpoint_id_str
+                .parse()
+                .map_err(|e: iroh::KeyParsingError| {
+                    SyncTransportError::InvalidEndpointId(e.to_string())
+                })?;
 
         let mut conns = self.connections.write().await;
         if let Some(conn) = conns.remove(&endpoint_id) {
@@ -135,11 +137,12 @@ impl IrohSyncEndpoint {
         endpoint_id_str: &str,
         payload_json: &str,
     ) -> Result<(), SyncTransportError> {
-        let endpoint_id: EndpointId = endpoint_id_str
-            .parse()
-            .map_err(|e: iroh::KeyParsingError| {
-                SyncTransportError::InvalidEndpointId(e.to_string())
-            })?;
+        let endpoint_id: EndpointId =
+            endpoint_id_str
+                .parse()
+                .map_err(|e: iroh::KeyParsingError| {
+                    SyncTransportError::InvalidEndpointId(e.to_string())
+                })?;
 
         let conns = self.connections.read().await;
         let conn = conns
@@ -211,43 +214,38 @@ impl IrohSyncEndpoint {
         conn: iroh::endpoint::Connection,
         sender: mpsc::Sender<InboundEnvelopeMessage>,
     ) {
-        loop {
-            match conn.accept_bi().await {
-                Ok((mut send_stream, mut recv_stream)) => {
-                    let sender_clone = sender.clone();
-                    tokio::spawn(async move {
-                        // Read 4-byte length prefix
-                        let mut len_bytes = [0u8; 4];
-                        if recv_stream.read_exact(&mut len_bytes).await.is_err() {
-                            return;
-                        }
-                        let len = u32::from_be_bytes(len_bytes) as usize;
-                        if len > 10 * 1024 * 1024 {
-                            // Enforce 10 MiB frame limit to protect against OOM
-                            return;
-                        }
-
-                        let mut buf = vec![0u8; len];
-                        if recv_stream.read_exact(&mut buf).await.is_err() {
-                            return;
-                        }
-
-                        if let Ok(payload_json) = String::from_utf8(buf) {
-                            // Send 1-byte ACK
-                            let _ = send_stream.write_all(&[1u8]).await;
-                            let _ = send_stream.finish();
-
-                            let _ = sender_clone
-                                .send(InboundEnvelopeMessage {
-                                    sender_endpoint_id: remote_endpoint_id.to_string(),
-                                    payload_json,
-                                })
-                                .await;
-                        }
-                    });
+        while let Ok((mut send_stream, mut recv_stream)) = conn.accept_bi().await {
+            let sender_clone = sender.clone();
+            tokio::spawn(async move {
+                // Read 4-byte length prefix
+                let mut len_bytes = [0u8; 4];
+                if recv_stream.read_exact(&mut len_bytes).await.is_err() {
+                    return;
                 }
-                Err(_) => break, // Connection closed
-            }
+                let len = u32::from_be_bytes(len_bytes) as usize;
+                if len > 10 * 1024 * 1024 {
+                    // Enforce 10 MiB frame limit to protect against OOM
+                    return;
+                }
+
+                let mut buf = vec![0u8; len];
+                if recv_stream.read_exact(&mut buf).await.is_err() {
+                    return;
+                }
+
+                if let Ok(payload_json) = String::from_utf8(buf) {
+                    // Send 1-byte ACK
+                    let _ = send_stream.write_all(&[1u8]).await;
+                    let _ = send_stream.finish();
+
+                    let _ = sender_clone
+                        .send(InboundEnvelopeMessage {
+                            sender_endpoint_id: remote_endpoint_id.to_string(),
+                            payload_json,
+                        })
+                        .await;
+                }
+            });
         }
     }
 }

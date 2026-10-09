@@ -17,6 +17,5 @@ pub mod scheduler;
 pub use error::BackgroundError;
 pub use lifecycle::{BackgroundLifecycleState, BackgroundSchedulerStatus};
 pub use scheduler::{
-    start as start_scheduler, EmitFn, OutboxSchedulerConfig, OutboxSchedulerHandle,
-    SyncTickPayload,
+    start as start_scheduler, EmitFn, OutboxSchedulerConfig, OutboxSchedulerHandle, SyncTickPayload,
 };

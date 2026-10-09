@@ -28,6 +28,7 @@
     "@platform/hardware": "workspace:*",
     "@platform/identity": "workspace:*",
     "@platform/import-export": "workspace:*",
+    "@platform/maintenance": "workspace:*",
     "@platform/platform": "workspace:*",
     "@platform/sync": "workspace:*",
     "@platform/sync-protocol": "workspace:*",

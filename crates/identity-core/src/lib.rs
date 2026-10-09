@@ -32,8 +32,7 @@ mod tests {
 
     #[test]
     fn test_device_identity_generation() {
-        let identity =
-            KeyManager::get_or_create_device_identity("demo-app", "windows").unwrap();
+        let identity = KeyManager::get_or_create_device_identity("demo-app", "windows").unwrap();
         assert!(identity.device_id.starts_with("dev_"));
         assert!(identity.public_key.starts_with("ed25519_pk_"));
         assert_eq!(identity.public_key.len(), 11 + 64);

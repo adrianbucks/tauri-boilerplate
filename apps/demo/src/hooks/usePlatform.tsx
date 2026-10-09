@@ -55,11 +55,13 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
     null,
   );
   const [transport, setTransport] = useState<IrohSyncTransport | null>(null);
-  const [syncState] = useState<SyncState>("IDLE");
+  const [syncState, setSyncState] = useState<SyncState>("DISCONNECTED");
   const [isReady, setIsReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const unlistenRef = useRef<(() => void) | null>(null);
+  const unlistenTickRef = useRef<(() => void) | null>(null);
+  const syncUnsubscribeRef = useRef<(() => void) | null>(null);
 
   const init = useCallback(async () => {
     try {
@@ -120,6 +122,12 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
         transport: syncTransport,
       });
 
+      syncUnsubscribeRef.current?.();
+      syncUnsubscribeRef.current = p.sync.onStateChange((state) => {
+        setSyncState(state);
+      });
+      setSyncState(p.sync.getState());
+
       // --- WP-016b: Start background scheduler at platform boot ---
       // background_start is idempotent. Calling it here (outside any React
       // component lifecycle) ensures the OutboxScheduler keeps running even
@@ -148,6 +156,18 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
       );
       unlistenRef.current = unlisten;
 
+      const unlistenTick = await listen<{ pending_count: number }>(
+        "background://sync-tick",
+        (event) => {
+          if (p.isSyncConfigured()) {
+            p.sync.setState(
+              event.payload.pending_count > 0 ? "SYNCING" : "IDLE",
+            );
+          }
+        },
+      );
+      unlistenTickRef.current = unlistenTick;
+
       setPlatform(p);
       setIsReady(true);
     } catch (err) {
@@ -170,6 +190,11 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
             signFn: createNativeSignFn(nativeGateway),
             transport: platform.sync.getTransport(),
           });
+          syncUnsubscribeRef.current?.();
+          syncUnsubscribeRef.current = platform.sync.onStateChange((state) => {
+            setSyncState(state);
+          });
+          setSyncState(platform.sync.getState());
         } catch {
           // Non-fatal fallback
         }
@@ -183,7 +208,11 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
     setNativeSession(null);
     if (platform) {
       platform.sessions.invalidateSession();
+      if (platform.isSyncConfigured()) {
+        platform.sync.setState("DISCONNECTED");
+      }
     }
+    setSyncState("DISCONNECTED");
   }, [nativeGateway, platform]);
 
   useEffect(() => {
@@ -191,6 +220,8 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
     return () => {
       // Clean up tray event listener on unmount to prevent memory leaks.
       unlistenRef.current?.();
+      unlistenTickRef.current?.();
+      syncUnsubscribeRef.current?.();
     };
   }, [init]);
 

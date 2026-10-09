@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  shell-quote: ^1.11.0
+
 importers:
 
   .:
@@ -62,6 +65,9 @@ importers:
       '@platform/import-export':
         specifier: workspace:*
         version: link:../../packages/import-export
+      '@platform/maintenance':
+        specifier: workspace:*
+        version: link:../../packages/maintenance
       '@platform/platform':
         specifier: workspace:*
         version: link:../../packages/platform
@@ -290,6 +296,19 @@ importers:
         specifier: https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz
         version: https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz
 
+  packages/maintenance:
+    dependencies:
+      '@platform/core':
+        specifier: workspace:*
+        version: link:../core
+      '@platform/database':
+        specifier: workspace:*
+        version: link:../database
+    devDependencies:
+      vitest:
+        specifier: ^3.0.7
+        version: 3.2.7(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.13)
+
   packages/platform:
     dependencies:
       '@platform/audit':
@@ -313,6 +332,9 @@ importers:
       '@platform/import-export':
         specifier: workspace:*
         version: link:../import-export
+      '@platform/maintenance':
+        specifier: workspace:*
+        version: link:../maintenance
       '@platform/sync':
         specifier: workspace:*
         version: link:../sync
@@ -358,6 +380,9 @@ importers:
       '@platform/database':
         specifier: workspace:*
         version: link:../database
+      '@platform/maintenance':
+        specifier: workspace:*
+        version: link:../maintenance
 
   packages/ui:
     dependencies:
@@ -485,9 +510,15 @@ importers:
       '@platform/database':
         specifier: workspace:*
         version: link:../../packages/database
+      '@platform/feature-system':
+        specifier: workspace:*
+        version: link:../../packages/feature-system
       '@platform/identity':
         specifier: workspace:*
         version: link:../../packages/identity
+      '@platform/maintenance':
+        specifier: workspace:*
+        version: link:../../packages/maintenance
       '@platform/platform':
         specifier: workspace:*
         version: link:../../packages/platform
@@ -2576,8 +2607,8 @@ packages:
     engines: {node: '>=10'}
     hasBin: true
 
-  shell-quote@1.10.0:
-    resolution: {integrity: sha512-w1aiOKwKuRgtwAReIIj89puqg+I7GvX4IbLrvmhXbzQsj1+Zwi4VO3+fa6ZF91TWSjIxoEkKnMeHcLEODK5ZXA==}
+  shell-quote@1.12.0:
+    resolution: {integrity: sha512-PcByqNyT/38F2kDNi006HAMRJaULuBzq/FOsw3qdZvX/GA9W/jamDaRskgHjubHiftXK5sIFxLNkvrXUwcof6Q==}
     engines: {node: '>= 0.4'}
 
   siginfo@2.0.0:
@@ -4224,7 +4255,7 @@ snapshots:
       debug: 4.4.3
       env-paths: 3.0.0
       semver: 7.8.5
-      shell-quote: 1.10.0
+      shell-quote: 1.12.0
       which: 4.0.0
     transitivePeerDependencies:
       - supports-color
@@ -4512,7 +4543,7 @@ snapshots:
 
   semver@7.8.5: {}
 
-  shell-quote@1.10.0: {}
+  shell-quote@1.12.0: {}
 
   siginfo@2.0.0: {}
 

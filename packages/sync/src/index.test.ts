@@ -202,4 +202,74 @@ describe("@platform/sync", () => {
       ).toBe(true);
     });
   });
+
+  describe("SyncManager state observation", () => {
+    let db: MemoryDatabaseConnection;
+
+    beforeEach(async () => {
+      db = new MemoryDatabaseConnection(":memory:");
+      await db.init();
+    });
+
+    afterEach(async () => {
+      await db.close();
+    });
+
+    it("initializes with DISCONNECTED without transport, or IDLE with transport", () => {
+      const disconnectedMgr = new SyncManager({
+        db,
+        deviceId: "dev_1",
+        organisationId: "org_1",
+      });
+      expect(disconnectedMgr.getState()).toBe("DISCONNECTED");
+
+      const idleMgr = new SyncManager({
+        db,
+        deviceId: "dev_1",
+        organisationId: "org_1",
+        transport: {
+          connect: async () => {},
+          disconnect: async () => {},
+          send: async () => {},
+          onReceive: () => {},
+          isConnected: () => true,
+        },
+      });
+      expect(idleMgr.getState()).toBe("IDLE");
+    });
+
+    it("notifies onStateChange listeners during connect and disconnect", async () => {
+      const mgr = new SyncManager({
+        db,
+        deviceId: "dev_1",
+        organisationId: "org_1",
+      });
+
+      const observedStates: string[] = [];
+      const unsubscribe = mgr.onStateChange((state) => {
+        observedStates.push(state);
+      });
+
+      await mgr.connect({
+        peerId: "peer_1",
+        deviceId: "dev_peer",
+        organisationId: "org_1",
+        supportedSyncGroups: ["grp_1"],
+      });
+
+      expect(observedStates).toContain("CONNECTING");
+      expect(observedStates).toContain("CONNECTED");
+      expect(observedStates).toContain("AUTHORISED");
+      expect(observedStates).toContain("IDLE");
+      expect(mgr.getState()).toBe("IDLE");
+
+      await mgr.disconnect("peer_1");
+      expect(mgr.getState()).toBe("DISCONNECTED");
+      expect(observedStates[observedStates.length - 1]).toBe("DISCONNECTED");
+
+      unsubscribe();
+      mgr.setState("SYNCING");
+      expect(observedStates[observedStates.length - 1]).toBe("DISCONNECTED");
+    });
+  });
 });

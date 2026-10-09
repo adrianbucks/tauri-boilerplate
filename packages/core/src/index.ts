@@ -16,3 +16,6 @@ export * from "./logging/Logger.js";
 
 // Configuration
 export * from "./config/AppConfig.js";
+
+// Maintenance
+export * from "./maintenance/DeclarativePruningPolicy.js";

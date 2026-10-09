@@ -316,6 +316,67 @@ Incoming envelopes are signature-verified before insertion and applied in HLC lo
 
 ---
 
+## Storage Compaction & Data Pruning (`@platform/maintenance`, WP-022 / Gate G-014)
+
+Local-first, replicated desktop and mobile databases naturally accumulate operational rows across queues, task histories, audit logs, and soft-delete markers. To prevent unbounded SQLite file growth and maintain sub-millisecond query performance, the platform includes a standalone, extensible maintenance package: **`@platform/maintenance`**.
+
+### The 5 Compaction Invariants
+
+1. **No Premature Outbox Pruning (Invariants #3 & #4)**: Never delete `PENDING` or `FAILED` outbox envelopes. Only records with `status = 'SENT'` past the retention window may be removed.
+2. **Safe Inbox Deduplication Window**: Never prune inbox deduplication markers before the clock skew and replay tolerance threshold (default: 30 days) to prevent replay vulnerabilities.
+3. **Replicated Tombstone Compaction (Invariant #6)**: Never prune soft-delete tombstones where `replicated_at IS NULL`. Only tombstones confirmed across cluster peers past the GC cutoff may be pruned.
+4. **Active Task Protection**: Never delete or interrupt `PENDING` or `RUNNING` background tasks.
+5. **Durable Space Reclamation**: Execute SQLite `VACUUM` post-pruning to return reclaimed database pages to the host operating system filesystem.
+
+### Subsystem Architecture
+
+```text
+packages/maintenance/
+├── src/
+│   ├── types.ts                      # PruningHandler SPI, DeclarativePruningPolicy, MaintenanceReport
+│   ├── registry/
+│   │   └── MaintenanceRegistry.ts    # Central registry for programmatic handlers & declarative rules
+│   ├── orchestrator/
+│   │   └── MaintenanceOrchestrator.ts# Inspection, batch deletion, cooperative AbortSignal & VACUUM
+│   └── handlers/
+│       ├── DeclarativeTablePruner.ts # Generic policy pruner for feature tables
+│       ├── SyncOutboxPruner.ts       # Core replication outbox pruner
+│       ├── SyncInboxPruner.ts        # Core replication inbox pruner
+│       ├── BackgroundTasksPruner.ts  # Core background task pruner
+│       ├── AuditEventsPruner.ts      # Core audit events pruner
+│       └── ReplicatedTombstonePruner.ts # Cluster-acknowledged tombstone pruner
+```
+
+### Feature Extensibility (Invariant #10)
+
+Downstream features define lifecycle pruning declaratively in their `FeatureManifest` without modifying core packages:
+
+```typescript
+export const domainManifest: FeatureManifest = {
+  id: "sensor-telemetry",
+  // ...
+  pruningPolicies: [
+    {
+      id: "feature.sensor_readings",
+      displayName: "Archived Sensor Readings",
+      tableName: "sensor_readings",
+      timestampColumn: "recorded_at",
+      defaultRetentionDays: 30,
+      filterCondition: "status = 'ARCHIVED'",
+    },
+  ],
+};
+```
+
+When registered with `platform.registerFeature()`, policies are automatically registered into `platform.maintenanceRegistry`.
+
+### Background Execution & Diagnostics
+
+- **Background Scheduling**: `StorageMaintenanceWorker` in `@platform/tasks` wraps `MaintenanceOrchestrator` for periodic unattended execution with deduplication key `maintenance:storage:${orgId}`.
+- **Diagnostics UI**: The Diagnostics page (`apps/demo/src/pages/DiagnosticsPage.tsx`) provides a live overview of all registered pruners, candidate row counts, and an interactive "Run Storage Maintenance" action button with live result feedback.
+
+---
+
 ## Future work
 
 | Enhancement                          | ADR                | Status                                   |

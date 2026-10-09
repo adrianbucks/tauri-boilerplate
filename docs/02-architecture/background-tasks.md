@@ -148,31 +148,31 @@ export interface TaskExecutionContext {
   readonly correlationId: string;
 }
 
-export interface TaskHandler<TPayload = unknown> {
-  readonly taskType: string;
-  execute(payload: TPayload, ctx: TaskExecutionContext): Promise<void>;
-}
+export type TaskHandler<TPayload = unknown, TResult = unknown> = (
+  payload: TPayload,
+  ctx: TaskExecutionContext,
+) => Promise<TResult>;
 ```
 
 ### Example: Registering a Maintenance Task
 
 ```typescript
-import { TaskWorker, TaskQueueService } from "@platform/tasks";
+import { TaskWorker } from "@platform/tasks";
 
-const worker = new TaskWorker(taskQueueService, {
+const worker = new TaskWorker(db, {
   pollIntervalMs: 2000,
   concurrency: 4,
 });
 
-worker.registerHandler({
-  taskType: "maintenance.cleanup_tombstones",
-  async execute(payload: { olderThanDays: number }, ctx) {
+worker.register<{ olderThanDays: number }>(
+  "maintenance.cleanup_tombstones",
+  async (payload, ctx) => {
     if (ctx.signal.aborted) return;
     await repository.purgeOldTombstones(payload.olderThanDays);
   },
-});
+);
 
-await worker.start();
+worker.start();
 ```
 
 ---

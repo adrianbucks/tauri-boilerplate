@@ -24,7 +24,7 @@
 //! `OutboxSchedulerHandle::stop()` cancels the token and awaits the task's
 //! `JoinHandle`, ensuring graceful teardown before the process exits.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde::Serialize;
@@ -156,13 +156,12 @@ pub fn start(
 /// Executes one poll cycle. Opens a fresh connection, queries the outbox for
 /// pending rows, and emits an event if any are found. Infallible at the top
 /// level — errors are written to stderr to avoid crashing the scheduler loop.
-async fn run_tick(db_path: &PathBuf, emit_fn: &EmitFn) {
+async fn run_tick(db_path: &Path, emit_fn: &EmitFn) {
     let ticked_at = utc_iso_now();
-    let path = db_path.clone();
+    let path = db_path.to_path_buf();
 
     let result = tokio::task::spawn_blocking(move || {
-        native_core::DurableDatabase::open(&path)
-            .and_then(|db| db.query_pending_outbox_orgs())
+        native_core::DurableDatabase::open(&path).and_then(|db| db.query_pending_outbox_orgs())
     })
     .await;
 
@@ -217,15 +216,21 @@ fn utc_iso_now() -> String {
 mod tests {
     use super::*;
     use native_core::DurableDatabase;
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::{Arc, Mutex};
 
+    static TEST_DB_COUNTER: AtomicU64 = AtomicU64::new(0);
+
     fn temp_db() -> (DurableDatabase, PathBuf) {
+        let count = TEST_DB_COUNTER.fetch_add(1, Ordering::SeqCst);
         let path = std::env::temp_dir().join(format!(
-            "bg_sched_test_{}.sqlite3",
+            "bg_sched_test_{}_{}_{}.sqlite3",
+            std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
-                .as_nanos()
+                .as_nanos(),
+            count
         ));
         let db = DurableDatabase::open(&path).expect("open temp db");
         (db, path)
@@ -291,7 +296,10 @@ mod tests {
         let emit_fn: EmitFn = Box::new(|_| {});
         let handle = start(path.clone(), config, emit_fn);
 
-        assert!(handle.is_running(), "Scheduler should be running after start");
+        assert!(
+            handle.is_running(),
+            "Scheduler should be running after start"
+        );
         handle.stop().await.expect("clean stop");
 
         let _ = std::fs::remove_file(&path);

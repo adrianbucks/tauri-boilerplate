@@ -14,15 +14,16 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 24
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v3
-        with:
-          version: 10
+          cache: "pnpm"
 
       - name: Install Dependencies
         run: pnpm install --frozen-lockfile
@@ -86,10 +87,10 @@ jobs:
 
       # WP-018a: Rust supply-chain audit via cargo-audit.
       # Checks all workspace crates against the RustSec advisory database.
-      # To suppress a known non-applicable advisory, add it to audit.toml:
-      #   [advisories]
-      #   ignore = ["RUSTSEC-XXXX-YYYY"]
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+
       - name: Rust Supply Chain Audit (WP-018a)
-        run: |
-          cargo install cargo-audit --quiet 2>$null || true
-          cargo audit
+        run: cargo audit

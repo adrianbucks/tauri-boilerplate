@@ -70,6 +70,7 @@ Phase 7: Product & Enterprise Expansion             [PLANNED]
 - ✅ Production P2P relay infrastructure policy documented and decided (ADR-030 / R-009).
 - ✅ Native diagnostics UI with live SQLite telemetry, Ed25519 device identity, iroh Node ID, and interactive P2P peer connection controls.
 - ✅ Build-time feature permission enforcement gate (WP-021 / Gate G-013) with AST scanner, CLI, and 13 security regression tests.
+- ✅ Extensible storage maintenance & data pruning subsystem (WP-022 / Gate G-014) with `@platform/maintenance`, core pruners, feature manifests extension, `StorageMaintenanceWorker`, and Diagnostics dashboard UI.
 - ⚙️ Windows Authenticode signing remains an optional downstream enterprise feature (WP-018b).
 
 ### Phase 7 — Product & Enterprise Expansion [FUTURE]

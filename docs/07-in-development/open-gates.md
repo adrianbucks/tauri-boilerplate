@@ -84,7 +84,33 @@ Free cryptographically signed build provenance and checksums:
 
 ---
 
-## 4. Native Subsystem Diagnostics & Live P2P Controls ✅ RESOLVED
+## 4. Work Package WP-022: Extensible Storage Compaction & Data Pruning ✅ RESOLVED (G-014)
+
+### Problem Statement
+
+As the SQLite database grows over time — accumulated sync outbox/inbox records, completed background tasks, audit events, and replicated tombstones — storage is never reclaimed. Without a governed pruning layer, databases grow unboundedly and replication performance degrades.
+
+### Technical Scope & Implementation
+
+1. **`@platform/maintenance` Package**: Six core pruning handlers plus a coordinating orchestrator:
+   - **`SyncOutboxPruner`**: Prunes `SENT` outbox records past retention cutoff. Protects `PENDING`/`FAILED` envelopes (Compaction Invariant #1).
+   - **`SyncInboxPruner`**: Prunes `APPLIED`/`CONFLICT` inbox records past cutoff. Protects `PENDING` inbox records (Compaction Invariant #2 — 30-day deduplication window).
+   - **`BackgroundTasksPruner`**: Prunes `COMPLETED`/`CANCELLED` tasks past cutoff. Protects `PENDING`/`RUNNING` tasks (Compaction Invariant #4).
+   - **`AuditEventsPruner`**: Prunes `core_audit_events` records past the configurable retention window.
+   - **`ReplicatedTombstonePruner`**: Prunes cluster-acknowledged tombstones past cutoff. Protects tombstones where `replicated_at IS NULL` (Compaction Invariants #3 and #6).
+   - **`DeclarativeTablePruner`**: Applies feature-declared `DeclarativePruningPolicy` entries with identifier sanitization — extends pruning to downstream feature tables without modifying platform core (Invariant #10).
+2. **`MaintenanceOrchestrator`**: Coordinates all registered handlers, batches deletions within transactions, supports cooperative `AbortSignal` cancellation, and runs `PRAGMA wal_checkpoint(TRUNCATE)` + `VACUUM` to release reclaimed pages to the host filesystem (Compaction Invariant #5).
+3. **`StorageMaintenanceWorker`**: Wraps the orchestrator as a deduplicated background task (`platform.maintenance.storage`, `uniqueKey: maintenance:storage:${orgId}`) enqueued via `@platform/tasks`.
+4. **Feature System Integration**: `FeatureManifest.pruningPolicies?: readonly DeclarativePruningPolicy[]`; `ManifestValidator` validates policy IDs and identifier safety; `FeatureRegistry.getAllPruningPolicies()` consumed by `Platform.registerFeature()`.
+5. **`MaintenanceRegistry`**: Central registry for core handlers and feature-declared declarative policies, with safe defaults registered automatically.
+6. **Diagnostics UI**: `DiagnosticsPage.tsx` in `apps/demo` exposes a "Database Compaction & Data Pruning (WP-022 / Gate G-014)" card with live candidate counts per handler and a "Run Storage Maintenance" action button.
+7. **Security Regression Suite**: 5 automated tests in `tests/security/storage-governance.test.ts` covering outbox compaction protection, tombstone GC protection, active task protection, DB connection abstraction (Invariant #1), and feature extensibility boundary (Invariant #10).
+
+- **Evidence**: `packages/maintenance/src/__tests__/maintenance.test.ts` (8 unit tests); `packages/tasks/src/StorageMaintenanceWorker.test.ts` (3 unit tests); `tests/security/storage-governance.test.ts` (5 security regression tests); `pnpm verify` exits 0.
+
+---
+
+## 5. Native Subsystem Diagnostics & Live P2P Controls ✅ RESOLVED
 
 ### Implementation Summary
 

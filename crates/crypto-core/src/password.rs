@@ -1,5 +1,5 @@
-use argon2::password_hash::{PasswordHasher, PasswordVerifier as _};
 use argon2::password_hash::phc::PasswordHash;
+use argon2::password_hash::{PasswordHasher, PasswordVerifier as _};
 use argon2::{Algorithm, Argon2, Params, Version};
 use thiserror::Error;
 
@@ -28,13 +28,8 @@ pub struct PasswordVerifier {
 
 impl PasswordVerifier {
     pub fn new() -> Result<Self, PasswordHashError> {
-        let params = Params::new(
-            MEMORY_COST_KIB,
-            TIME_COST,
-            PARALLELISM,
-            None,
-        )
-        .map_err(|_| PasswordHashError::InvalidParameters)?;
+        let params = Params::new(MEMORY_COST_KIB, TIME_COST, PARALLELISM, None)
+            .map_err(|_| PasswordHashError::InvalidParameters)?;
 
         Ok(Self {
             argon2: Argon2::new(Algorithm::Argon2id, Version::V0x13, params),
@@ -49,14 +44,10 @@ impl PasswordVerifier {
             .map_err(|_| PasswordHashError::HashingFailed)
     }
 
-    pub fn verify(
-        &self,
-        password: &str,
-        stored_verifier: &str,
-    ) -> Result<bool, PasswordHashError> {
+    pub fn verify(&self, password: &str, stored_verifier: &str) -> Result<bool, PasswordHashError> {
         validate_password(password)?;
-        let parsed = PasswordHash::new(stored_verifier)
-            .map_err(|_| PasswordHashError::MalformedVerifier)?;
+        let parsed =
+            PasswordHash::new(stored_verifier).map_err(|_| PasswordHashError::MalformedVerifier)?;
         Ok(self
             .argon2
             .verify_password(password.as_bytes(), &parsed)

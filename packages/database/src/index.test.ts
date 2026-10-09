@@ -1,10 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
   MemoryDatabaseConnection,
+  NativeDatabaseConnection,
   MigrationEngine,
   BaseRepository,
   type MigrationScript,
 } from "./index.js";
+import { DatabaseError } from "@platform/core";
 
 interface TestItem {
   id: string;
@@ -79,6 +81,47 @@ describe("@platform/database", () => {
         ["a1"],
       );
       expect(rows[0]?.balance).toBe(100);
+    });
+  });
+
+  describe("NativeDatabaseConnection transaction boundary (B-01)", () => {
+    it("rejects txClient.query() inside transaction callback with DatabaseError", async () => {
+      const mockInvoke = async () => {};
+      const nativeDb = new NativeDatabaseConnection(mockInvoke as any);
+      await nativeDb.init();
+
+      await expect(
+        nativeDb.transaction(async (tx) => {
+          await tx.query("SELECT * FROM users;");
+        }),
+      ).rejects.toThrow(DatabaseError);
+    });
+
+    it("allows txClient.execute() inside transaction callback and executes atomically", async () => {
+      let invokedCmd = "";
+      let invokedArgs: any = null;
+      const mockInvoke = async (cmd: string, args: any) => {
+        invokedCmd = cmd;
+        invokedArgs = args;
+        return { success: true };
+      };
+      const nativeDb = new NativeDatabaseConnection(mockInvoke as any);
+      await nativeDb.init();
+
+      const result = await nativeDb.transaction(async (tx) => {
+        await tx.execute("INSERT INTO users VALUES (?);", ["u1"]);
+        return "success_val";
+      });
+
+      expect(result).toBe("success_val");
+      expect(invokedCmd).toBe("db_transaction");
+      expect(invokedArgs?.operations).toEqual([
+        {
+          type: "execute",
+          sql: "INSERT INTO users VALUES (?);",
+          params: ["u1"],
+        },
+      ]);
     });
   });
 

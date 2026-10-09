@@ -122,19 +122,15 @@ fn verify_message(request: VerifyMessageRequest) -> Result<bool, PlatformError> 
             "verify_message_err",
         )
     })?;
-    DeviceKeyProvider::verify_hex(
-        &request.public_key,
-        &message_bytes,
-        &request.signature_hex,
-    )
-    .map_err(|e| {
-        PlatformError::new(
-            "verification_error",
-            e.to_string(),
-            "Signature verification failed",
-            "verify_message_err",
-        )
-    })
+    DeviceKeyProvider::verify_hex(&request.public_key, &message_bytes, &request.signature_hex)
+        .map_err(|e| {
+            PlatformError::new(
+                "verification_error",
+                e.to_string(),
+                "Signature verification failed",
+                "verify_message_err",
+            )
+        })
 }
 
 pub fn run() {
@@ -149,13 +145,7 @@ pub fn run() {
             let database = DurableDatabase::open(db_path)
                 .map_err(|error| std::io::Error::other(error.message))?;
             database
-                .apply_migrations(
-                    &[
-                        core_migrations(),
-                        vec![notes_feature_migration()],
-                    ]
-                    .concat(),
-                )
+                .apply_migrations(&[core_migrations(), vec![notes_feature_migration()]].concat())
                 .map_err(|error| std::io::Error::other(error.message))?;
             let key_provider = database
                 .load_or_create_device_key_provider(APPLICATION_ID, std::env::consts::OS)
@@ -204,4 +194,3 @@ mod tests {
         assert!(!migration.owner.contains("example-feature"));
     }
 }
-

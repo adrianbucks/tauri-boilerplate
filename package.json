@@ -41,6 +41,9 @@
     "onlyBuiltDependencies": [
       "better-sqlite3",
       "esbuild"
-    ]
+    ],
+    "overrides": {
+      "shell-quote": "^1.11.0"
+    }
   }
 }

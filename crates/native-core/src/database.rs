@@ -6,17 +6,17 @@ use std::time::Duration;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
-use crypto_core::PasswordVerifier;
-use identity_core::{DeviceIdentity, DeviceKeyProvider};
-use crate::PlatformError;
-use crate::widget::{
-    authorize_widget_create, authorize_widget_read, NativePrincipal, NativeWidgetBulkCreateRequest,
-    NativeWidgetCreateItem, NativeWidgetCreateRequest, NativeWidgetRecord,
-};
 use crate::organisation::{
     authorize_organisation_create, authorize_organisation_read, NativeOrganisationCreateRequest,
     NativeOrganisationRecord,
 };
+use crate::widget::{
+    authorize_widget_create, authorize_widget_read, NativePrincipal, NativeWidgetBulkCreateRequest,
+    NativeWidgetCreateItem, NativeWidgetCreateRequest, NativeWidgetRecord,
+};
+use crate::PlatformError;
+use crypto_core::PasswordVerifier;
+use identity_core::{DeviceIdentity, DeviceKeyProvider};
 
 const MAX_AUTHENTICATION_FAILURES: i64 = 5;
 const LOCKOUT_SECONDS: u64 = 300;
@@ -61,7 +61,8 @@ impl DurableDatabase {
             fs::create_dir_all(parent).map_err(|error| database_error("db_parent", error))?;
         }
 
-        let connection = Connection::open(&path).map_err(|error| database_error("db_open", error))?;
+        let connection =
+            Connection::open(&path).map_err(|error| database_error("db_open", error))?;
         connection
             .busy_timeout(BUSY_TIMEOUT)
             .map_err(|error| database_error("db_busy_timeout", error))?;
@@ -161,15 +162,16 @@ impl DurableDatabase {
             Some(self.path.with_file_name("device_identity.key"))
         };
 
-        let provider = DeviceKeyProvider::load_or_create(key_file.as_deref(), application_id, platform)
-            .map_err(|e| {
-                PlatformError::new(
-                    "AUTHENTICATION_ERROR",
-                    format!("Failed to load or create device key: {e}"),
-                    "Unable to access device identity",
-                    "device_key_provider",
-                )
-            })?;
+        let provider =
+            DeviceKeyProvider::load_or_create(key_file.as_deref(), application_id, platform)
+                .map_err(|e| {
+                    PlatformError::new(
+                        "AUTHENTICATION_ERROR",
+                        format!("Failed to load or create device key: {e}"),
+                        "Unable to access device identity",
+                        "device_key_provider",
+                    )
+                })?;
 
         let connection = self
             .connection
@@ -255,10 +257,7 @@ impl DurableDatabase {
             .map_err(|error| database_error("db_commit", error))
     }
 
-    pub fn apply_migrations(
-        &self,
-        migrations: &[NativeMigration],
-    ) -> Result<usize, PlatformError> {
+    pub fn apply_migrations(&self, migrations: &[NativeMigration]) -> Result<usize, PlatformError> {
         let connection = self
             .connection
             .lock()
@@ -461,14 +460,14 @@ impl DurableDatabase {
                     principal.organisation_id
                 ],
                 |row| {
-                Ok(NativeOrganisationRecord {
-                    id: row.get(0)?,
-                    created_at: row.get(1)?,
-                    updated_at: row.get(2)?,
-                    name: row.get(3)?,
-                    domain: row.get(4)?,
-                    status: row.get(5)?,
-                })
+                    Ok(NativeOrganisationRecord {
+                        id: row.get(0)?,
+                        created_at: row.get(1)?,
+                        updated_at: row.get(2)?,
+                        name: row.get(3)?,
+                        domain: row.get(4)?,
+                        status: row.get(5)?,
+                    })
                 },
             )
             .map_err(|error| database_error("organisation_list_query", error))?;
@@ -772,7 +771,7 @@ impl DurableDatabase {
             .widgets
             .clone()
             .into_iter()
-            .map(|item| normalize_widget_item(item))
+            .map(normalize_widget_item)
             .collect::<Result<Vec<_>, _>>();
         let normalized = match normalized {
             Ok(items) => items,
@@ -1020,10 +1019,13 @@ impl DurableDatabase {
             .optional()
             .map_err(|error| database_error("auth_user_lookup", error))?;
 
-        let (organisation_id, user_status, stored_verifier, failures, locked_until) =
-            user.ok_or_else(|| authentication_error_message("auth_failed", "Authentication failed"))?;
+        let (organisation_id, user_status, stored_verifier, failures, locked_until) = user
+            .ok_or_else(|| authentication_error_message("auth_failed", "Authentication failed"))?;
         if user_status != "ACTIVE" {
-            return Err(authentication_error_message("auth_failed", "Authentication failed"));
+            return Err(authentication_error_message(
+                "auth_failed",
+                "Authentication failed",
+            ));
         }
 
         let device_valid = transaction
@@ -1037,7 +1039,10 @@ impl DurableDatabase {
             .map_err(|error| database_error("auth_device_lookup", error))?
             == 1;
         if !device_valid {
-            return Err(authentication_error_message("auth_failed", "Authentication failed"));
+            return Err(authentication_error_message(
+                "auth_failed",
+                "Authentication failed",
+            ));
         }
 
         let now = current_epoch_seconds();
@@ -1046,7 +1051,10 @@ impl DurableDatabase {
             .and_then(|value| value.parse::<u64>().ok())
             .is_some_and(|until| until > now)
         {
-            return Err(authentication_error_message("auth_locked", "Authentication failed"));
+            return Err(authentication_error_message(
+                "auth_locked",
+                "Authentication failed",
+            ));
         }
 
         let valid = stored_verifier
@@ -1071,7 +1079,10 @@ impl DurableDatabase {
             transaction
                 .commit()
                 .map_err(|error| database_error("auth_failure_commit", error))?;
-            return Err(authentication_error_message("auth_failed", "Authentication failed"));
+            return Err(authentication_error_message(
+                "auth_failed",
+                "Authentication failed",
+            ));
         }
 
         let permission_rows = transaction
@@ -1119,7 +1130,10 @@ impl DurableDatabase {
         let upper = clean.trim().to_uppercase();
 
         // Disallow ATTACH / DETACH (arbitrary filesystem mounting)
-        if upper.starts_with("ATTACH ") || upper.starts_with("ATTACH\t") || upper.contains(" ATTACH ") {
+        if upper.starts_with("ATTACH ")
+            || upper.starts_with("ATTACH\t")
+            || upper.contains(" ATTACH ")
+        {
             return Err(PlatformError::new(
                 "disallowed_sql",
                 "ATTACH DATABASE is disallowed over client database bridge",
@@ -1127,7 +1141,10 @@ impl DurableDatabase {
                 "sql_safety_err",
             ));
         }
-        if upper.starts_with("DETACH ") || upper.starts_with("DETACH\t") || upper.contains(" DETACH ") {
+        if upper.starts_with("DETACH ")
+            || upper.starts_with("DETACH\t")
+            || upper.contains(" DETACH ")
+        {
             return Err(PlatformError::new(
                 "disallowed_sql",
                 "DETACH DATABASE is disallowed over client database bridge",
@@ -1147,7 +1164,11 @@ impl DurableDatabase {
         }
 
         // Disallow PRAGMA manipulation from webview (pragmas must be controlled by native platform)
-        if upper.starts_with("PRAGMA ") || upper.starts_with("PRAGMA\t") || upper.contains(";PRAGMA") || upper.contains("; PRAGMA") {
+        if upper.starts_with("PRAGMA ")
+            || upper.starts_with("PRAGMA\t")
+            || upper.contains(";PRAGMA")
+            || upper.contains("; PRAGMA")
+        {
             return Err(PlatformError::new(
                 "disallowed_sql",
                 "PRAGMA execution is disallowed over client database bridge",
@@ -1169,11 +1190,11 @@ impl DurableDatabase {
             .connection
             .lock()
             .map_err(|_| database_error_message("db_lock", "Database connection lock poisoned"))?;
-        
+
         let mut statement = connection
             .prepare(sql)
             .map_err(|error| database_error("db_query_prepare", error))?;
-        
+
         // Get column names first
         let col_count = statement.column_count();
         let mut col_names = Vec::new();
@@ -1184,22 +1205,17 @@ impl DurableDatabase {
                 .to_string();
             col_names.push(col_name);
         }
-        
+
         // Convert JSON params to SQLite params
-        let sql_params: Vec<Box<dyn rusqlite::ToSql>> = params
-            .iter()
-            .map(|v| json_value_to_sql_param(v))
-            .collect();
-        
-        let param_refs: Vec<&dyn rusqlite::ToSql> = sql_params
-            .iter()
-            .map(|p| p.as_ref())
-            .collect();
-        
+        let sql_params: Vec<Box<dyn rusqlite::ToSql>> =
+            params.iter().map(|v| json_value_to_sql_param(v)).collect();
+
+        let param_refs: Vec<&dyn rusqlite::ToSql> = sql_params.iter().map(|p| p.as_ref()).collect();
+
         let mut rows = statement
             .query(param_refs.as_slice())
             .map_err(|error| database_error("db_query_execute", error))?;
-        
+
         let mut results = Vec::new();
         while let Some(row) = rows
             .next()
@@ -1210,16 +1226,14 @@ impl DurableDatabase {
                 let value: serde_json::Value = match row.get_ref(i) {
                     Ok(val) => match val {
                         rusqlite::types::ValueRef::Null => serde_json::Value::Null,
-                        rusqlite::types::ValueRef::Integer(i) => serde_json::Value::Number(i.into()),
-                        rusqlite::types::ValueRef::Real(f) => {
-                            serde_json::Number::from_f64(f)
-                                .map(serde_json::Value::Number)
-                                .unwrap_or(serde_json::Value::Null)
+                        rusqlite::types::ValueRef::Integer(i) => {
+                            serde_json::Value::Number(i.into())
                         }
+                        rusqlite::types::ValueRef::Real(f) => serde_json::Number::from_f64(f)
+                            .map(serde_json::Value::Number)
+                            .unwrap_or(serde_json::Value::Null),
                         rusqlite::types::ValueRef::Text(t) => {
-                            serde_json::Value::String(
-                                String::from_utf8_lossy(t).into_owned()
-                            )
+                            serde_json::Value::String(String::from_utf8_lossy(t).into_owned())
                         }
                         rusqlite::types::ValueRef::Blob(b) => {
                             // Encode blob as base64 JSON string
@@ -1232,7 +1246,7 @@ impl DurableDatabase {
             }
             results.push(obj);
         }
-        
+
         Ok(serde_json::json!({"rows": results}))
     }
 
@@ -1246,34 +1260,24 @@ impl DurableDatabase {
             .connection
             .lock()
             .map_err(|_| database_error_message("db_lock", "Database connection lock poisoned"))?;
-        
+
         let mut statement = connection
             .prepare(sql)
             .map_err(|error| database_error("db_execute_prepare", error))?;
-        
+
         // Convert JSON params to SQLite params
-        let sql_params: Vec<Box<dyn rusqlite::ToSql>> = params
-            .iter()
-            .map(|v| json_value_to_sql_param(v))
-            .collect();
-        
-        let param_refs: Vec<&dyn rusqlite::ToSql> = sql_params
-            .iter()
-            .map(|p| p.as_ref())
-            .collect();
-        
+        let sql_params: Vec<Box<dyn rusqlite::ToSql>> =
+            params.iter().map(|v| json_value_to_sql_param(v)).collect();
+
+        let param_refs: Vec<&dyn rusqlite::ToSql> = sql_params.iter().map(|p| p.as_ref()).collect();
+
         statement
             .execute(param_refs.as_slice())
             .map_err(|error| database_error("db_execute", error))
-            .map(|rows_affected| {
-                serde_json::json!({"rows_affected": rows_affected})
-            })
+            .map(|rows_affected| serde_json::json!({"rows_affected": rows_affected}))
     }
 
-    pub fn transaction_json(
-        &self,
-        operations: Vec<DbJsonOperation>,
-    ) -> Result<(), PlatformError> {
+    pub fn transaction_json(&self, operations: Vec<DbJsonOperation>) -> Result<(), PlatformError> {
         for op in &operations {
             Self::validate_safe_sql(&op.sql)?;
         }
@@ -1281,28 +1285,26 @@ impl DurableDatabase {
             .connection
             .lock()
             .map_err(|_| database_error_message("db_lock", "Database connection lock poisoned"))?;
-        
+
         let transaction = connection
             .unchecked_transaction()
             .map_err(|error| database_error("db_transaction_begin", error))?;
-        
+
         for op in operations {
             let mut statement = transaction
                 .prepare(&op.sql)
                 .map_err(|error| database_error("db_transaction_prepare", error))?;
-            
+
             // Convert JSON params to SQLite params
             let sql_params: Vec<Box<dyn rusqlite::ToSql>> = op
                 .params
                 .iter()
                 .map(|v| json_value_to_sql_param(v))
                 .collect();
-            
-            let param_refs: Vec<&dyn rusqlite::ToSql> = sql_params
-                .iter()
-                .map(|p| p.as_ref())
-                .collect();
-            
+
+            let param_refs: Vec<&dyn rusqlite::ToSql> =
+                sql_params.iter().map(|p| p.as_ref()).collect();
+
             match op.op_type.as_str() {
                 "query" => {
                     let mut rows = statement
@@ -1329,7 +1331,7 @@ impl DurableDatabase {
                 }
             }
         }
-        
+
         transaction
             .commit()
             .map_err(|error| database_error("db_transaction_commit", error))
@@ -1370,30 +1372,30 @@ fn base64_encode(data: &[u8]) -> String {
     // Manual base64 encoding since we don't have base64 crate
     const TABLE: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut result = String::new();
-    
+
     for chunk in data.chunks(3) {
         let b1 = chunk[0];
         let b2 = chunk.get(1).copied().unwrap_or(0);
         let b3 = chunk.get(2).copied().unwrap_or(0);
-        
+
         let n = ((b1 as u32) << 16) | ((b2 as u32) << 8) | (b3 as u32);
-        
+
         result.push(TABLE[((n >> 18) & 63) as usize] as char);
         result.push(TABLE[((n >> 12) & 63) as usize] as char);
-        
+
         if chunk.len() > 1 {
             result.push(TABLE[((n >> 6) & 63) as usize] as char);
         } else {
             result.push('=');
         }
-        
+
         if chunk.len() > 2 {
             result.push(TABLE[(n & 63) as usize] as char);
         } else {
             result.push('=');
         }
     }
-    
+
     result
 }
 
@@ -1418,6 +1420,33 @@ fn json_value_to_sql_param(value: &serde_json::Value) -> Box<dyn rusqlite::ToSql
             Box::new(value.to_string())
         }
     }
+}
+
+fn migration_owner_order(owner: &str) -> (u8, &str) {
+    if owner == "platform" {
+        (0, owner)
+    } else {
+        (1, owner)
+    }
+}
+
+fn authentication_error(code: &str, error: impl std::fmt::Display) -> PlatformError {
+    authentication_error_message(code, &error.to_string())
+}
+
+fn authentication_error_message(code: &str, message: &str) -> PlatformError {
+    PlatformError::new(
+        "AUTHENTICATION_ERROR",
+        message,
+        "Authentication failed",
+        code,
+    )
+}
+
+fn current_epoch_seconds() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |duration| duration.as_secs())
 }
 
 #[cfg(test)]
@@ -1500,7 +1529,8 @@ mod tests {
         assert!(first.device_id.starts_with("dev_"));
 
         // Verify native signing and verification roundtrip with loaded provider
-        let database = DurableDatabase::open(&path).expect("database should reopen for provider check");
+        let database =
+            DurableDatabase::open(&path).expect("database should reopen for provider check");
         let provider = database
             .load_or_create_device_key_provider("app.test", "windows")
             .expect("key provider should load");
@@ -1633,7 +1663,9 @@ mod tests {
                 .to_string(),
         };
 
-        assert!(database.apply_migrations(&[broken.clone()]).is_err());
+        assert!(database
+            .apply_migrations(std::slice::from_ref(&broken))
+            .is_err());
         let connection = database.connection.lock().unwrap();
         let table_count: i64 = connection
             .query_row(
@@ -1673,8 +1705,10 @@ mod tests {
                 version: 1,
                 name: "create_widgets_table".to_string(),
                 checksum: "chk_widgets_001".to_string(),
-                sql: include_str!("../../../features/example-feature/src/migrations/widgets-schema.sql")
-                    .to_string(),
+                sql: include_str!(
+                    "../../../features/example-feature/src/migrations/widgets-schema.sql"
+                )
+                .to_string(),
             }])
             .expect("widget migration should apply");
         database
@@ -1720,8 +1754,10 @@ mod tests {
             version: 1,
             name: "create_widgets_table".to_string(),
             checksum: "chk_widgets_001".to_string(),
-            sql: include_str!("../../../features/example-feature/src/migrations/widgets-schema.sql")
-                .to_string(),
+            sql: include_str!(
+                "../../../features/example-feature/src/migrations/widgets-schema.sql"
+            )
+            .to_string(),
         });
         database
             .apply_migrations(&migrations)
@@ -1757,7 +1793,14 @@ mod tests {
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
             .unwrap();
-        assert_eq!(audit, ("WIDGET_CREATED".to_string(), "test-device".to_string(), "corr_widget_alpha".to_string()));
+        assert_eq!(
+            audit,
+            (
+                "WIDGET_CREATED".to_string(),
+                "test-device".to_string(),
+                "corr_widget_alpha".to_string()
+            )
+        );
         drop(connection);
 
         let validation_error = database
@@ -1844,8 +1887,10 @@ mod tests {
             version: 1,
             name: "create_widgets_table".to_string(),
             checksum: "chk_widgets_001".to_string(),
-            sql: include_str!("../../../features/example-feature/src/migrations/widgets-schema.sql")
-                .to_string(),
+            sql: include_str!(
+                "../../../features/example-feature/src/migrations/widgets-schema.sql"
+            )
+            .to_string(),
         });
         database
             .apply_migrations(&migrations)
@@ -1911,7 +1956,7 @@ mod tests {
         assert_eq!(error.code, "VALIDATION_ERROR");
 
         let widgets = database
-            .list_widgets(&
+            .list_widgets(
                 &NativePrincipal::from_authenticated_session(
                     "user_1",
                     "org_1",
@@ -2055,7 +2100,14 @@ mod tests {
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
             .unwrap();
-        assert_eq!(audit, ("ORGANISATION_CREATED".to_string(), "test-device".to_string(), "corr_org_create".to_string()));
+        assert_eq!(
+            audit,
+            (
+                "ORGANISATION_CREATED".to_string(),
+                "test-device".to_string(),
+                "corr_org_create".to_string()
+            )
+        );
         drop(connection);
 
         let duplicate = database
@@ -2193,7 +2245,7 @@ mod tests {
     #[test]
     fn restart_persistence_survives_close_and_reopen() {
         let path = test_path("wp001-restart-persistence");
-        
+
         // Write data to database
         {
             let db = DurableDatabase::open(&path).expect("database should open");
@@ -2206,7 +2258,7 @@ mod tests {
             .expect("insert should succeed");
             // Database drops here, file should be persisted
         }
-        
+
         // Verify data persists after reopening
         {
             let db = DurableDatabase::open(&path).expect("database should reopen");
@@ -2214,14 +2266,16 @@ mod tests {
                 .connection
                 .lock()
                 .expect("lock should work")
-                .query_row("SELECT name FROM core_organisations WHERE id = 'org_persist'", [], |row| {
-                    row.get(0)
-                })
+                .query_row(
+                    "SELECT name FROM core_organisations WHERE id = 'org_persist'",
+                    [],
+                    |row| row.get(0),
+                )
                 .expect("query should work");
-            
+
             assert_eq!(result, "Persistent Org");
         }
-        
+
         fs::remove_file(&path).expect("cleanup");
         let _ = fs::remove_file(path.with_extension("db-wal"));
         let _ = fs::remove_file(path.with_extension("db-shm"));
@@ -2234,14 +2288,14 @@ mod tests {
             let db = DurableDatabase::open(&path).expect("database should open");
             db.apply_migrations(&crate::core_migrations())
                 .expect("core migrations should apply");
-            
+
             // FK constraint: core_users.organisation_id -> core_organisations.id
             let org_insert = db.execute_batch(
                 "INSERT INTO core_organisations (id, created_at, updated_at, name)
                  VALUES ('org_fk_test', '2024-01-01', '2024-01-01', 'Test Org');",
             );
             assert!(org_insert.is_ok(), "valid org insert should succeed");
-            
+
             // Try to insert user with non-existent organisation
             let invalid_user = db.execute_batch(
                 "INSERT INTO core_users
@@ -2249,7 +2303,7 @@ mod tests {
                  VALUES ('user_fk_invalid', '2024-01-01', '2024-01-01', 'org_nonexistent', 'Invalid', 'ACTIVE');",
             );
             assert!(invalid_user.is_err(), "FK violation should fail");
-            
+
             // Valid insert with existing organisation
             let valid_user = db.execute_batch(
                 "INSERT INTO core_users
@@ -2258,7 +2312,7 @@ mod tests {
             );
             assert!(valid_user.is_ok(), "valid FK insert should succeed");
         }
-        
+
         std::thread::sleep(std::time::Duration::from_millis(100));
         let _ = fs::remove_file(&path);
         let _ = fs::remove_file(path.with_extension("db-wal"));
@@ -2271,10 +2325,10 @@ mod tests {
         {
             let db = DurableDatabase::open(&path).expect("database should open");
             let health = db.health_check().expect("health check should work");
-            
+
             assert_eq!(health.journal_mode, "wal", "journal mode should be WAL");
         }
-        
+
         std::thread::sleep(std::time::Duration::from_millis(100));
         let _ = fs::remove_file(&path);
         let _ = fs::remove_file(path.with_extension("db-wal"));
@@ -2288,13 +2342,16 @@ mod tests {
             let db = DurableDatabase::open(&path).expect("database should open");
             db.apply_migrations(&crate::core_migrations())
                 .expect("core migrations should apply");
-            
+
             let health = db.health_check().expect("health check should work");
-            
-            assert!(health.foreign_keys_enabled, "foreign keys should be enabled");
+
+            assert!(
+                health.foreign_keys_enabled,
+                "foreign keys should be enabled"
+            );
             assert_eq!(health.integrity_check, "ok", "integrity check should pass");
         }
-        
+
         std::thread::sleep(std::time::Duration::from_millis(100));
         let _ = fs::remove_file(&path);
         let _ = fs::remove_file(path.with_extension("db-wal"));
@@ -2308,14 +2365,14 @@ mod tests {
             let db = DurableDatabase::open(&path).expect("database should open");
             db.apply_migrations(&crate::core_migrations())
                 .expect("core migrations should apply");
-            
+
             // Insert valid org
             db.execute_batch(
                 "INSERT INTO core_organisations (id, created_at, updated_at, name)
                  VALUES ('org_rollback', '2024-01-01', '2024-01-01', 'Rollback Test');",
             )
             .expect("insert should succeed");
-            
+
             // Try transaction with partial failure (FK violation in the middle)
             let failed_tx = db.transaction(
                 "INSERT INTO core_users
@@ -2325,9 +2382,12 @@ mod tests {
                  (id, created_at, updated_at, organisation_id, display_name, status)
                  VALUES ('user_2', '2024-01-01', '2024-01-01', 'org_nonexistent', 'Invalid', 'ACTIVE');",
             );
-            
-            assert!(failed_tx.is_err(), "transaction with FK violation should fail");
-            
+
+            assert!(
+                failed_tx.is_err(),
+                "transaction with FK violation should fail"
+            );
+
             // Verify first insert was rolled back
             let user_count: i64 = db
                 .connection
@@ -2335,10 +2395,13 @@ mod tests {
                 .expect("lock should work")
                 .query_row("SELECT COUNT(*) FROM core_users", [], |row| row.get(0))
                 .expect("query should work");
-            
-            assert_eq!(user_count, 0, "all user inserts should have been rolled back");
+
+            assert_eq!(
+                user_count, 0,
+                "all user inserts should have been rolled back"
+            );
         }
-        
+
         std::thread::sleep(std::time::Duration::from_millis(100));
         let _ = fs::remove_file(&path);
         let _ = fs::remove_file(path.with_extension("db-wal"));
@@ -2349,7 +2412,8 @@ mod tests {
     fn sql_safety_guard_blocks_hostile_pragmas_and_attachments() {
         let path = test_path("wp020-sql-safety");
         let db = DurableDatabase::open(&path).expect("open");
-        db.apply_migrations(&crate::core_migrations()).expect("migrations");
+        db.apply_migrations(&crate::core_migrations())
+            .expect("migrations");
 
         // 1. Blocks PRAGMA queries
         let pragma_res = db.query_json("PRAGMA foreign_keys = OFF;", vec![]);
@@ -2392,31 +2456,4 @@ mod tests {
         let _ = fs::remove_file(path.with_extension("db-wal"));
         let _ = fs::remove_file(path.with_extension("db-shm"));
     }
-}
-
-fn migration_owner_order(owner: &str) -> (u8, &str) {
-    if owner == "platform" {
-        (0, owner)
-    } else {
-        (1, owner)
-    }
-}
-
-fn authentication_error(code: &str, error: impl std::fmt::Display) -> PlatformError {
-    authentication_error_message(code, &error.to_string())
-}
-
-fn authentication_error_message(code: &str, message: &str) -> PlatformError {
-    PlatformError::new(
-        "AUTHENTICATION_ERROR",
-        message,
-        "Authentication failed",
-        code,
-    )
-}
-
-fn current_epoch_seconds() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |duration| duration.as_secs())
 }

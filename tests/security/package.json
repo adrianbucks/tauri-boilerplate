@@ -16,10 +16,12 @@
     "@platform/audit": "workspace:*",
     "@platform/sync-protocol": "workspace:*",
     "@platform/sync": "workspace:*",
+    "@platform/feature-system": "workspace:*",
     "@platform/platform": "workspace:*",
     "@features/example-feature": "workspace:*",
     "@features/organisations": "workspace:*",
     "@features/identity-admin": "workspace:*",
-    "@tooling/feature-validator": "workspace:*"
+    "@tooling/feature-validator": "workspace:*",
+    "@platform/maintenance": "workspace:*"
   }
 }

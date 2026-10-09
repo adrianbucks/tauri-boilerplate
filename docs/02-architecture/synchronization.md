@@ -324,7 +324,7 @@ class OutboxSyncWorker {
 }
 ```
 
-OS background lifecycle adapters (WP-016) — Android WorkManager and Windows scheduling — remain open gates for production.
+OS background lifecycle adapters (WP-016) — Android WorkManager and Windows scheduling — have been completed and verified.
 
 ---
 
@@ -332,8 +332,8 @@ OS background lifecycle adapters (WP-016) — Android WorkManager and Windows sc
 
 | Item                                    | Work Package     | Status                                    |
 | --------------------------------------- | ---------------- | ----------------------------------------- |
-| Android WorkManager adapter             | WP-016a          | 🚧 Open                                   |
-| Windows background task adapter         | WP-016b          | 🚧 Open                                   |
+| Android WorkManager adapter             | WP-016a          | ✅ RESOLVED                               |
+| Windows background task adapter         | WP-016b          | ✅ RESOLVED                               |
 | Multi-device NAT traversal benchmarking | WP-014 follow-up | 🚧 Open                                   |
 | Production relay policy (self-hosted)   | ADR-030          | Deferred                                  |
 | iroh-docs evaluation completed          | ADR-013          | ✅ Closed — custom operation log selected |

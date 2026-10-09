@@ -67,11 +67,13 @@ impl HybridLogicalClock {
             self.counter.store(0, AtomicOrdering::SeqCst);
             (physical, 0)
         } else if latest == remote.physical_time {
-            let new_c = std::cmp::max(self.counter.load(AtomicOrdering::SeqCst), remote.counter) + 1;
+            let new_c =
+                std::cmp::max(self.counter.load(AtomicOrdering::SeqCst), remote.counter) + 1;
             self.counter.store(new_c, AtomicOrdering::SeqCst);
             (latest, new_c)
         } else if remote.physical_time > latest {
-            self.latest_time.store(remote.physical_time, AtomicOrdering::SeqCst);
+            self.latest_time
+                .store(remote.physical_time, AtomicOrdering::SeqCst);
             let new_c = remote.counter + 1;
             self.counter.store(new_c, AtomicOrdering::SeqCst);
             (remote.physical_time, new_c)

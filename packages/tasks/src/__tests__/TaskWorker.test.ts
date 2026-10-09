@@ -176,6 +176,78 @@ describe("TaskWorker", () => {
     expect(updated?.state).toBe("FAILED");
   }, 15_000);
 
+  it("calls onNonRetryableError exactly once when a task permanently fails", async () => {
+    const nonRetryableCalls: {
+      taskId: string;
+      taskType: string;
+      error: unknown;
+    }[] = [];
+    const customWorker = new TaskWorker(db, {
+      pollIntervalMs: 50,
+      onNonRetryableError: (taskId, taskType, error) => {
+        nonRetryableCalls.push({ taskId, taskType, error });
+      },
+    });
+
+    customWorker.register("test.work", async () => {
+      throw new Error("fatal failure");
+    });
+
+    const task = await queue.enqueue(
+      makeDefinition({ retryPolicy: { maxAttempts: 1 } }),
+    );
+    customWorker.start();
+
+    try {
+      await waitFor(async () => {
+        const t = await queue.findById(task.id);
+        return t?.state === "FAILED";
+      });
+    } finally {
+      await customWorker.stop();
+    }
+
+    expect(nonRetryableCalls).toHaveLength(1);
+    expect(nonRetryableCalls[0]?.taskId).toBe(task.id);
+    expect(nonRetryableCalls[0]?.taskType).toBe("test.work");
+  }, 15_000);
+
+  it("does not call onNonRetryableError on retryable failures", async () => {
+    const nonRetryableCalls: string[] = [];
+    const customWorker = new TaskWorker(db, {
+      pollIntervalMs: 50,
+      onNonRetryableError: (taskId) => {
+        nonRetryableCalls.push(taskId);
+      },
+    });
+
+    let attempts = 0;
+    customWorker.register("test.work", async () => {
+      attempts++;
+      if (attempts === 1) {
+        throw new Error("transient network issue");
+      }
+    });
+
+    const task = await queue.enqueue(
+      makeDefinition({ retryPolicy: { maxAttempts: 3, initialDelayMs: 50 } }),
+    );
+    customWorker.start();
+
+    try {
+      await waitFor(async () => {
+        const t = await queue.findById(task.id);
+        // It failed once and got rescheduled to PENDING
+        return t?.state === "PENDING" && t.attemptCount === 1;
+      });
+    } finally {
+      await customWorker.stop();
+    }
+
+    // Since it's retryable and scheduled for later, onNonRetryableError must not have been called
+    expect(nonRetryableCalls).toHaveLength(0);
+  }, 15_000);
+
   // -------------------------------------------------------------------------
   // Abort signal on timeout
   // -------------------------------------------------------------------------

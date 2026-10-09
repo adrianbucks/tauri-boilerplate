@@ -154,8 +154,8 @@ export interface TaskWorkerOptions {
    */
   readonly gracefulShutdownTimeoutMs?: number;
   /**
-   * Called when a task handler throws a non-retryable error.
-   * Useful for alerting / observability.
+   * Called only when a task has exhausted all retry attempts and is
+   * permanently in FAILED state. Useful for alerting / observability.
    */
   readonly onNonRetryableError?: (
     taskId: string,

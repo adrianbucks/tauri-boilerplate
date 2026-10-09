@@ -1,20 +1,21 @@
-use background_core::{
-    BackgroundLifecycleState, BackgroundSchedulerStatus,
-};
+use background_core::{BackgroundLifecycleState, BackgroundSchedulerStatus};
 use identity_core::{DeviceIdentity, DeviceKeyProvider};
 use native_core::{
     core_migrations, create_organisation_for_session, create_widget_for_session,
-    create_widgets_for_session,
-    list_organisations_for_session, list_widgets_for_session, session_view, AuthenticateUserRequest,
-    DatabaseHealth, DurableDatabase, NativeOrganisationCreateRequest, NativeOrganisationRecord,
-    NativeSessionStore, NativeSessionView, NativeWidgetCreateRequest, NativeWidgetListRequest,
-    NativeWidgetRecord, PlatformError,
+    create_widgets_for_session, list_organisations_for_session, list_widgets_for_session,
+    session_view, AuthenticateUserRequest, DatabaseHealth, DurableDatabase,
+    NativeOrganisationCreateRequest, NativeOrganisationRecord, NativeSessionStore,
+    NativeSessionView, NativeWidgetCreateRequest, NativeWidgetListRequest, NativeWidgetRecord,
+    PlatformError,
 };
-use sync_core::{EndpointAddr, IrohSyncEndpoint};
-use tauri::{Emitter, Manager};
-#[cfg(target_os = "windows")]
-use tauri::{menu::{Menu, MenuItem}, tray::TrayIconBuilder};
 use serde::{Deserialize, Serialize};
+use sync_core::{EndpointAddr, IrohSyncEndpoint};
+#[cfg(target_os = "windows")]
+use tauri::{
+    menu::{Menu, MenuItem},
+    tray::TrayIconBuilder,
+};
+use tauri::{Emitter, Manager};
 
 const APPLICATION_ID: &str = "com.tauri.boilerplate.demo";
 
@@ -207,9 +208,7 @@ fn sign_message(
 }
 
 #[tauri::command]
-fn verify_message(
-    request: VerifyMessageRequest,
-) -> Result<bool, PlatformError> {
+fn verify_message(request: VerifyMessageRequest) -> Result<bool, PlatformError> {
     let message_bytes = hex::decode(&request.message_hex).map_err(|e| {
         PlatformError::new(
             "invalid_hex",
@@ -218,19 +217,15 @@ fn verify_message(
             "verify_message_err",
         )
     })?;
-    DeviceKeyProvider::verify_hex(
-        &request.public_key,
-        &message_bytes,
-        &request.signature_hex,
-    )
-    .map_err(|e| {
-        PlatformError::new(
-            "verification_error",
-            e.to_string(),
-            "Signature verification failed",
-            "verify_message_err",
-        )
-    })
+    DeviceKeyProvider::verify_hex(&request.public_key, &message_bytes, &request.signature_hex)
+        .map_err(|e| {
+            PlatformError::new(
+                "verification_error",
+                e.to_string(),
+                "Signature verification failed",
+                "verify_message_err",
+            )
+        })
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -269,7 +264,12 @@ async fn sync_start_endpoint(
     if let Some(ep) = lock.as_ref() {
         let addr = ep.endpoint_addr();
         let addr_json = serde_json::to_string(&addr).map_err(|e| {
-            PlatformError::new("serialization_error", e.to_string(), "Failed to serialize addr", "sync_err")
+            PlatformError::new(
+                "serialization_error",
+                e.to_string(),
+                "Failed to serialize addr",
+                "sync_err",
+            )
         })?;
         return Ok(SyncEndpointInfo {
             endpoint_id: ep.endpoint_id(),
@@ -278,13 +278,23 @@ async fn sync_start_endpoint(
     }
 
     let endpoint = IrohSyncEndpoint::bind(None).await.map_err(|e| {
-        PlatformError::new("endpoint_bind_failed", e.to_string(), "Failed to bind iroh endpoint", "sync_err")
+        PlatformError::new(
+            "endpoint_bind_failed",
+            e.to_string(),
+            "Failed to bind iroh endpoint",
+            "sync_err",
+        )
     })?;
 
     let endpoint_id = endpoint.endpoint_id();
     let addr = endpoint.endpoint_addr();
     let addr_json = serde_json::to_string(&addr).map_err(|e| {
-        PlatformError::new("serialization_error", e.to_string(), "Failed to serialize addr", "sync_err")
+        PlatformError::new(
+            "serialization_error",
+            e.to_string(),
+            "Failed to serialize addr",
+            "sync_err",
+        )
     })?;
 
     let receiver_ep = endpoint.clone();
@@ -310,7 +320,12 @@ async fn sync_connect_peer(
 ) -> Result<String, PlatformError> {
     let lock = state.endpoint.read().await;
     let endpoint = lock.as_ref().ok_or_else(|| {
-        PlatformError::new("endpoint_not_started", "Sync endpoint not started", "Start endpoint first", "sync_err")
+        PlatformError::new(
+            "endpoint_not_started",
+            "Sync endpoint not started",
+            "Start endpoint first",
+            "sync_err",
+        )
     })?;
 
     let addr_str = if request.addr_json.trim_start().starts_with('{') {
@@ -319,11 +334,21 @@ async fn sync_connect_peer(
         serde_json::json!({ "id": request.addr_json.trim() }).to_string()
     };
     let addr: EndpointAddr = serde_json::from_str(&addr_str).map_err(|e| {
-        PlatformError::new("invalid_addr", format!("Failed to parse EndpointAddr: {e}"), "Invalid address", "sync_err")
+        PlatformError::new(
+            "invalid_addr",
+            format!("Failed to parse EndpointAddr: {e}"),
+            "Invalid address",
+            "sync_err",
+        )
     })?;
 
     endpoint.connect_endpoint_addr(addr).await.map_err(|e| {
-        PlatformError::new("connect_failed", e.to_string(), "Failed to connect to peer", "sync_err")
+        PlatformError::new(
+            "connect_failed",
+            e.to_string(),
+            "Failed to connect to peer",
+            "sync_err",
+        )
     })
 }
 
@@ -334,12 +359,25 @@ async fn sync_disconnect_peer(
 ) -> Result<(), PlatformError> {
     let lock = state.endpoint.read().await;
     let endpoint = lock.as_ref().ok_or_else(|| {
-        PlatformError::new("endpoint_not_started", "Sync endpoint not started", "Start endpoint first", "sync_err")
+        PlatformError::new(
+            "endpoint_not_started",
+            "Sync endpoint not started",
+            "Start endpoint first",
+            "sync_err",
+        )
     })?;
 
-    endpoint.disconnect(&request.endpoint_id).await.map_err(|e| {
-        PlatformError::new("disconnect_failed", e.to_string(), "Failed to disconnect peer", "sync_err")
-    })
+    endpoint
+        .disconnect(&request.endpoint_id)
+        .await
+        .map_err(|e| {
+            PlatformError::new(
+                "disconnect_failed",
+                e.to_string(),
+                "Failed to disconnect peer",
+                "sync_err",
+            )
+        })
 }
 
 #[tauri::command]
@@ -349,12 +387,25 @@ async fn sync_send_envelope(
 ) -> Result<(), PlatformError> {
     let lock = state.endpoint.read().await;
     let endpoint = lock.as_ref().ok_or_else(|| {
-        PlatformError::new("endpoint_not_started", "Sync endpoint not started", "Start endpoint first", "sync_err")
+        PlatformError::new(
+            "endpoint_not_started",
+            "Sync endpoint not started",
+            "Start endpoint first",
+            "sync_err",
+        )
     })?;
 
-    endpoint.send_envelope(&request.endpoint_id, &request.payload_json).await.map_err(|e| {
-        PlatformError::new("send_failed", e.to_string(), "Failed to send envelope", "sync_err")
-    })
+    endpoint
+        .send_envelope(&request.endpoint_id, &request.payload_json)
+        .await
+        .map_err(|e| {
+            PlatformError::new(
+                "send_failed",
+                e.to_string(),
+                "Failed to send envelope",
+                "sync_err",
+            )
+        })
 }
 
 #[tauri::command]
@@ -418,13 +469,7 @@ pub fn run() {
             let database = DurableDatabase::open(database_path)
                 .map_err(|error| std::io::Error::other(error.message))?;
             database
-                .apply_migrations(
-                    &[
-                        core_migrations(),
-                        vec![example_feature_migration()],
-                    ]
-                    .concat(),
-                )
+                .apply_migrations(&[core_migrations(), vec![example_feature_migration()]].concat())
                 .map_err(|error| std::io::Error::other(error.message))?;
             let key_provider = database
                 .load_or_create_device_key_provider(APPLICATION_ID, std::env::consts::OS)
@@ -452,29 +497,15 @@ pub fn run() {
                 // these IDs must be reflected in the on_menu_event handler below.
                 let show_item = MenuItem::with_id(
                     app,
-                    "tray_show",       // stable event ID
+                    "tray_show", // stable event ID
                     "Show",
                     true,
-                    None::<&str>,      // no accelerator
+                    None::<&str>, // no accelerator
                 )?;
-                let sync_item = MenuItem::with_id(
-                    app,
-                    "tray_sync_now",
-                    "Sync Now",
-                    true,
-                    None::<&str>,
-                )?;
-                let quit_item = MenuItem::with_id(
-                    app,
-                    "tray_quit",
-                    "Quit",
-                    true,
-                    None::<&str>,
-                )?;
-                let menu = Menu::with_items(
-                    app,
-                    &[&show_item, &sync_item, &quit_item],
-                )?;
+                let sync_item =
+                    MenuItem::with_id(app, "tray_sync_now", "Sync Now", true, None::<&str>)?;
+                let quit_item = MenuItem::with_id(app, "tray_quit", "Quit", true, None::<&str>)?;
+                let menu = Menu::with_items(app, &[&show_item, &sync_item, &quit_item])?;
 
                 TrayIconBuilder::new()
                     .menu(&menu)
@@ -592,4 +623,3 @@ mod tests {
         assert!(migration.sql.contains("CREATE TABLE IF NOT EXISTS widgets"));
     }
 }
-
