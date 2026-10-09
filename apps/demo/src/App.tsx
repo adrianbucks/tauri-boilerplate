@@ -1,12 +1,6 @@
 import React, { useState } from "react";
 import { AppShell, ThemeProvider } from "@platform/ui";
-import {
-  LayoutDashboard,
-  Box,
-  Building2,
-  ShieldCheck,
-  Activity,
-} from "lucide-react";
+import { LayoutDashboard, Box, Building2, ShieldCheck, Activity } from "lucide-react";
 import { PlatformProvider, usePlatform } from "./hooks/usePlatform.js";
 import { DashboardPage } from "./pages/DashboardPage.js";
 import { WidgetsPage } from "./pages/WidgetsPage.js";
@@ -15,8 +9,7 @@ import { AdminPage } from "./pages/AdminPage.js";
 import { DiagnosticsPage } from "./pages/DiagnosticsPage.js";
 import { LoginPage } from "./pages/LoginPage.js";
 
-type Route =
-  "/dashboard" | "/widgets" | "/organisations" | "/admin" | "/diagnostics";
+type Route = "/dashboard" | "/widgets" | "/organisations" | "/admin" | "/diagnostics";
 
 function AppContent() {
   const [route, setRoute] = useState<Route>("/dashboard");

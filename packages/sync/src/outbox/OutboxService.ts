@@ -50,10 +50,7 @@ export class OutboxService {
    * @param envelope - The signed SyncEnvelope to persist.
    * @param tx - The transaction client from the calling service.
    */
-  async enqueue(
-    envelope: SyncEnvelope,
-    tx: TransactionClient,
-  ): Promise<OutboxRecord> {
+  async enqueue(envelope: SyncEnvelope, tx: TransactionClient): Promise<OutboxRecord> {
     const id = generateCorrelationId("outbox");
     const now = getUtcIsoTimestamp();
     const op = envelope.operation;
@@ -167,10 +164,9 @@ export class OutboxService {
       attempt_count: number;
       last_attempt_at: string | null;
       sent_at: string | null;
-    }>(
-      `SELECT * FROM core_sync_outbox WHERE status = 'PENDING' ORDER BY created_at ASC LIMIT ?`,
-      [limit],
-    );
+    }>(`SELECT * FROM core_sync_outbox WHERE status = 'PENDING' ORDER BY created_at ASC LIMIT ?`, [
+      limit,
+    ]);
 
     return rows.map((r) => ({
       id: r.id,

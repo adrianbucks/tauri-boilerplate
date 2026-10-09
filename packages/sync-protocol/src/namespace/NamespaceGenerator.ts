@@ -15,13 +15,7 @@ export class NamespaceGenerator {
    * Generates a canonical namespace string from components.
    */
   static generate(components: NamespaceComponents): string {
-    const {
-      applicationId,
-      organisationId,
-      syncGroupId,
-      featureId,
-      entityType,
-    } = components;
+    const { applicationId, organisationId, syncGroupId, featureId, entityType } = components;
 
     for (const [key, value] of Object.entries(components)) {
       if (!value || !this.SEGMENT_REGEX.test(value)) {

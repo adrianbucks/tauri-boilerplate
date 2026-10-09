@@ -1,9 +1,6 @@
 import { ManifestValidator } from "../manifest/ManifestValidator.js";
 import { ValidationError } from "@platform/core";
-import {
-  DependencyResolver,
-  type ResolvedFeatureGraph,
-} from "./DependencyResolver.js";
+import { DependencyResolver, type ResolvedFeatureGraph } from "./DependencyResolver.js";
 import type {
   FeatureManifest,
   PermissionDefinition,

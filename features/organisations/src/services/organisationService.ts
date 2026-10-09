@@ -13,10 +13,7 @@ import {
   OrganisationRepository,
   type OrganisationRecord,
 } from "../repositories/organisationRepository.js";
-import {
-  ORGANISATION_PERMISSIONS,
-  type OrganisationPermission,
-} from "../permissions.js";
+import { ORGANISATION_PERMISSIONS, type OrganisationPermission } from "../permissions.js";
 
 export interface CreateOrganisationInput {
   name: string;
@@ -66,12 +63,7 @@ export class OrganisationService {
     );
     const roles = Object.freeze(roleRows.map((r) => r.role_id));
 
-    await this.auth.require(
-      { userId, organisationId, roles },
-      permission,
-      undefined,
-      tx,
-    );
+    await this.auth.require({ userId, organisationId, roles }, permission, undefined, tx);
   }
 
   async createOrganisation(
@@ -90,10 +82,7 @@ export class OrganisationService {
       await this.requirePermission(ctx, ORGANISATION_PERMISSIONS.CREATE, tx);
 
       if (input.domain) {
-        const existing = await this.repo.findByDomain(
-          input.domain.trim().toLowerCase(),
-          tx,
-        );
+        const existing = await this.repo.findByDomain(input.domain.trim().toLowerCase(), tx);
         if (existing) {
           throw new ValidationError({
             message: `Organisation with domain '${input.domain}' already exists`,
@@ -141,10 +130,7 @@ export class OrganisationService {
     await this.requirePermission(ctx, ORGANISATION_PERMISSIONS.MANAGE);
     const { userId, organisationId } = extractContextSubject(ctx);
 
-    const existing = await this.repo.findByIdWithinOrganisation(
-      id,
-      organisationId,
-    );
+    const existing = await this.repo.findByIdWithinOrganisation(id, organisationId);
     if (!existing) {
       throw new ValidationError({
         message: `Organisation '${id}' not found`,
@@ -158,8 +144,7 @@ export class OrganisationService {
       updated_by: userId,
     };
     if (input.name !== undefined) updates.name = input.name.trim();
-    if (input.settings !== undefined)
-      updates.settings_json = JSON.stringify(input.settings);
+    if (input.settings !== undefined) updates.settings_json = JSON.stringify(input.settings);
 
     await this.repo.update(id, updates);
     return (await this.repo.findByIdWithinOrganisation(id, organisationId))!;

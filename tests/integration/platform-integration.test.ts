@@ -2,18 +2,9 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { MemoryDatabaseConnection } from "@platform/database";
 import { Platform } from "@platform/platform";
 import { createOperationContext } from "@platform/core";
-import {
-  exampleFeatureManifest,
-  WidgetService,
-} from "@features/example-feature";
-import {
-  organisationsManifest,
-  OrganisationService,
-} from "@features/organisations";
-import {
-  identityAdminManifest,
-  IdentityAdminService,
-} from "@features/identity-admin";
+import { exampleFeatureManifest, WidgetService } from "@features/example-feature";
+import { organisationsManifest, OrganisationService } from "@features/organisations";
+import { identityAdminManifest, IdentityAdminService } from "@features/identity-admin";
 import { KeyboardWedgeScanner } from "@platform/hardware";
 import { ImportEngine, type ImportDefinition } from "@platform/import-export";
 
@@ -181,10 +172,10 @@ describe("Cross-Package Integration Suite — End-to-End Pipeline", () => {
       "widgets.delete",
     ];
     for (const perm of perms) {
-      await db.execute(
-        `INSERT OR IGNORE INTO core_permissions (id, name) VALUES (?, ?)`,
-        [perm, perm],
-      );
+      await db.execute(`INSERT OR IGNORE INTO core_permissions (id, name) VALUES (?, ?)`, [
+        perm,
+        perm,
+      ]);
       await db.execute(
         `INSERT OR IGNORE INTO core_role_permissions (id, role_id, permission_id) VALUES (?, ?, ?)`,
         [`${roleId}_${perm}`, roleId, perm],
@@ -241,11 +232,7 @@ describe("Cross-Package Integration Suite — End-to-End Pipeline", () => {
 
     // 3. Register Device & Request Membership
     const syncGroupService = platform.syncGroups;
-    const reqId = await syncGroupService.requestMembership(
-      "grp_main",
-      "dev_scanner_101",
-      userId,
-    );
+    const reqId = await syncGroupService.requestMembership("grp_main", "dev_scanner_101", userId);
     await adminService.approveDevice("dev_scanner_101", reqId, tenantAdminCtx);
 
     // 4. Feature CRUD (Widgets table migrated automatically by Platform.init())
@@ -268,9 +255,7 @@ describe("Cross-Package Integration Suite — End-to-End Pipeline", () => {
       "SELECT event_type FROM core_audit_events",
     );
     expect(auditLogs.some((e) => e.event_type === "USER_CREATED")).toBe(true);
-    expect(auditLogs.some((e) => e.event_type === "DEVICE_APPROVED")).toBe(
-      true,
-    );
+    expect(auditLogs.some((e) => e.event_type === "DEVICE_APPROVED")).toBe(true);
   });
 
   it("integrates hardware barcode scanning with spreadsheet bulk import", async () => {
@@ -286,8 +271,7 @@ describe("Cross-Package Integration Suite — End-to-End Pipeline", () => {
     const importEngine = new ImportEngine(db);
 
     // 1. Bulk import CSV of widgets
-    const csvData =
-      "SKU,Name,Quantity\r\nSCN-990,Barcode Mount,15\r\nSCN-991,Handheld Holster,30";
+    const csvData = "SKU,Name,Quantity\r\nSCN-990,Barcode Mount,15\r\nSCN-991,Handheld Holster,30";
     const buffer = new TextEncoder().encode(csvData);
 
     const importDef: ImportDefinition<any> = {
@@ -343,11 +327,7 @@ describe("Cross-Package Integration Suite — End-to-End Pipeline", () => {
 
     // 3. Lookup scanned widget in repository
     const matchedWidget = await widgetService.getWidgetById(
-      (
-        await db.query<{ id: string }>("SELECT id FROM widgets WHERE sku = ?", [
-          "SCN-990",
-        ])
-      )[0]!.id,
+      (await db.query<{ id: string }>("SELECT id FROM widgets WHERE sku = ?", ["SCN-990"]))[0]!.id,
       ctx,
     );
     expect(matchedWidget?.name).toBe("Barcode Mount");

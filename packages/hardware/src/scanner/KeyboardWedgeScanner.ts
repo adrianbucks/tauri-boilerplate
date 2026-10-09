@@ -57,10 +57,7 @@ export class KeyboardWedgeScanner implements BarcodeScanner {
     // Single character input
     if (key.length === 1) {
       // If delay between keys was too long (human typing speed), reset buffer
-      if (
-        this.buffer.length > 0 &&
-        timeSinceLastKey > this.maxInterKeyDelayMs
-      ) {
+      if (this.buffer.length > 0 && timeSinceLastKey > this.maxInterKeyDelayMs) {
         this.buffer = [];
       }
       this.buffer.push(key);

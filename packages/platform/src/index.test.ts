@@ -26,8 +26,7 @@ describe("@platform/platform", () => {
     syncPolicies: [
       {
         entityType: "sample_table",
-        namespacePattern:
-          "{application}/{organisation}/{syncGroup}/sample/records",
+        namespacePattern: "{application}/{organisation}/{syncGroup}/sample/records",
         conflictPolicy: { strategy: "lww" },
         syncable: true,
       },
@@ -68,10 +67,7 @@ describe("@platform/platform", () => {
     const coreRows = await db.query<{ name: string }>(
       'SELECT name FROM sqlite_master WHERE type="table" AND name IN ("core_organisations", "core_audit_events") ORDER BY name',
     );
-    expect(coreRows.map((row) => row.name)).toEqual([
-      "core_audit_events",
-      "core_organisations",
-    ]);
+    expect(coreRows.map((row) => row.name)).toEqual(["core_audit_events", "core_organisations"]);
 
     const appliedMigrations = await db.query<{
       owner: string;
@@ -121,9 +117,7 @@ describe("@platform/platform", () => {
     await platform.init();
 
     // Verify pruning policy registered
-    expect(
-      platform.maintenanceRegistry.hasHandler("feature.prunable_logs"),
-    ).toBe(true);
+    expect(platform.maintenanceRegistry.hasHandler("feature.prunable_logs")).toBe(true);
 
     // Insert 1 old debug log and 1 recent debug log and 1 old error log
     const oldDate = new Date("2026-01-01T00:00:00Z").toISOString();

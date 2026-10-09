@@ -25,28 +25,18 @@ interface TauriConfig {
 }
 
 describe("Security Regression Suite — Tauri Capability & Boundary Governance (WP-020)", () => {
-  const capabilitiesDir = path.join(
-    workspaceRoot,
-    "apps/demo/src-tauri/capabilities",
-  );
-  const tauriConfPath = path.join(
-    workspaceRoot,
-    "apps/demo/src-tauri/tauri.conf.json",
-  );
+  const capabilitiesDir = path.join(workspaceRoot, "apps/demo/src-tauri/capabilities");
+  const tauriConfPath = path.join(workspaceRoot, "apps/demo/src-tauri/tauri.conf.json");
 
   it("Invariant #8: every capability file must be scoped narrowly, non-empty, and contain justification", () => {
     expect(fs.existsSync(capabilitiesDir)).toBe(true);
-    const files = fs
-      .readdirSync(capabilitiesDir)
-      .filter((f) => f.endsWith(".json"));
+    const files = fs.readdirSync(capabilitiesDir).filter((f) => f.endsWith(".json"));
 
     expect(files.length).toBeGreaterThan(0);
 
     for (const file of files) {
       const fullPath = path.join(capabilitiesDir, file);
-      const content = JSON.parse(
-        fs.readFileSync(fullPath, "utf8"),
-      ) as TauriCapabilityFile;
+      const content = JSON.parse(fs.readFileSync(fullPath, "utf8")) as TauriCapabilityFile;
 
       // Invariant #8: Must have explicit identifier
       expect(content.identifier).toBeDefined();
@@ -78,9 +68,7 @@ describe("Security Regression Suite — Tauri Capability & Boundary Governance (
 
   it("Gate G-05: Tauri CSP is strictly least-privilege without unsafe-inline or unsafe-eval", () => {
     expect(fs.existsSync(tauriConfPath)).toBe(true);
-    const config = JSON.parse(
-      fs.readFileSync(tauriConfPath, "utf8"),
-    ) as TauriConfig;
+    const config = JSON.parse(fs.readFileSync(tauriConfPath, "utf8")) as TauriConfig;
 
     const csp = config.app?.security?.csp;
     expect(csp).toBeDefined();

@@ -10,10 +10,8 @@ const alertVariants = cva(
         default: "bg-background text-foreground",
         destructive:
           "text-destructive-foreground [&>svg]:text-current *:data-[slot=alert-description]:text-destructive-foreground/80 bg-destructive/10 border-destructive/30",
-        warning:
-          "text-amber-800 dark:text-amber-200 bg-amber-500/10 border-amber-500/30",
-        success:
-          "text-emerald-800 dark:text-emerald-200 bg-emerald-500/10 border-emerald-500/30",
+        warning: "text-amber-800 dark:text-amber-200 bg-amber-500/10 border-amber-500/30",
+        success: "text-emerald-800 dark:text-emerald-200 bg-emerald-500/10 border-emerald-500/30",
         info: "text-sky-800 dark:text-sky-200 bg-sky-500/10 border-sky-500/30",
       },
     },
@@ -42,19 +40,13 @@ function AlertTitle({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="alert-title"
-      className={cn(
-        "col-start-2 line-clamp-1 min-h-4 font-semibold tracking-tight",
-        className,
-      )}
+      className={cn("col-start-2 line-clamp-1 min-h-4 font-semibold tracking-tight", className)}
       {...props}
     />
   );
 }
 
-function AlertDescription({
-  className,
-  ...props
-}: React.ComponentProps<"div">) {
+function AlertDescription({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="alert-description"

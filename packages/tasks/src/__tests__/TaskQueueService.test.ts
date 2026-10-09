@@ -44,9 +44,7 @@ async function applySchema(db: MemoryDatabaseConnection): Promise<void> {
   `);
 }
 
-function makeDefinition(
-  overrides: Partial<TaskDefinition> = {},
-): TaskDefinition {
+function makeDefinition(overrides: Partial<TaskDefinition> = {}): TaskDefinition {
   return {
     taskType: "test.task",
     payload: { value: 42 },
@@ -104,9 +102,7 @@ describe("TaskQueueService", () => {
 
     it("uses scheduledAt override when provided", async () => {
       const future = new Date(Date.now() + 60_000).toISOString();
-      const task = await service.enqueue(
-        makeDefinition({ scheduledAt: future }),
-      );
+      const task = await service.enqueue(makeDefinition({ scheduledAt: future }));
       expect(task.scheduledAt).toBe(future);
     });
   });
@@ -117,28 +113,20 @@ describe("TaskQueueService", () => {
 
   describe("deduplication via uniqueKey", () => {
     it("returns the existing task when a PENDING task with the same uniqueKey exists", async () => {
-      const first = await service.enqueue(
-        makeDefinition({ uniqueKey: "uq-001" }),
-      );
-      const second = await service.enqueue(
-        makeDefinition({ uniqueKey: "uq-001" }),
-      );
+      const first = await service.enqueue(makeDefinition({ uniqueKey: "uq-001" }));
+      const second = await service.enqueue(makeDefinition({ uniqueKey: "uq-001" }));
 
       expect(first.id).toBe(second.id);
     });
 
     it("creates a new task after the first with the same uniqueKey is COMPLETED", async () => {
-      const first = await service.enqueue(
-        makeDefinition({ uniqueKey: "uq-002" }),
-      );
+      const first = await service.enqueue(makeDefinition({ uniqueKey: "uq-002" }));
 
       // Claim and complete the first task
       await service.claimNextBatch(10);
       await service.markCompleted(first.id);
 
-      const second = await service.enqueue(
-        makeDefinition({ uniqueKey: "uq-002" }),
-      );
+      const second = await service.enqueue(makeDefinition({ uniqueKey: "uq-002" }));
       expect(second.id).not.toBe(first.id);
       expect(second.state).toBe("PENDING");
     });
@@ -207,9 +195,7 @@ describe("TaskQueueService", () => {
 
   describe("markFailed (retryable error)", () => {
     it("reschedules task to PENDING when attempts remain", async () => {
-      const task = await service.enqueue(
-        makeDefinition({ retryPolicy: { maxAttempts: 3 } }),
-      );
+      const task = await service.enqueue(makeDefinition({ retryPolicy: { maxAttempts: 3 } }));
       await service.claimNextBatch(10);
 
       // Fail with a generic (retryable) error
@@ -228,9 +214,7 @@ describe("TaskQueueService", () => {
 
   describe("markFailed (attempts exhausted)", () => {
     it("marks task FAILED when maxAttempts is reached", async () => {
-      const task = await service.enqueue(
-        makeDefinition({ retryPolicy: { maxAttempts: 1 } }),
-      );
+      const task = await service.enqueue(makeDefinition({ retryPolicy: { maxAttempts: 1 } }));
       // Claim (attempt_count becomes 1)
       await service.claimNextBatch(10);
       // Fail — attempt_count (1) >= maxAttempts (1), so FAILED
@@ -250,9 +234,7 @@ describe("TaskQueueService", () => {
     it("marks task FAILED immediately for AuthorizationError", async () => {
       const { AuthorizationError } = await import("@platform/core");
 
-      const task = await service.enqueue(
-        makeDefinition({ retryPolicy: { maxAttempts: 5 } }),
-      );
+      const task = await service.enqueue(makeDefinition({ retryPolicy: { maxAttempts: 5 } }));
       await service.claimNextBatch(10);
 
       const authErr = new AuthorizationError({
@@ -302,10 +284,10 @@ describe("TaskQueueService", () => {
 
       // Manually back-date started_at to simulate a crash that happened 2 minutes ago
       const oldStart = new Date(Date.now() - 120_000).toISOString();
-      await db.execute(
-        `UPDATE core_background_tasks SET started_at = ? WHERE id = ?`,
-        [oldStart, task.id],
-      );
+      await db.execute(`UPDATE core_background_tasks SET started_at = ? WHERE id = ?`, [
+        oldStart,
+        task.id,
+      ]);
 
       const recovered = await service.recoverHangingTasks(60_000);
       expect(recovered).toBe(1);

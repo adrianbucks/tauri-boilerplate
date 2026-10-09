@@ -1,10 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { ConflictError } from "@platform/core";
-import {
-  ConflictRegistry,
-  HybridLogicalClock,
-  type SyncEnvelope,
-} from "@platform/sync-protocol";
+import { ConflictRegistry, HybridLogicalClock, type SyncEnvelope } from "@platform/sync-protocol";
 import { ConflictEngine } from "../ConflictEngine.js";
 
 describe("ConflictEngine", () => {
@@ -65,11 +61,7 @@ describe("ConflictEngine", () => {
     const engine = new ConflictEngine();
 
     // Remote is newer (tsRemote > tsLocal)
-    const res1 = engine.resolve(
-      { strategy: "lww" },
-      baseLocalEnvelope,
-      baseRemoteEnvelope,
-    );
+    const res1 = engine.resolve({ strategy: "lww" }, baseLocalEnvelope, baseRemoteEnvelope);
     expect(res1.winner).toBe("remote");
     expect(res1.resolvedEnvelope?.envelopeId).toBe("env_remote");
 
@@ -82,44 +74,28 @@ describe("ConflictEngine", () => {
         logicalTimestamp: tsNewerLocal,
       },
     };
-    const res2 = engine.resolve(
-      { strategy: "lww" },
-      newerLocal,
-      baseRemoteEnvelope,
-    );
+    const res2 = engine.resolve({ strategy: "lww" }, newerLocal, baseRemoteEnvelope);
     expect(res2.winner).toBe("local");
     expect(res2.resolvedEnvelope?.envelopeId).toBe("env_local");
   });
 
   it("resolves append-only by accepting remote into log", () => {
     const engine = new ConflictEngine();
-    const res = engine.resolve(
-      { strategy: "append-only" },
-      baseLocalEnvelope,
-      baseRemoteEnvelope,
-    );
+    const res = engine.resolve({ strategy: "append-only" }, baseLocalEnvelope, baseRemoteEnvelope);
     expect(res.winner).toBe("remote");
     expect(res.resolvedEnvelope?.envelopeId).toBe("env_remote");
   });
 
   it("resolves immutable by rejecting remote update and keeping local", () => {
     const engine = new ConflictEngine();
-    const res = engine.resolve(
-      { strategy: "immutable" },
-      baseLocalEnvelope,
-      baseRemoteEnvelope,
-    );
+    const res = engine.resolve({ strategy: "immutable" }, baseLocalEnvelope, baseRemoteEnvelope);
     expect(res.winner).toBe("local");
     expect(res.resolvedEnvelope?.envelopeId).toBe("env_local");
   });
 
   it("requires manual resolution for manual strategy", () => {
     const engine = new ConflictEngine();
-    const res = engine.resolve(
-      { strategy: "manual" },
-      baseLocalEnvelope,
-      baseRemoteEnvelope,
-    );
+    const res = engine.resolve({ strategy: "manual" }, baseLocalEnvelope, baseRemoteEnvelope);
     expect(res.winner).toBe("manual_required");
     expect(res.resolvedEnvelope).toBeNull();
   });
@@ -141,17 +117,11 @@ describe("ConflictEngine", () => {
       },
     };
 
-    const res = engine.resolve(
-      { strategy: "additive" },
-      deltaLocal,
-      deltaRemote,
-      "adjustments",
-    );
+    const res = engine.resolve({ strategy: "additive" }, deltaLocal, deltaRemote, "adjustments");
     expect(res.winner).toBe("merge");
-    expect(
-      (res.resolvedEnvelope?.operation.payload as { adjustments: number })
-        .adjustments,
-    ).toBe(15);
+    expect((res.resolvedEnvelope?.operation.payload as { adjustments: number }).adjustments).toBe(
+      15,
+    );
   });
 
   it("enforces CS-010: throws ConflictError if additive strategy is attempted on an absolute value field", () => {
@@ -161,12 +131,7 @@ describe("ConflictEngine", () => {
     const engine = new ConflictEngine(registry);
 
     expect(() =>
-      engine.resolve(
-        { strategy: "additive" },
-        baseLocalEnvelope,
-        baseRemoteEnvelope,
-        "stock",
-      ),
+      engine.resolve({ strategy: "additive" }, baseLocalEnvelope, baseRemoteEnvelope, "stock"),
     ).toThrow(ConflictError);
   });
 });

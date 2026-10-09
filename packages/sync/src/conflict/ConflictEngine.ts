@@ -46,15 +46,10 @@ export class ConflictEngine {
 
     // CS-010 Guard: If additive strategy is attempted, verify against registry
     if (policy.strategy === "additive") {
-      if (
-        this.registry &&
-        field &&
-        this.registry.isAbsoluteLwwField(entityType, field)
-      ) {
+      if (this.registry && field && this.registry.isAbsoluteLwwField(entityType, field)) {
         throw new ConflictError({
           message: `Attempted 'additive' conflict resolution on absolute value field '${entityType}.${field}'. This field is declared as absolute and must use 'lww' (CS-010).`,
-          userMessage:
-            "Cannot apply additive conflict resolution to an absolute value field.",
+          userMessage: "Cannot apply additive conflict resolution to an absolute value field.",
           correlationId: generateCorrelationId("conflict"),
           technicalDetails: `entityType=${entityType}, field=${field}`,
         });
@@ -66,8 +61,7 @@ export class ConflictEngine {
           const msg = err instanceof Error ? err.message : String(err);
           throw new ConflictError({
             message: `Additive conflict resolution forbidden: ${msg}`,
-            userMessage:
-              "Cannot apply additive conflict resolution to an absolute value field.",
+            userMessage: "Cannot apply additive conflict resolution to an absolute value field.",
             correlationId: generateCorrelationId("conflict"),
             technicalDetails: `entityType=${entityType}, field=${field ?? "none"}`,
           });
@@ -102,8 +96,7 @@ export class ConflictEngine {
         return {
           winner: "remote",
           resolvedEnvelope: remoteEnvelope,
-          reason:
-            "Append-only strategy accepts remote entry into replication log",
+          reason: "Append-only strategy accepts remote entry into replication log",
         };
       }
 
@@ -112,8 +105,7 @@ export class ConflictEngine {
         return {
           winner: "local",
           resolvedEnvelope: localEnvelope,
-          reason:
-            "Immutable strategy rejects remote updates to existing entity",
+          reason: "Immutable strategy rejects remote updates to existing entity",
         };
       }
 
@@ -131,10 +123,7 @@ export class ConflictEngine {
         const remotePayload = remoteEnvelope.operation.payload;
 
         let mergedPayload: unknown;
-        if (
-          typeof localPayload === "number" &&
-          typeof remotePayload === "number"
-        ) {
+        if (typeof localPayload === "number" && typeof remotePayload === "number") {
           mergedPayload = localPayload + remotePayload;
         } else if (
           typeof localPayload === "object" &&
@@ -145,14 +134,8 @@ export class ConflictEngine {
         ) {
           const localObj = localPayload as Record<string, unknown>;
           const remoteObj = remotePayload as Record<string, unknown>;
-          const valA =
-            typeof localObj[field] === "number"
-              ? (localObj[field] as number)
-              : 0;
-          const valB =
-            typeof remoteObj[field] === "number"
-              ? (remoteObj[field] as number)
-              : 0;
+          const valA = typeof localObj[field] === "number" ? (localObj[field] as number) : 0;
+          const valB = typeof remoteObj[field] === "number" ? (remoteObj[field] as number) : 0;
           mergedPayload = {
             ...localObj,
             ...remoteObj,

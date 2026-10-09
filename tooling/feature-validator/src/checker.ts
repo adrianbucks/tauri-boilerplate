@@ -68,9 +68,7 @@ export function checkPermissionCoverage(
   scanWarnings: readonly ScanWarning[],
 ): PermissionCoverageResult {
   // Build the declared permission set from the manifest
-  const declaredPermissions = new Set<string>(
-    manifest.permissions.map((p) => p.name),
-  );
+  const declaredPermissions = new Set<string>(manifest.permissions.map((p) => p.name));
 
   // Find permissions used in source but NOT declared in manifest
   const errors: PermissionCheckError[] = [];

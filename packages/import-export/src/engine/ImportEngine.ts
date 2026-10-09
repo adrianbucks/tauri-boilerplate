@@ -1,9 +1,5 @@
 import * as XLSX from "xlsx";
-import {
-  ValidationError,
-  getUtcIsoTimestamp,
-  type OperationContext,
-} from "@platform/core";
+import { ValidationError, getUtcIsoTimestamp, type OperationContext } from "@platform/core";
 import type { DatabaseConnection } from "@platform/database";
 import { AuditService } from "@platform/audit";
 import type {
@@ -89,14 +85,10 @@ export class ImportEngine {
         });
       }
       for (const value of Object.values(row)) {
-        if (
-          typeof value === "string" &&
-          value.length > MAX_IMPORT_CELL_STRING_LENGTH
-        ) {
+        if (typeof value === "string" && value.length > MAX_IMPORT_CELL_STRING_LENGTH) {
           throw new ValidationError({
             message: "Worksheet contains an oversized cell",
-            userMessage:
-              "The uploaded worksheet contains a value that is too large",
+            userMessage: "The uploaded worksheet contains a value that is too large",
             correlationId: "imp_cell_string_limit",
           });
         }
@@ -205,12 +197,7 @@ export class ImportEngine {
 
     // 3. Execute atomic transactional commit
     return this.db.transaction(async (tx) => {
-      const { importedCount } = await definition.commit(
-        validation.validRows,
-        this.db,
-        ctx,
-        tx,
-      );
+      const { importedCount } = await definition.commit(validation.validRows, this.db, ctx, tx);
 
       // 4. Emit Audit: IMPORT_COMPLETED
       await this.audit.emit(

@@ -52,21 +52,15 @@ export class MigrationEngine {
     );
   }
 
-  async applyMigrations(
-    migrations: readonly MigrationScript[],
-  ): Promise<{ appliedCount: number }> {
+  async applyMigrations(migrations: readonly MigrationScript[]): Promise<{ appliedCount: number }> {
     await this.ensureMigrationTable();
     const applied = await this.getAppliedMigrations();
     const appliedByIdentity = new Map(
-      applied.map((migration) => [
-        `${migration.owner}:${migration.version}`,
-        migration.checksum,
-      ]),
+      applied.map((migration) => [`${migration.owner}:${migration.version}`, migration.checksum]),
     );
     const sorted = [...migrations].sort(
       (a, b) =>
-        (a.owner ?? "platform").localeCompare(b.owner ?? "platform") ||
-        a.version - b.version,
+        (a.owner ?? "platform").localeCompare(b.owner ?? "platform") || a.version - b.version,
     );
     let appliedCount = 0;
 
@@ -95,21 +89,14 @@ export class MigrationEngine {
           const appliedAt = getUtcIsoTimestamp();
           await tx.execute(
             "INSERT INTO core_migrations (owner, version, name, applied_at, checksum) VALUES (?, ?, ?, ?, ?)",
-            [
-              owner,
-              migration.version,
-              migration.name,
-              appliedAt,
-              migration.checksum,
-            ],
+            [owner, migration.version, migration.name, appliedAt, migration.checksum],
           );
 
           appliedCount++;
         } catch (err) {
           throw new MigrationError({
             message: `Migration ${owner}:v${migration.version} ('${migration.name}') failed: ${err instanceof Error ? err.message : String(err)}`,
-            userMessage:
-              "Database upgrade failed. Please restart the application.",
+            userMessage: "Database upgrade failed. Please restart the application.",
             correlationId: `mig_${owner}_v${migration.version}`,
             cause: err,
             technicalDetails: `Failed SQL in migration ${migration.name}`,

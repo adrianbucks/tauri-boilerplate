@@ -48,11 +48,7 @@ export class ConflictRegistry {
    * @throws if `policy.strategy === 'additive'` and the field has been
    *   declared as an absolute LWW field via `registerAbsoluteLwwField`.
    */
-  registerFieldPolicy(
-    entityType: string,
-    field: string,
-    policy: ConflictPolicy,
-  ): void {
+  registerFieldPolicy(entityType: string, field: string, policy: ConflictPolicy): void {
     const key = `${entityType}.${field}`;
     if (policy.strategy === "additive" && this.absoluteLwwFields.has(key)) {
       throw new Error(
@@ -107,10 +103,7 @@ export class ConflictRegistry {
     record: ConflictRecord;
   } {
     const policy = this.getPolicy(input.entityType, input.field);
-    const cmp = HybridLogicalClock.compare(
-      input.localTimestamp,
-      input.remoteTimestamp,
-    );
+    const cmp = HybridLogicalClock.compare(input.localTimestamp, input.remoteTimestamp);
 
     let winner: "local" | "remote" | "custom" | "manual_required";
     let resolvedValue: unknown;
@@ -148,10 +141,8 @@ export class ConflictRegistry {
         }
         // Sum numeric delta values
         winner = "custom";
-        const numA =
-          typeof input.localValue === "number" ? input.localValue : 0;
-        const numB =
-          typeof input.remoteValue === "number" ? input.remoteValue : 0;
+        const numA = typeof input.localValue === "number" ? input.localValue : 0;
+        const numB = typeof input.remoteValue === "number" ? input.remoteValue : 0;
         resolvedValue = numA + numB;
         break;
       }
@@ -161,10 +152,7 @@ export class ConflictRegistry {
         break;
       }
       case "crdt": {
-        if (
-          policy.customResolverFn &&
-          this.customResolvers.has(policy.customResolverFn)
-        ) {
+        if (policy.customResolverFn && this.customResolvers.has(policy.customResolverFn)) {
           const fn = this.customResolvers.get(policy.customResolverFn)!;
           winner = "custom";
           resolvedValue = fn(input);

@@ -36,9 +36,7 @@ function OrgRow({ org }: OrgRowProps) {
               <code className="bg-muted px-1 rounded">{org.domain}</code>
             </div>
           ) : (
-            <div className="text-xs text-muted-foreground mt-0.5">
-              No domain
-            </div>
+            <div className="text-xs text-muted-foreground mt-0.5">No domain</div>
           )}
           <div className="text-[10px] text-muted-foreground mt-0.5">
             Created {new Date(org.created_at).toLocaleString()}
@@ -47,11 +45,7 @@ function OrgRow({ org }: OrgRowProps) {
       </div>
       <Badge
         variant={
-          org.status === "ACTIVE"
-            ? "success"
-            : org.status === "SUSPENDED"
-              ? "warning"
-              : "secondary"
+          org.status === "ACTIVE" ? "success" : org.status === "SUSPENDED" ? "warning" : "secondary"
         }
       >
         {org.status}
@@ -133,8 +127,7 @@ export function OrganisationsPage() {
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Organisations</h1>
         <p className="text-muted-foreground mt-1">
-          Manage organisation tenancies — each with optional domain and
-          configurable settings.
+          Manage organisation tenancies — each with optional domain and configurable settings.
         </p>
       </div>
 
@@ -155,9 +148,7 @@ export function OrganisationsPage() {
       <Card>
         <CardHeader>
           <CardTitle>Create Organisation</CardTitle>
-          <CardDescription>
-            Register a new tenancy in the local database
-          </CardDescription>
+          <CardDescription>Register a new tenancy in the local database</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex flex-wrap gap-3 max-w-2xl">
@@ -194,9 +185,7 @@ export function OrganisationsPage() {
       <Card>
         <CardHeader>
           <CardTitle>All Organisations ({orgs.length})</CardTitle>
-          <CardDescription>
-            Registered organisation tenancies in the local database
-          </CardDescription>
+          <CardDescription>Registered organisation tenancies in the local database</CardDescription>
         </CardHeader>
         <CardContent>
           {orgs.length === 0 ? (

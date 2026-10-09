@@ -52,8 +52,8 @@ describe("SimulatedSyncTransport", () => {
 
   it("throws when sending to an unconnected peer", async () => {
     const transport = new SimulatedSyncTransport();
-    await expect(
-      transport.send("unconnected_peer", dummyEnvelope),
-    ).rejects.toThrow("is not connected");
+    await expect(transport.send("unconnected_peer", dummyEnvelope)).rejects.toThrow(
+      "is not connected",
+    );
   });
 });

@@ -161,15 +161,11 @@ delete_operation_id TEXT                   -- Stable operation ID for idempotent
 import { BaseRepository } from "@platform/database";
 
 export class WidgetRepository extends BaseRepository {
-  async findByOrganisation(
-    organisationId: string,
-    options?: QueryOptions,
-  ): Promise<Widget[]> {
+  async findByOrganisation(organisationId: string, options?: QueryOptions): Promise<Widget[]> {
     // Mandatory tenant scope — never query without organisationId
-    return this.db.query(
-      "SELECT * FROM widgets WHERE organisation_id = ? AND deleted_at IS NULL",
-      [organisationId],
-    );
+    return this.db.query("SELECT * FROM widgets WHERE organisation_id = ? AND deleted_at IS NULL", [
+      organisationId,
+    ]);
   }
 
   async create(data: CreateWidgetInput, tx?: Transaction): Promise<Widget> {

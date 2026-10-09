@@ -1,7 +1,4 @@
-import {
-  AuthorizationError,
-  type TrustedOperationContext,
-} from "@platform/core";
+import { AuthorizationError, type TrustedOperationContext } from "@platform/core";
 import type { DatabaseConnection, TransactionClient } from "@platform/database";
 import { ScopeEvaluator } from "./ScopeEvaluator.js";
 import type {

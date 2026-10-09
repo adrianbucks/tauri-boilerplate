@@ -121,9 +121,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 let unlisten: UnlistenFn | null = null;
 
-export async function startListening(
-  onEnvelope: (env: CanonicalSyncEnvelope) => void,
-) {
+export async function startListening(onEnvelope: (env: CanonicalSyncEnvelope) => void) {
   unlisten = await listen<string>("sync://envelope-received", (event) => {
     const parsed = JSON.parse(event.payload);
     onEnvelope(parsed);

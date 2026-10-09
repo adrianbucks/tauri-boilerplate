@@ -54,9 +54,7 @@ describe("TombstoneService", () => {
     expect(record.replicatedAt).toBeNull();
 
     expect(await service.isDeleted("widgets", "w_123", "org_acme")).toBe(true);
-    expect(await service.isDeleted("widgets", "w_123", "org_other")).toBe(
-      false,
-    );
+    expect(await service.isDeleted("widgets", "w_123", "org_other")).toBe(false);
   });
 
   it("retrieves pending tombstones and marks them replicated", async () => {

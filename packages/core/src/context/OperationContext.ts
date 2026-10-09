@@ -34,17 +34,13 @@ export interface CreateContextOptions {
   metadata?: Record<string, unknown> | undefined;
 }
 
-export function createOperationContext(
-  options: CreateContextOptions,
-): OperationContext {
+export function createOperationContext(options: CreateContextOptions): OperationContext {
   return {
     correlationId: options.correlationId ?? generateCorrelationId("op"),
     userId: options.userId ?? null,
     deviceId: options.deviceId,
     organisationId: options.organisationId,
-    metadata: options.metadata
-      ? Object.freeze({ ...options.metadata })
-      : undefined,
+    metadata: options.metadata ? Object.freeze({ ...options.metadata }) : undefined,
   };
 }
 
@@ -53,9 +49,7 @@ export function createRequestContext(
 ): RequestContext {
   return {
     correlationId: options.correlationId ?? generateCorrelationId("req"),
-    metadata: options.metadata
-      ? Object.freeze({ ...options.metadata })
-      : undefined,
+    metadata: options.metadata ? Object.freeze({ ...options.metadata }) : undefined,
   };
 }
 

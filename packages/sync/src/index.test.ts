@@ -26,9 +26,7 @@ describe("@platform/sync", () => {
 
     it("rejects invalid state transition", () => {
       const sm = new SyncStateMachine();
-      expect(() => sm.transition("SYNCING")).toThrow(
-        "Illegal sync state transition",
-      );
+      expect(() => sm.transition("SYNCING")).toThrow("Illegal sync state transition");
     });
 
     it("transitions to terminal error states from any state", () => {
@@ -185,21 +183,14 @@ describe("@platform/sync", () => {
       );
 
       expect(result.status).toBe("PENDING");
-      expect(
-        await pairingService.canSync("dev_scanner_1", "grp_warehouse"),
-      ).toBe(false);
+      expect(await pairingService.canSync("dev_scanner_1", "grp_warehouse")).toBe(false);
 
       // Approve pairing
-      const approval = await pairingService.approvePairing(
-        result.requestId,
-        ctx,
-      );
+      const approval = await pairingService.approvePairing(result.requestId, ctx);
       expect(approval.status).toBe("APPROVED");
 
       // Device can now sync in group
-      expect(
-        await pairingService.canSync("dev_scanner_1", "grp_warehouse"),
-      ).toBe(true);
+      expect(await pairingService.canSync("dev_scanner_1", "grp_warehouse")).toBe(true);
     });
   });
 

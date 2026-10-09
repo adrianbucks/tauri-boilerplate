@@ -10,14 +10,7 @@ import {
   AlertTitle,
   AlertDescription,
 } from "@platform/ui";
-import {
-  Activity,
-  Database,
-  ShieldCheck,
-  Users,
-  Cpu,
-  RefreshCw,
-} from "lucide-react";
+import { Activity, Database, ShieldCheck, Users, Cpu, RefreshCw } from "lucide-react";
 import { usePlatform } from "../hooks/usePlatform.js";
 
 interface StatCardProps {
@@ -29,14 +22,7 @@ interface StatCardProps {
   badgeVariant: "success" | "info" | "warning" | "default";
 }
 
-function StatCard({
-  title,
-  value,
-  description,
-  icon,
-  badgeText,
-  badgeVariant,
-}: StatCardProps) {
+function StatCard({ title, value, description, icon, badgeText, badgeVariant }: StatCardProps) {
   return (
     <Card className="relative overflow-hidden">
       <CardHeader className="pb-2">
@@ -65,9 +51,7 @@ export function DashboardPage() {
     <div className="space-y-8">
       {/* Page Header */}
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">
-          Platform Dashboard
-        </h1>
+        <h1 className="text-3xl font-bold tracking-tight">Platform Dashboard</h1>
         <p className="text-muted-foreground mt-1">
           Local-first boilerplate — all subsystems status and runtime overview.
         </p>
@@ -79,8 +63,7 @@ export function DashboardPage() {
           <ShieldCheck className="h-4 w-4" />
           <AlertTitle>Platform Initialised Successfully</AlertTitle>
           <AlertDescription>
-            All {features.length} features registered, migrations applied, and
-            subsystems online.
+            All {features.length} features registered, migrations applied, and subsystems online.
           </AlertDescription>
         </Alert>
       )}
@@ -154,16 +137,10 @@ export function DashboardPage() {
               >
                 <div>
                   <div className="font-medium text-sm">{feature.name}</div>
-                  <div className="text-xs text-muted-foreground mt-0.5">
-                    {feature.description}
-                  </div>
+                  <div className="text-xs text-muted-foreground mt-0.5">{feature.description}</div>
                   <div className="flex flex-wrap gap-1 mt-1.5">
                     {feature.permissions.map((p) => (
-                      <Badge
-                        key={p.name}
-                        variant="outline"
-                        className="text-[10px]"
-                      >
+                      <Badge key={p.name} variant="outline" className="text-[10px]">
                         {p.name}
                       </Badge>
                     ))}

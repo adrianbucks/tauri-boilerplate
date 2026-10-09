@@ -229,10 +229,9 @@ Every `operationId` must be unique. Receiving a duplicate produces `already_appl
 
 ```typescript
 // On receiving an operation:
-const existing = await db.query(
-  "SELECT id FROM core_sync_sessions WHERE operation_id = ?",
-  [op.operationId],
-);
+const existing = await db.query("SELECT id FROM core_sync_sessions WHERE operation_id = ?", [
+  op.operationId,
+]);
 if (existing.length > 0) {
   return { result: "already_applied" };
 }

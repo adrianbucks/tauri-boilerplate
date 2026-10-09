@@ -54,8 +54,7 @@ interface AuthorizationEngine {
 }
 
 type AuthorizationDecision =
-  | { granted: true }
-  | { granted: false; reason: string; code: AuthorizationDeniedCode };
+  { granted: true } | { granted: false; reason: string; code: AuthorizationDeniedCode };
 ```
 
 ---
@@ -202,31 +201,12 @@ Sync groups are the primary mechanism for scoping which data a device participat
 
 ```typescript
 interface SyncGroupService {
-  createGroup(
-    input: CreateGroupInput,
-    ctx: OperationContext,
-  ): Promise<SyncGroup>;
-  inviteMember(
-    groupId: string,
-    deviceId: string,
-    ctx: OperationContext,
-  ): Promise<void>;
-  requestMembership(
-    groupId: string,
-    ctx: OperationContext,
-  ): Promise<MembershipRequest>;
+  createGroup(input: CreateGroupInput, ctx: OperationContext): Promise<SyncGroup>;
+  inviteMember(groupId: string, deviceId: string, ctx: OperationContext): Promise<void>;
+  requestMembership(groupId: string, ctx: OperationContext): Promise<MembershipRequest>;
   approve(requestId: string, ctx: OperationContext): Promise<void>;
-  reject(
-    requestId: string,
-    reason: string,
-    ctx: OperationContext,
-  ): Promise<void>;
-  revoke(
-    deviceId: string,
-    groupId: string,
-    reason: string,
-    ctx: OperationContext,
-  ): Promise<void>;
+  reject(requestId: string, reason: string, ctx: OperationContext): Promise<void>;
+  revoke(deviceId: string, groupId: string, reason: string, ctx: OperationContext): Promise<void>;
   listMembers(groupId: string): Promise<SyncGroupMember[]>;
   getAuthorisedNamespaces(deviceId: string): Promise<string[]>;
   canSync(deviceId: string, groupId: string): Promise<boolean>;

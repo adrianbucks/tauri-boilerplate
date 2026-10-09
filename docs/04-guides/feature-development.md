@@ -110,10 +110,7 @@ The service layer validates authorization, opens transactions, and coordinates a
 
 ```typescript
 // src/services/MyFeatureService.ts
-import type {
-  AuthorizationEngine,
-  TrustedOperationContext,
-} from "@platform/authorization";
+import type { AuthorizationEngine, TrustedOperationContext } from "@platform/authorization";
 import type { AuditService } from "@platform/audit";
 import type { OutboxSyncWorker } from "@platform/tasks";
 import { MY_FEATURE_PERMISSIONS } from "../permissions.js";
@@ -127,10 +124,7 @@ export class MyFeatureService {
     private readonly outbox: OutboxSyncWorker,
   ) {}
 
-  async createItem(
-    ctx: TrustedOperationContext,
-    input: { title: string; status: string },
-  ) {
+  async createItem(ctx: TrustedOperationContext, input: { title: string; status: string }) {
     // 1. Authorize operation
     await this.auth.requireTrusted(ctx, MY_FEATURE_PERMISSIONS.CREATE, {
       organisationId: ctx.organisationId,

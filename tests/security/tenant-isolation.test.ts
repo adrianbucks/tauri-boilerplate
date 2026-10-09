@@ -95,14 +95,10 @@ describe("Security Regression Suite — Tenant Isolation", () => {
       const recordsB = await repoOrgB.findAll();
 
       expect(recordsA).toHaveLength(3);
-      expect(
-        recordsA.every((r: TestRecord) => r.organisation_id === "org_a"),
-      ).toBe(true);
+      expect(recordsA.every((r: TestRecord) => r.organisation_id === "org_a")).toBe(true);
 
       expect(recordsB).toHaveLength(2);
-      expect(
-        recordsB.every((r: TestRecord) => r.organisation_id === "org_b"),
-      ).toBe(true);
+      expect(recordsB.every((r: TestRecord) => r.organisation_id === "org_b")).toBe(true);
     });
 
     it("tenant-aware findById() respects organisation boundary", async () => {
@@ -154,8 +150,7 @@ describe("Security Regression Suite — Tenant Isolation", () => {
       const repo = new TenantAwareTestRepository(db, "org_a");
 
       // CORRECT: Parameter binding
-      const sqlGood =
-        "SELECT * FROM test_items WHERE id = ? AND organisation_id = ?";
+      const sqlGood = "SELECT * FROM test_items WHERE id = ? AND organisation_id = ?";
       expect(() => repo).not.toThrow();
 
       // INCORRECT: Would be string interpolation

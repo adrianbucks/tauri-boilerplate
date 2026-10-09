@@ -1,11 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { MemoryDatabaseConnection } from "@platform/database";
 import { createOperationContext } from "@platform/core";
-import {
-  AuthorizationEngine,
-  SyncGroupService,
-  ScopeEvaluator,
-} from "./index.js";
+import { AuthorizationEngine, SyncGroupService, ScopeEvaluator } from "./index.js";
 
 describe("@platform/authorization", () => {
   let db: MemoryDatabaseConnection;
@@ -106,28 +102,18 @@ describe("@platform/authorization", () => {
 
   describe("ScopeEvaluator", () => {
     it("evaluates scope matching correctly", () => {
-      expect(ScopeEvaluator.matches(undefined, { warehouseId: "COV" })).toBe(
-        true,
-      );
+      expect(ScopeEvaluator.matches(undefined, { warehouseId: "COV" })).toBe(true);
       expect(ScopeEvaluator.matches({}, { warehouseId: "COV" })).toBe(true);
-      expect(
-        ScopeEvaluator.matches({ warehouseId: "COV" }, { warehouseId: "COV" }),
-      ).toBe(true);
-      expect(
-        ScopeEvaluator.matches({ warehouseId: "COV" }, { warehouseId: "BHM" }),
-      ).toBe(false);
-      expect(ScopeEvaluator.matches({ warehouseId: "COV" }, undefined)).toBe(
-        false,
-      );
+      expect(ScopeEvaluator.matches({ warehouseId: "COV" }, { warehouseId: "COV" })).toBe(true);
+      expect(ScopeEvaluator.matches({ warehouseId: "COV" }, { warehouseId: "BHM" })).toBe(false);
+      expect(ScopeEvaluator.matches({ warehouseId: "COV" }, undefined)).toBe(false);
     });
   });
 
   describe("AuthorizationEngine", () => {
     it("grants permission when subject holds role with matching permission and scope", async () => {
       // Seed permissions & roles
-      await db.execute(
-        "INSERT INTO core_permissions (id, name) VALUES ('p1', 'inventory.read');",
-      );
+      await db.execute("INSERT INTO core_permissions (id, name) VALUES ('p1', 'inventory.read');");
       await db.execute(
         "INSERT INTO core_permissions (id, name) VALUES ('p2', 'inventory.create');",
       );
@@ -172,9 +158,9 @@ describe("@platform/authorization", () => {
       }
 
       // require() throws on denial
-      await expect(
-        authEngine.require(subject, "inventory.create"),
-      ).rejects.toThrow("Authorization failed");
+      await expect(authEngine.require(subject, "inventory.create")).rejects.toThrow(
+        "Authorization failed",
+      );
 
       await expect(
         authEngine.requireTrusted(
@@ -216,9 +202,7 @@ describe("@platform/authorization", () => {
 
   describe("SyncGroupService", () => {
     beforeEach(async () => {
-      await db.execute(
-        "INSERT INTO core_permissions (id, name) VALUES ('p_sync', 'sync.manage');",
-      );
+      await db.execute("INSERT INTO core_permissions (id, name) VALUES ('p_sync', 'sync.manage');");
       await db.execute(
         "INSERT INTO core_roles (id, created_at, updated_at, organisation_id, name) VALUES ('r_admin', '2026-08-30T10:00:00Z', '2026-08-30T10:00:00Z', 'org_1', 'Sync Admin');",
       );
@@ -244,16 +228,10 @@ describe("@platform/authorization", () => {
       expect(group.id.startsWith("grp_")).toBe(true);
 
       // Before request: cannot sync
-      expect(await syncGroupService.canSync("dev_tablet", group.id)).toBe(
-        false,
-      );
+      expect(await syncGroupService.canSync("dev_tablet", group.id)).toBe(false);
 
       // Request membership
-      const reqId = await syncGroupService.requestMembership(
-        group.id,
-        "dev_tablet",
-        "user_op",
-      );
+      const reqId = await syncGroupService.requestMembership(group.id, "dev_tablet", "user_op");
 
       // Approve membership with authorized ctx
       await syncGroupService.approveMembership(reqId, ctx);
@@ -262,17 +240,10 @@ describe("@platform/authorization", () => {
       expect(await syncGroupService.canSync("dev_tablet", group.id)).toBe(true);
 
       // Revoke membership with authorized ctx
-      await syncGroupService.revokeMembership(
-        "dev_tablet",
-        group.id,
-        ctx,
-        "Device lost",
-      );
+      await syncGroupService.revokeMembership("dev_tablet", group.id, ctx, "Device lost");
 
       // Cannot sync after revocation
-      expect(await syncGroupService.canSync("dev_tablet", group.id)).toBe(
-        false,
-      );
+      expect(await syncGroupService.canSync("dev_tablet", group.id)).toBe(false);
     });
 
     it("rejects a pending membership request", async () => {
@@ -286,22 +257,12 @@ describe("@platform/authorization", () => {
         ctx,
       );
 
-      const reqId = await syncGroupService.requestMembership(
-        group.id,
-        "dev_rejected",
-        "user_op",
-      );
+      const reqId = await syncGroupService.requestMembership(group.id, "dev_rejected", "user_op");
 
-      await syncGroupService.rejectMembership(
-        reqId,
-        ctx,
-        "Not authorised for this site",
-      );
+      await syncGroupService.rejectMembership(reqId, ctx, "Not authorised for this site");
 
       // Rejected device cannot sync
-      expect(await syncGroupService.canSync("dev_rejected", group.id)).toBe(
-        false,
-      );
+      expect(await syncGroupService.canSync("dev_rejected", group.id)).toBe(false);
     });
 
     it("rejects group creation when context lacks sync.manage permission", async () => {
@@ -327,10 +288,7 @@ describe("@platform/authorization", () => {
       });
 
       await expect(
-        syncGroupService.createGroup(
-          { name: "Other Org Group", organisationId: "org_2" },
-          ctx,
-        ),
+        syncGroupService.createGroup({ name: "Other Org Group", organisationId: "org_2" }, ctx),
       ).rejects.toThrow("Cross-tenant sync group creation forbidden");
     });
   });

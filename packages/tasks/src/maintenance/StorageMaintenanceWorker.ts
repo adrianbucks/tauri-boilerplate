@@ -1,15 +1,11 @@
 import type { Logger } from "@platform/core";
 import { ConsoleLogger, generateCorrelationId } from "@platform/core";
-import type {
-  MaintenanceOrchestrator,
-  MaintenanceReport,
-} from "@platform/maintenance";
+import type { MaintenanceOrchestrator, MaintenanceReport } from "@platform/maintenance";
 import type { TaskExecutionContext } from "../types.js";
 import type { TaskQueueService } from "../queue/TaskQueueService.js";
 import { DEFAULT_RETRY_POLICY } from "../types.js";
 
-export const STORAGE_MAINTENANCE_TASK_TYPE =
-  "platform.maintenance.storage" as const;
+export const STORAGE_MAINTENANCE_TASK_TYPE = "platform.maintenance.storage" as const;
 
 export interface StorageMaintenancePayload {
   readonly skipVacuum?: boolean | undefined;
@@ -57,9 +53,7 @@ export class StorageMaintenanceWorker {
         .filter((r) => r.error)
         .map((r) => `${r.handlerId}: ${r.error}`)
         .join("; ");
-      throw new Error(
-        `[StorageMaintenanceWorker] Maintenance failed: ${errors}`,
-      );
+      throw new Error(`[StorageMaintenanceWorker] Maintenance failed: ${errors}`);
     }
 
     return report;

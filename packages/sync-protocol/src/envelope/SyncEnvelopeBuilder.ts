@@ -70,20 +70,13 @@ export class SyncEnvelopeBuilder {
    *
    * @returns `true` if the signature is valid; `false` if verification fails.
    */
-  static async verify(
-    envelope: SyncEnvelope,
-    verifyFn: VerifyFn,
-  ): Promise<boolean> {
+  static async verify(envelope: SyncEnvelope, verifyFn: VerifyFn): Promise<boolean> {
     validatePublicKeyFormat(envelope.signerPublicKey);
     if (!isValidSignatureHex(envelope.signature)) {
       return false;
     }
     const canonicalBytes = SyncEnvelopeBuilder.canonicalize(envelope.operation);
-    return verifyFn(
-      envelope.signerPublicKey,
-      canonicalBytes,
-      envelope.signature,
-    );
+    return verifyFn(envelope.signerPublicKey, canonicalBytes, envelope.signature);
   }
 
   /**

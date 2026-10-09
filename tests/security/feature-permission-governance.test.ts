@@ -192,9 +192,7 @@ auth.require({ userId: "u", organisationId: "o", roles: [] }, "test.admin");
     });
 
     it("returns empty result for non-existent directory", () => {
-      const result = scanFeaturePermissions(
-        path.join(tmpDir, "does-not-exist"),
-      );
+      const result = scanFeaturePermissions(path.join(tmpDir, "does-not-exist"));
       expect(result.references).toHaveLength(0);
       expect(result.warnings).toHaveLength(0);
     });
@@ -214,16 +212,12 @@ export class TestService {
       );
 
       const result = scanFeaturePermissions(srcDir);
-      const readRef = result.references.find(
-        (r) => r.permission === "test.read",
-      );
+      const readRef = result.references.find((r) => r.permission === "test.read");
 
       expect(readRef).toBeDefined();
       expect(readRef!.file).toContain("service.ts");
       expect(readRef!.line).toBeGreaterThan(0);
-      expect(["string-literal", "constant-reference"]).toContain(
-        readRef!.resolution,
-      );
+      expect(["string-literal", "constant-reference"]).toContain(readRef!.resolution);
     });
   });
 
@@ -260,9 +254,7 @@ export class TestService {
       expect(checkResult.valid).toBe(false);
       expect(checkResult.errors.length).toBeGreaterThan(0);
 
-      const adminError = checkResult.errors.find(
-        (e) => e.permission === "test.admin",
-      );
+      const adminError = checkResult.errors.find((e) => e.permission === "test.admin");
       expect(adminError).toBeDefined();
       expect(adminError!.message).toContain("test.admin");
       expect(adminError!.message).toContain("checker-undeclared");
@@ -284,10 +276,7 @@ export class TestService {
 `,
       );
 
-      const manifest = makeManifest("checker-fully-declared", [
-        "test.read",
-        "test.create",
-      ]);
+      const manifest = makeManifest("checker-fully-declared", ["test.read", "test.create"]);
       const scanResult = scanFeaturePermissions(srcDir);
       const checkResult = checkPermissionCoverage(
         manifest,
@@ -313,10 +302,7 @@ export class TestService {
       );
 
       // Manifest declares READ and CREATE, but source only uses READ
-      const manifest = makeManifest("checker-unused-declared", [
-        "test.read",
-        "test.create",
-      ]);
+      const manifest = makeManifest("checker-unused-declared", ["test.read", "test.create"]);
       const scanResult = scanFeaturePermissions(srcDir);
       const checkResult = checkPermissionCoverage(
         manifest,
@@ -378,9 +364,9 @@ export class TestService {
         const permissionsSource = fs.readFileSync(permissionsPath, "utf8");
 
         // Parse declared permission string values from the permissions constant
-        const permValues = [
-          ...permissionsSource.matchAll(/:\s*["']([a-z][a-z0-9._-]*)["']/g),
-        ].map((m) => m[1]);
+        const permValues = [...permissionsSource.matchAll(/:\s*["']([a-z][a-z0-9._-]*)["']/g)].map(
+          (m) => m[1],
+        );
 
         expect(permValues.length).toBeGreaterThan(0);
 
@@ -406,9 +392,7 @@ export class TestService {
 
         // Report any errors clearly for debugging
         if (!checkResult.valid) {
-          const errorMessages = checkResult.errors
-            .map((e) => `  ${e.message}`)
-            .join("\n");
+          const errorMessages = checkResult.errors.map((e) => `  ${e.message}`).join("\n");
           throw new Error(
             `Feature '${feature.id}' has undeclared permission references:\n${errorMessages}`,
           );
@@ -449,11 +433,7 @@ export class TestService {
         "organisations.manage",
       ]);
 
-      const result = validateManifests([
-        orgsManifest,
-        identityManifest,
-        exampleManifest,
-      ]);
+      const result = validateManifests([orgsManifest, identityManifest, exampleManifest]);
 
       expect(result.valid).toBe(true);
       expect(result.message).toContain("3 features");

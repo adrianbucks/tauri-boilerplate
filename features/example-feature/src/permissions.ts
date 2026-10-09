@@ -7,5 +7,4 @@ export const WIDGET_PERMISSIONS = {
   EXPORT: "widgets.export",
 } as const;
 
-export type WidgetPermission =
-  (typeof WIDGET_PERMISSIONS)[keyof typeof WIDGET_PERMISSIONS];
+export type WidgetPermission = (typeof WIDGET_PERMISSIONS)[keyof typeof WIDGET_PERMISSIONS];

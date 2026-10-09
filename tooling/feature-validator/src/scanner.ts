@@ -72,11 +72,7 @@ export interface ScanResult {
  * Method names on the AuthorizationEngine / service private wrappers that
  * receive a permission name as their SECOND argument (index 1).
  */
-const AUTH_ENGINE_METHODS_PERM_ARG1 = new Set([
-  "can",
-  "require",
-  "requireTrusted",
-]);
+const AUTH_ENGINE_METHODS_PERM_ARG1 = new Set(["can", "require", "requireTrusted"]);
 
 /**
  * Private service wrapper methods (e.g. `requirePermission`) that receive
@@ -113,21 +109,9 @@ export function scanFeaturePermissions(featureSrcDir: string): ScanResult {
 
   for (const filePath of sourceFiles) {
     const source = fs.readFileSync(filePath, "utf8");
-    const sourceFile = ts.createSourceFile(
-      filePath,
-      source,
-      ts.ScriptTarget.Latest,
-      true,
-    );
+    const sourceFile = ts.createSourceFile(filePath, source, ts.ScriptTarget.Latest, true);
 
-    scanNode(
-      sourceFile,
-      sourceFile,
-      filePath,
-      constantMap,
-      references,
-      warnings,
-    );
+    scanNode(sourceFile, sourceFile, filePath, constantMap, references, warnings);
   }
 
   // Deduplicate references by (permission, file, line)
@@ -157,13 +141,7 @@ function scanNode(
   warnings: ScanWarning[],
 ): void {
   if (ts.isCallExpression(node)) {
-    const extracted = extractPermissionFromCall(
-      node,
-      sourceFile,
-      filePath,
-      constantMap,
-      warnings,
-    );
+    const extracted = extractPermissionFromCall(node, sourceFile, filePath, constantMap, warnings);
     if (extracted) {
       references.push(extracted);
     }
@@ -276,10 +254,7 @@ function getObjectName(expr: ts.Expression): string | null {
     return expr.text;
   }
   // Handle `this.WIDGET_PERMISSIONS` (less common but possible)
-  if (
-    ts.isPropertyAccessExpression(expr) &&
-    expr.expression.kind === ts.SyntaxKind.ThisKeyword
-  ) {
+  if (ts.isPropertyAccessExpression(expr) && expr.expression.kind === ts.SyntaxKind.ThisKeyword) {
     return expr.name.text;
   }
   return null;
@@ -305,22 +280,14 @@ export function buildPermissionConstantMap(
   // Prioritise permissions.ts files but scan all to catch inline constants
   for (const filePath of sourceFiles) {
     const source = fs.readFileSync(filePath, "utf8");
-    const sourceFile = ts.createSourceFile(
-      filePath,
-      source,
-      ts.ScriptTarget.Latest,
-      true,
-    );
+    const sourceFile = ts.createSourceFile(filePath, source, ts.ScriptTarget.Latest, true);
     extractConstantsFromFile(sourceFile, map);
   }
 
   return map;
 }
 
-function extractConstantsFromFile(
-  sourceFile: ts.SourceFile,
-  map: Map<string, string>,
-): void {
+function extractConstantsFromFile(sourceFile: ts.SourceFile, map: Map<string, string>): void {
   ts.forEachChild(sourceFile, (node) => {
     // export const X = { ... } as const;
     if (!ts.isVariableStatement(node)) return;
@@ -335,13 +302,10 @@ function extractConstantsFromFile(
 
       for (const prop of init.properties) {
         if (!ts.isPropertyAssignment(prop)) continue;
-        if (!ts.isIdentifier(prop.name) && !ts.isStringLiteral(prop.name))
-          continue;
+        if (!ts.isIdentifier(prop.name) && !ts.isStringLiteral(prop.name)) continue;
         if (!ts.isStringLiteral(prop.initializer)) continue;
 
-        const propName = ts.isIdentifier(prop.name)
-          ? prop.name.text
-          : prop.name.text;
+        const propName = ts.isIdentifier(prop.name) ? prop.name.text : prop.name.text;
         const value = prop.initializer.text;
         map.set(`${objectName}.${propName}`, value);
       }

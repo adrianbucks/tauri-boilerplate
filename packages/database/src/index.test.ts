@@ -45,10 +45,7 @@ describe("@platform/database", () => {
 
     it("executes queries with parameter binding", async () => {
       await db.execute("CREATE TABLE users (id TEXT PRIMARY KEY, name TEXT);");
-      await db.execute("INSERT INTO users (id, name) VALUES (?, ?);", [
-        "u1",
-        "Alice",
-      ]);
+      await db.execute("INSERT INTO users (id, name) VALUES (?, ?);", ["u1", "Alice"]);
 
       const rows = await db.query<{ id: string; name: string }>(
         "SELECT * FROM users WHERE id = ?;",
@@ -59,19 +56,12 @@ describe("@platform/database", () => {
     });
 
     it("rolls back transaction on error", async () => {
-      await db.execute(
-        "CREATE TABLE accounts (id TEXT PRIMARY KEY, balance INTEGER);",
-      );
-      await db.execute("INSERT INTO accounts (id, balance) VALUES (?, ?);", [
-        "a1",
-        100,
-      ]);
+      await db.execute("CREATE TABLE accounts (id TEXT PRIMARY KEY, balance INTEGER);");
+      await db.execute("INSERT INTO accounts (id, balance) VALUES (?, ?);", ["a1", 100]);
 
       await expect(
         db.transaction(async (tx) => {
-          await tx.execute("UPDATE accounts SET balance = 50 WHERE id = ?;", [
-            "a1",
-          ]);
+          await tx.execute("UPDATE accounts SET balance = 50 WHERE id = ?;", ["a1"]);
           throw new Error("Simulated transaction failure");
         }),
       ).rejects.toThrow("Simulated transaction failure");
@@ -169,10 +159,9 @@ describe("@platform/database", () => {
         },
       ]);
 
-      const rows = await db.query<{ body: string }>(
-        "SELECT body FROM messages WHERE id = ?",
-        ["m1"],
-      );
+      const rows = await db.query<{ body: string }>("SELECT body FROM messages WHERE id = ?", [
+        "m1",
+      ]);
       expect(rows[0]?.body).toBe("wait; then continue");
     });
 
@@ -188,13 +177,10 @@ describe("@platform/database", () => {
       await engine.applyMigrations([migration]);
 
       await expect(
-        engine.applyMigrations([
-          { ...migration, checksum: "changed_checksum" },
-        ]),
+        engine.applyMigrations([{ ...migration, checksum: "changed_checksum" }]),
       ).rejects.toMatchObject({
         code: "MIGRATION_ERROR",
-        message:
-          "Migration checksum mismatch for platform:v1 ('create_checksum_test')",
+        message: "Migration checksum mismatch for platform:v1 ('create_checksum_test')",
       });
     });
 
@@ -299,22 +285,14 @@ describe("@platform/database", () => {
 
   describe("Nested transactions (savepoints)", () => {
     it("commits outer and inner transactions independently", async () => {
-      await db.execute(
-        "CREATE TABLE ledger (id TEXT PRIMARY KEY, amount INTEGER);",
-      );
+      await db.execute("CREATE TABLE ledger (id TEXT PRIMARY KEY, amount INTEGER);");
 
       await db.transaction(async (outerTx) => {
-        await outerTx.execute("INSERT INTO ledger (id, amount) VALUES (?, ?)", [
-          "outer",
-          100,
-        ]);
+        await outerTx.execute("INSERT INTO ledger (id, amount) VALUES (?, ?)", ["outer", 100]);
 
         // Nested inner transaction (uses savepoint)
         await db.transaction(async (innerTx) => {
-          await innerTx.execute(
-            "INSERT INTO ledger (id, amount) VALUES (?, ?)",
-            ["inner", 200],
-          );
+          await innerTx.execute("INSERT INTO ledger (id, amount) VALUES (?, ?)", ["inner", 200]);
         });
       });
 
@@ -325,32 +303,22 @@ describe("@platform/database", () => {
     });
 
     it("rolls back inner savepoint without affecting outer transaction", async () => {
-      await db.execute(
-        "CREATE TABLE ledger (id TEXT PRIMARY KEY, amount INTEGER);",
-      );
+      await db.execute("CREATE TABLE ledger (id TEXT PRIMARY KEY, amount INTEGER);");
 
       await db.transaction(async (outerTx) => {
-        await outerTx.execute("INSERT INTO ledger (id, amount) VALUES (?, ?)", [
-          "outer",
-          100,
-        ]);
+        await outerTx.execute("INSERT INTO ledger (id, amount) VALUES (?, ?)", ["outer", 100]);
 
         // Inner transaction that fails
         await expect(
           db.transaction(async (innerTx) => {
-            await innerTx.execute(
-              "INSERT INTO ledger (id, amount) VALUES (?, ?)",
-              ["inner", 200],
-            );
+            await innerTx.execute("INSERT INTO ledger (id, amount) VALUES (?, ?)", ["inner", 200]);
             throw new Error("Inner failure");
           }),
         ).rejects.toThrow("Inner failure");
       });
 
       // Only outer row committed
-      const rows = await db.query<{ id: string }>(
-        "SELECT id FROM ledger ORDER BY id",
-      );
+      const rows = await db.query<{ id: string }>("SELECT id FROM ledger ORDER BY id");
       expect(rows).toHaveLength(1);
       expect(rows[0]?.id).toBe("outer");
     });

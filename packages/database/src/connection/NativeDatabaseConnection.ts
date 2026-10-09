@@ -36,17 +36,9 @@ interface NativeTransactionRequest extends Record<string, unknown> {
  */
 export class NativeDatabaseConnection implements DatabaseConnection {
   private isInitialised = false;
-  private readonly invoke: (
-    command: string,
-    args?: Record<string, unknown>,
-  ) => Promise<unknown>;
+  private readonly invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown>;
 
-  constructor(
-    invoke: (
-      command: string,
-      args?: Record<string, unknown>,
-    ) => Promise<unknown>,
-  ) {
+  constructor(invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown>) {
     this.invoke = invoke;
   }
 
@@ -85,10 +77,7 @@ export class NativeDatabaseConnection implements DatabaseConnection {
     }
   }
 
-  async execute(
-    sql: string,
-    params: unknown[] = [],
-  ): Promise<{ rowsAffected: number }> {
+  async execute(sql: string, params: unknown[] = []): Promise<{ rowsAffected: number }> {
     await this.init();
     try {
       const response = (await this.invoke("db_execute", {
@@ -130,8 +119,7 @@ export class NativeDatabaseConnection implements DatabaseConnection {
             "The Tauri IPC bridge collects operations and executes them atomically on the " +
             "Rust side — intermediate reads cannot be returned across the IPC boundary. " +
             "Perform all reads before calling db.transaction().",
-          userMessage:
-            "A database read was attempted inside a write transaction.",
+          userMessage: "A database read was attempted inside a write transaction.",
           correlationId: generateCorrelationId("db-tx-read"),
           technicalDetails: `SQL attempted: ${_sql}`,
         });

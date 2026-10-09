@@ -1,9 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { MemoryDatabaseConnection } from "@platform/database";
-import type {
-  MaintenanceOrchestrator,
-  MaintenanceReport,
-} from "@platform/maintenance";
+import type { MaintenanceOrchestrator, MaintenanceReport } from "@platform/maintenance";
 import { TaskQueueService } from "../queue/TaskQueueService.js";
 import {
   StorageMaintenanceWorker,
@@ -40,9 +37,7 @@ async function applySchema(db: MemoryDatabaseConnection): Promise<void> {
   `);
 }
 
-function makeCtx(
-  overrides: Partial<TaskExecutionContext> = {},
-): TaskExecutionContext {
+function makeCtx(overrides: Partial<TaskExecutionContext> = {}): TaskExecutionContext {
   const controller = new AbortController();
   return {
     taskId: "task-maint-001",
@@ -85,10 +80,7 @@ describe("StorageMaintenanceWorker", () => {
       taskQueue,
     });
 
-    const report = await worker.handle(
-      { skipVacuum: false, batchSize: 200 },
-      makeCtx(),
-    );
+    const report = await worker.handle({ skipVacuum: false, batchSize: 200 }, makeCtx());
 
     expect(report).toBe(mockReport);
     expect(mockOrchestrator.pruneAll).toHaveBeenCalledWith({
@@ -126,9 +118,9 @@ describe("StorageMaintenanceWorker", () => {
       taskQueue,
     });
 
-    await expect(
-      worker.handle({ skipVacuum: false }, makeCtx()),
-    ).rejects.toThrow("Maintenance failed: test.fail: Database locked");
+    await expect(worker.handle({ skipVacuum: false }, makeCtx())).rejects.toThrow(
+      "Maintenance failed: test.fail: Database locked",
+    );
   });
 
   it("enqueues deduplicated maintenance tasks into task queue", async () => {

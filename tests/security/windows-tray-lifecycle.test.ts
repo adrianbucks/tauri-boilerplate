@@ -25,19 +25,15 @@ const workspaceRoot = path.resolve(__dirname, "../../");
 
 describe("Security Regression Suite — WP-016b: Windows System Tray Lifecycle", () => {
   const libRsPath = path.join(workspaceRoot, "apps/demo/src-tauri/src/lib.rs");
-  const capabilityPath = path.join(
-    workspaceRoot,
-    "apps/demo/src-tauri/capabilities/default.json",
-  );
-  const usePlatformPath = path.join(
-    workspaceRoot,
-    "apps/demo/src/hooks/usePlatform.tsx",
-  );
+  const capabilityPath = path.join(workspaceRoot, "apps/demo/src-tauri/capabilities/default.json");
+  const usePlatformPath = path.join(workspaceRoot, "apps/demo/src/hooks/usePlatform.tsx");
 
   const libRsSource = fs.readFileSync(libRsPath, "utf8");
-  const capabilityContent = JSON.parse(
-    fs.readFileSync(capabilityPath, "utf8"),
-  ) as { permissions: string[]; description: string; windows: string[] };
+  const capabilityContent = JSON.parse(fs.readFileSync(capabilityPath, "utf8")) as {
+    permissions: string[];
+    description: string;
+    windows: string[];
+  };
   const usePlatformSource = fs.readFileSync(usePlatformPath, "utf8");
 
   // -----------------------------------------------------------------------
@@ -102,10 +98,7 @@ describe("Security Regression Suite — WP-016b: Windows System Tray Lifecycle",
     expect(libRsSource).toContain('#[cfg(target_os = "windows")]');
 
     const trayBuilderIdx = libRsSource.indexOf("TrayIconBuilder::new()");
-    const cfgIdx = libRsSource.lastIndexOf(
-      '#[cfg(target_os = "windows")]',
-      trayBuilderIdx,
-    );
+    const cfgIdx = libRsSource.lastIndexOf('#[cfg(target_os = "windows")]', trayBuilderIdx);
     expect(cfgIdx).toBeGreaterThan(-1);
     expect(trayBuilderIdx).toBeGreaterThan(-1);
     expect(cfgIdx).toBeLessThan(trayBuilderIdx);
@@ -123,10 +116,7 @@ describe("Security Regression Suite — WP-016b: Windows System Tray Lifecycle",
     expect(perms).not.toContain("core:event:default");
 
     const dangerousPerms = perms.filter(
-      (p) =>
-        p.startsWith("core:shell") ||
-        p.startsWith("core:fs") ||
-        p.startsWith("core:process"),
+      (p) => p.startsWith("core:shell") || p.startsWith("core:fs") || p.startsWith("core:process"),
     );
     expect(dangerousPerms).toHaveLength(0);
     expect(capabilityContent.windows).toEqual(["main"]);
@@ -154,9 +144,7 @@ describe("Security Regression Suite — WP-016b: Windows System Tray Lifecycle",
     expect(initBody).toContain('"background_start"');
 
     // 2 occurrences: init body + sync-now handler
-    const totalInvocations = (
-      usePlatformSource.match(/"background_start"/g) ?? []
-    ).length;
+    const totalInvocations = (usePlatformSource.match(/"background_start"/g) ?? []).length;
     expect(totalInvocations).toBeGreaterThanOrEqual(2);
   });
 });

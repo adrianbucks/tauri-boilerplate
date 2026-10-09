@@ -1,11 +1,5 @@
 import React, { useState } from "react";
-import {
-  PanelLeftClose,
-  PanelLeft,
-  Activity,
-  ShieldCheck,
-  User,
-} from "lucide-react";
+import { PanelLeftClose, PanelLeft, Activity, ShieldCheck, User } from "lucide-react";
 import { ThemeToggle } from "../theme/ThemeProvider.js";
 import { Badge } from "../components/badge.js";
 import { Button } from "../components/button.js";
@@ -101,12 +95,8 @@ export const AppShell: React.FC<AppShellProps> = ({
           <div className="flex h-14 items-center justify-between border-b border-border px-3.5">
             {!collapsed && (
               <div className="flex flex-col">
-                <span className="font-bold text-sm text-primary tracking-tight">
-                  {appName}
-                </span>
-                <span className="text-[10px] text-muted-foreground">
-                  v{version}
-                </span>
+                <span className="font-bold text-sm text-primary tracking-tight">{appName}</span>
+                <span className="text-[10px] text-muted-foreground">v{version}</span>
               </div>
             )}
             <Button
@@ -174,9 +164,7 @@ export const AppShell: React.FC<AppShellProps> = ({
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1.5">
                 <ShieldCheck className="h-4 w-4 text-primary" />
-                <span className="text-xs font-semibold">
-                  {organisationName}
-                </span>
+                <span className="text-xs font-semibold">{organisationName}</span>
               </div>
               {getSyncBadge()}
             </div>

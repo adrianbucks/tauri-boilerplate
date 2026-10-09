@@ -18,12 +18,7 @@
 import type { Logger } from "@platform/core";
 import { ConsoleLogger } from "@platform/core";
 import type { DatabaseConnection } from "@platform/database";
-import type {
-  TaskExecutionContext,
-  TaskHandler,
-  TaskRecord,
-  TaskWorkerOptions,
-} from "../types.js";
+import type { TaskExecutionContext, TaskHandler, TaskRecord, TaskWorkerOptions } from "../types.js";
 import { TaskQueueService } from "../queue/TaskQueueService.js";
 
 export class TaskWorker {
@@ -32,11 +27,7 @@ export class TaskWorker {
   private concurrency: number;
   private pollIntervalMs: number;
   private gracefulShutdownTimeoutMs: number;
-  private onNonRetryableError: (
-    taskId: string,
-    taskType: string,
-    error: unknown,
-  ) => void;
+  private onNonRetryableError: (taskId: string, taskType: string, error: unknown) => void;
   private onPollComplete: (claimed: number) => void;
 
   private readonly handlers = new Map<string, TaskHandler<unknown, unknown>>();
@@ -46,17 +37,12 @@ export class TaskWorker {
   /** Active execution promises keyed by task id */
   private readonly inFlight = new Map<string, Promise<void>>();
 
-  constructor(
-    db: DatabaseConnection,
-    options: TaskWorkerOptions = {},
-    logger?: Logger,
-  ) {
+  constructor(db: DatabaseConnection, options: TaskWorkerOptions = {}, logger?: Logger) {
     this.queue = new TaskQueueService(db);
     this.logger = logger ?? new ConsoleLogger("info");
     this.concurrency = options.concurrency ?? 3;
     this.pollIntervalMs = options.pollIntervalMs ?? 5_000;
-    this.gracefulShutdownTimeoutMs =
-      options.gracefulShutdownTimeoutMs ?? 30_000;
+    this.gracefulShutdownTimeoutMs = options.gracefulShutdownTimeoutMs ?? 30_000;
     this.onNonRetryableError = options.onNonRetryableError ?? (() => {});
     this.onPollComplete = options.onPollComplete ?? (() => {});
   }
@@ -69,10 +55,7 @@ export class TaskWorker {
    * Registers an async handler for a task type.
    * Replaces any previously registered handler for the same type.
    */
-  register<TPayload, TResult>(
-    taskType: string,
-    handler: TaskHandler<TPayload, TResult>,
-  ): void {
+  register<TPayload, TResult>(taskType: string, handler: TaskHandler<TPayload, TResult>): void {
     this.handlers.set(taskType, handler as TaskHandler<unknown, unknown>);
   }
 
@@ -163,13 +146,9 @@ export class TaskWorker {
       const available = this.concurrency - this.inFlight.size;
       if (available > 0) {
         // Only claim task types we have handlers for
-        const registeredTypes =
-          this.handlers.size > 0 ? [...this.handlers.keys()] : undefined;
+        const registeredTypes = this.handlers.size > 0 ? [...this.handlers.keys()] : undefined;
 
-        const claimed = await this.queue.claimNextBatch(
-          available,
-          registeredTypes,
-        );
+        const claimed = await this.queue.claimNextBatch(available, registeredTypes);
         this.onPollComplete(claimed.length);
 
         for (const task of claimed) {
@@ -203,10 +182,7 @@ export class TaskWorker {
       this.logger.warn(
         `[TaskWorker] No handler registered for task type "${task.taskType}" (id=${task.id}). Cancelling task.`,
       );
-      await this.queue.cancel(
-        task.id,
-        `No handler registered for "${task.taskType}".`,
-      );
+      await this.queue.cancel(task.id, `No handler registered for "${task.taskType}".`);
       return;
     }
 
@@ -233,9 +209,7 @@ export class TaskWorker {
       this.logger.info(`[TaskWorker] Task ${task.id} completed.`);
     } catch (err) {
       if (controller.signal.aborted) {
-        this.logger.warn(
-          `[TaskWorker] Task ${task.id} timed out after ${task.timeoutMs}ms.`,
-        );
+        this.logger.warn(`[TaskWorker] Task ${task.id} timed out after ${task.timeoutMs}ms.`);
       } else {
         this.logger.error(`[TaskWorker] Task ${task.id} failed:`, err);
       }

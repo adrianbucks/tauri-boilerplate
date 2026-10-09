@@ -117,10 +117,7 @@ export class Platform {
       taskQueue: this.tasks,
       logger: this.logger,
     });
-    this.taskWorker.register(
-      StorageMaintenanceWorker.TASK_TYPE,
-      this.maintenanceWorker.handle,
-    );
+    this.taskWorker.register(StorageMaintenanceWorker.TASK_TYPE, this.maintenanceWorker.handle);
   }
 
   /**
@@ -173,10 +170,7 @@ export class Platform {
     // Register any declared sync policies
     if (options.manifest.syncPolicies) {
       for (const policy of options.manifest.syncPolicies) {
-        this.conflicts.registerEntityPolicy(
-          policy.entityType,
-          policy.conflictPolicy,
-        );
+        this.conflicts.registerEntityPolicy(policy.entityType, policy.conflictPolicy);
       }
     }
 
@@ -213,24 +207,18 @@ export class Platform {
       owner: `feature.${m.featureId}`,
     }));
     if (coreMigrations.length > 0) {
-      this.logger.info(
-        `Applying ${coreMigrations.length} platform migrations...`,
-      );
+      this.logger.info(`Applying ${coreMigrations.length} platform migrations...`);
       await this.migrationEngine.applyMigrations(coreMigrations);
     }
     if (featureMigrations.length > 0) {
-      this.logger.info(
-        `Applying ${featureMigrations.length} feature migrations...`,
-      );
+      this.logger.info(`Applying ${featureMigrations.length} feature migrations...`);
       await this.migrationEngine.applyMigrations(featureMigrations);
     }
 
     // 3. Crash recovery: reset any RUNNING tasks left over from a previous crash.
     const recovered = await this.tasks.recoverHangingTasks();
     if (recovered > 0) {
-      this.logger.warn(
-        `Platform: recovered ${recovered} hanging task(s) from previous crash.`,
-      );
+      this.logger.warn(`Platform: recovered ${recovered} hanging task(s) from previous crash.`);
     }
 
     this.isInitialised = true;

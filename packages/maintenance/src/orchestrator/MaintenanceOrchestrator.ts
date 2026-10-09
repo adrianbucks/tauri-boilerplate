@@ -1,11 +1,7 @@
 import type { Logger } from "@platform/core";
 import { ConsoleLogger } from "@platform/core";
 import type { DatabaseConnection } from "@platform/database";
-import type {
-  MaintenanceReport,
-  PruningCandidateStats,
-  PruningResult,
-} from "../types.js";
+import type { MaintenanceReport, PruningCandidateStats, PruningResult } from "../types.js";
 import { MaintenanceRegistry } from "../registry/MaintenanceRegistry.js";
 
 export interface MaintenanceOrchestratorOptions {
@@ -37,9 +33,7 @@ export class MaintenanceOrchestrator {
 
   constructor(options: MaintenanceOrchestratorOptions) {
     this.connection = options.connection;
-    this.registry =
-      options.registry ??
-      new MaintenanceRegistry({ includeCoreDefaults: true });
+    this.registry = options.registry ?? new MaintenanceRegistry({ includeCoreDefaults: true });
     this.defaultBatchSize = options.defaultBatchSize ?? 500;
     this.retentionOverrides = { ...(options.retentionOverrides ?? {}) };
     this.logger = options.logger ?? new ConsoleLogger("info");
@@ -58,10 +52,7 @@ export class MaintenanceOrchestrator {
     const stats: PruningCandidateStats[] = [];
 
     for (const handler of handlers) {
-      const retentionDays = this.getRetentionDays(
-        handler.id,
-        handler.defaultRetentionDays,
-      );
+      const retentionDays = this.getRetentionDays(handler.id, handler.defaultRetentionDays);
       const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
       try {
         const count = await handler.countEligible(this.connection, cutoff);
@@ -74,10 +65,7 @@ export class MaintenanceOrchestrator {
           eligibleRowCount: count,
         });
       } catch (err) {
-        this.logger.error(
-          `[MaintenanceOrchestrator] Error inspecting handler ${handler.id}:`,
-          err,
-        );
+        this.logger.error(`[MaintenanceOrchestrator] Error inspecting handler ${handler.id}:`, err);
         stats.push({
           handlerId: handler.id,
           displayName: handler.displayName,
@@ -92,23 +80,15 @@ export class MaintenanceOrchestrator {
     return stats;
   }
 
-  async pruneHandler(
-    handlerId: string,
-    options?: PruneHandlerOptions,
-  ): Promise<PruningResult> {
+  async pruneHandler(handlerId: string, options?: PruneHandlerOptions): Promise<PruningResult> {
     const handler = this.registry.getHandler(handlerId);
     if (!handler) {
-      throw new Error(
-        `[MaintenanceOrchestrator] Pruning handler '${handlerId}' not found.`,
-      );
+      throw new Error(`[MaintenanceOrchestrator] Pruning handler '${handlerId}' not found.`);
     }
 
     const retentionDays =
-      options?.retentionDays ??
-      this.getRetentionDays(handler.id, handler.defaultRetentionDays);
-    const cutoffDate = new Date(
-      Date.now() - retentionDays * 24 * 60 * 60 * 1000,
-    );
+      options?.retentionDays ?? this.getRetentionDays(handler.id, handler.defaultRetentionDays);
+    const cutoffDate = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
     const batchSize = options?.batchSize ?? this.defaultBatchSize;
 
     return await handler.prune({
@@ -147,13 +127,8 @@ export class MaintenanceOrchestrator {
         break;
       }
 
-      const retentionDays = this.getRetentionDays(
-        handler.id,
-        handler.defaultRetentionDays,
-      );
-      const cutoffDate = new Date(
-        Date.now() - retentionDays * 24 * 60 * 60 * 1000,
-      );
+      const retentionDays = this.getRetentionDays(handler.id, handler.defaultRetentionDays);
+      const cutoffDate = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
       const batchSize = options?.batchSize ?? this.defaultBatchSize;
 
       try {
@@ -169,9 +144,7 @@ export class MaintenanceOrchestrator {
         );
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : String(err);
-        this.logger.error(
-          `[MaintenanceOrchestrator] Handler '${handler.id}' failed: ${errorMsg}`,
-        );
+        this.logger.error(`[MaintenanceOrchestrator] Handler '${handler.id}' failed: ${errorMsg}`);
         results.push({
           handlerId: handler.id,
           displayName: handler.displayName,
@@ -187,22 +160,16 @@ export class MaintenanceOrchestrator {
 
     let vacuumExecuted = false;
     // B-06: VACUUM executes whenever rows were pruned (even if aborted), or if completed without abort
-    const shouldVacuum =
-      !options?.skipVacuum && (totalRowsPruned > 0 || !wasAborted);
+    const shouldVacuum = !options?.skipVacuum && (totalRowsPruned > 0 || !wasAborted);
 
     if (shouldVacuum) {
       try {
-        this.logger.info(
-          "[MaintenanceOrchestrator] Executing VACUUM space reclamation...",
-        );
+        this.logger.info("[MaintenanceOrchestrator] Executing VACUUM space reclamation...");
         await this.connection.execute("VACUUM;");
         vacuumExecuted = true;
         this.logger.info("[MaintenanceOrchestrator] VACUUM complete.");
       } catch (err) {
-        this.logger.error(
-          "[MaintenanceOrchestrator] VACUUM execution failed:",
-          err,
-        );
+        this.logger.error("[MaintenanceOrchestrator] VACUUM execution failed:", err);
       }
     }
 

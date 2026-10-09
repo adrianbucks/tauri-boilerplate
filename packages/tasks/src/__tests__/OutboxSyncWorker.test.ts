@@ -69,9 +69,7 @@ function makeEntry(overrides: Partial<OutboxEntry> = {}): OutboxEntry {
   };
 }
 
-function makeCtx(
-  overrides: Partial<TaskExecutionContext> = {},
-): TaskExecutionContext {
+function makeCtx(overrides: Partial<TaskExecutionContext> = {}): TaskExecutionContext {
   const controller = new AbortController();
   return {
     taskId: "task-001",
@@ -202,9 +200,7 @@ describe("OutboxSyncWorker", () => {
 
     const worker = new OutboxSyncWorker({ outbox, dispatcher, taskQueue, db });
 
-    await expect(
-      worker.handle({ organisationId: "org-123" }, makeCtx()),
-    ).rejects.toThrow("All");
+    await expect(worker.handle({ organisationId: "org-123" }, makeCtx())).rejects.toThrow("All");
   });
 
   // -------------------------------------------------------------------------

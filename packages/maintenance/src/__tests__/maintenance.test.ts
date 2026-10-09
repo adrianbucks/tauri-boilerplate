@@ -190,8 +190,7 @@ describe("@platform/maintenance unit test suite", () => {
             tableName: "feature_sensor_readings",
             timestampColumn: "recorded_at",
             defaultRetentionDays: 7,
-            filterCondition:
-              "status = 'A'; DROP TABLE feature_sensor_readings;--",
+            filterCondition: "status = 'A'; DROP TABLE feature_sensor_readings;--",
           }),
       ).toThrow();
     });
@@ -357,16 +356,7 @@ describe("@platform/maintenance unit test suite", () => {
           ('tb1', ?, 'org1', 'grp1', 'f1', 'widgets', 'w1', ?, 'user1', 'op1', ?),
           ('tb2', ?, 'org1', 'grp1', 'f1', 'widgets', 'w2', ?, 'user1', 'op2', NULL),
           ('tb3', ?, 'org1', 'grp1', 'f1', 'widgets', 'w3', ?, 'user1', 'op3', ?);`,
-        [
-          oldDate,
-          oldDate,
-          oldDate,
-          oldDate,
-          oldDate,
-          recentDate,
-          recentDate,
-          recentDate,
-        ],
+        [oldDate, oldDate, oldDate, oldDate, oldDate, recentDate, recentDate, recentDate],
       );
 
       const pruner = new ReplicatedTombstonePruner();
@@ -416,9 +406,7 @@ describe("@platform/maintenance unit test suite", () => {
       orchestrator.setRetentionOverride("core.audit.events", 1);
 
       const inspection = await orchestrator.inspectAll();
-      const auditStats = inspection.find(
-        (s) => s.handlerId === "core.audit.events",
-      );
+      const auditStats = inspection.find((s) => s.handlerId === "core.audit.events");
       expect(auditStats?.eligibleRowCount).toBe(2);
 
       const report = await orchestrator.pruneAll({ batchSize: 1 });
@@ -426,9 +414,7 @@ describe("@platform/maintenance unit test suite", () => {
       expect(report.vacuumExecuted).toBe(true);
       expect(report.totalRowsPruned).toBe(2);
 
-      const remainingAudits = await db.query(
-        "SELECT id FROM core_audit_events",
-      );
+      const remainingAudits = await db.query("SELECT id FROM core_audit_events");
       expect(remainingAudits.length).toBe(0);
     });
 
@@ -445,9 +431,7 @@ describe("@platform/maintenance unit test suite", () => {
       const report = await orchestrator.pruneAll({ signal: controller.signal });
       expect(report.aborted).toBe(true);
       expect(report.vacuumExecuted).toBe(false);
-      expect(
-        report.results.some((r) => r.error === "Pruning aborted by signal"),
-      ).toBe(true);
+      expect(report.results.some((r) => r.error === "Pruning aborted by signal")).toBe(true);
     });
 
     it("executes VACUUM when aborted mid-run if rows were pruned (B-06)", async () => {
@@ -498,16 +482,12 @@ describe("@platform/maintenance unit test suite", () => {
       expect(report.totalRowsPruned).toBe(1);
       // Even though aborted, rows were pruned so VACUUM must execute!
       expect(report.vacuumExecuted).toBe(true);
+      expect(report.results.some((r) => r.handlerId === "test.pruner1" && r.rowsPruned === 1)).toBe(
+        true,
+      );
       expect(
         report.results.some(
-          (r) => r.handlerId === "test.pruner1" && r.rowsPruned === 1,
-        ),
-      ).toBe(true);
-      expect(
-        report.results.some(
-          (r) =>
-            r.handlerId === "test.pruner2" &&
-            r.error === "Pruning aborted by signal",
+          (r) => r.handlerId === "test.pruner2" && r.error === "Pruning aborted by signal",
         ),
       ).toBe(true);
     });

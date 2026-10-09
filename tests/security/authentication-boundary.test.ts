@@ -1,9 +1,5 @@
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
-import {
-  createRequestContext,
-  AuthenticationError,
-  AuthorizationError,
-} from "@platform/core";
+import { createRequestContext, AuthenticationError, AuthorizationError } from "@platform/core";
 import { MemoryDatabaseConnection } from "@platform/database";
 import {
   DeviceIdentityService,
@@ -127,9 +123,7 @@ describe("authentication trust boundary", () => {
   });
 
   it("prevents obtaining a TrustedOperationContext without verified authentication (CS-003, CS-004)", async () => {
-    await expect(sessionService.getTrustedOperationContext()).rejects.toThrow(
-      AuthenticationError,
-    );
+    await expect(sessionService.getTrustedOperationContext()).rejects.toThrow(AuthenticationError);
   });
 
   it("rejects authentication and does not create session on invalid credentials", async () => {
@@ -147,9 +141,7 @@ describe("authentication trust boundary", () => {
     ).rejects.toThrow(AuthenticationError);
 
     expect(sessionService.getCurrentSession()).toBeNull();
-    await expect(sessionService.getTrustedOperationContext()).rejects.toThrow(
-      AuthenticationError,
-    );
+    await expect(sessionService.getTrustedOperationContext()).rejects.toThrow(AuthenticationError);
   });
 
   it("establishes TrustedOperationContext from verified native boundary and enforces permissions (CS-004)", async () => {
@@ -184,15 +176,13 @@ describe("authentication trust boundary", () => {
     ).resolves.toBeUndefined();
 
     // Verify AuthorizationEngine.requireTrusted rejects ungranted permissions
-    await expect(
-      authEngine.requireTrusted(trustedContext, "admin:delete_org"),
-    ).rejects.toThrow(AuthorizationError);
+    await expect(authEngine.requireTrusted(trustedContext, "admin:delete_org")).rejects.toThrow(
+      AuthorizationError,
+    );
 
     // Verify logout terminates the session
     await sessionService.logout(legitimateGateway);
     expect(sessionService.getCurrentSession()).toBeNull();
-    await expect(sessionService.getTrustedOperationContext()).rejects.toThrow(
-      AuthenticationError,
-    );
+    await expect(sessionService.getTrustedOperationContext()).rejects.toThrow(AuthenticationError);
   });
 });

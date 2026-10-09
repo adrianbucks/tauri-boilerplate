@@ -84,10 +84,7 @@ export class UserSessionService {
     } catch (cause) {
       this.invalidateSession();
       throw new AuthenticationError({
-        message:
-          cause instanceof Error
-            ? cause.message
-            : "Native authentication failed",
+        message: cause instanceof Error ? cause.message : "Native authentication failed",
         userMessage: "Invalid credentials or account locked",
         correlationId: "auth_native_failed",
       });
@@ -116,10 +113,9 @@ export class UserSessionService {
       organisation_id: string;
       display_name: string;
       status: string;
-    }>(
-      "SELECT id, organisation_id, display_name, status FROM core_users WHERE id = ? LIMIT 1",
-      [nativeView.user_id],
-    );
+    }>("SELECT id, organisation_id, display_name, status FROM core_users WHERE id = ? LIMIT 1", [
+      nativeView.user_id,
+    ]);
 
     const user = userRows[0];
     if (!user || user.status !== "ACTIVE") {
@@ -160,10 +156,7 @@ export class UserSessionService {
    * @deprecated Identifier-only session creation bypasses credential verification (CS-003).
    * Prefer `authenticate(request, gateway)` or `establishFromNativeSession(nativeView)`.
    */
-  async createSession(
-    options: CreateSessionOptions,
-    tx?: TransactionClient,
-  ): Promise<Session> {
+  async createSession(options: CreateSessionOptions, tx?: TransactionClient): Promise<Session> {
     const executor = tx ?? this.db;
     const device = await this.deviceService.getLocalDevice(tx);
 
@@ -186,8 +179,7 @@ export class UserSessionService {
     if (device.status === "SUSPENDED") {
       throw new AuthorizationError({
         message: "Device is suspended and cannot start a session",
-        userMessage:
-          "This device has been suspended. Contact your administrator.",
+        userMessage: "This device has been suspended. Contact your administrator.",
         correlationId: "sess_dev_suspended",
       });
     }
@@ -260,11 +252,7 @@ export class UserSessionService {
     }
 
     const device = await this.deviceService.getLocalDevice(tx);
-    if (
-      !device ||
-      device.status === "REVOKED" ||
-      device.status === "SUSPENDED"
-    ) {
+    if (!device || device.status === "REVOKED" || device.status === "SUSPENDED") {
       this.invalidateSession();
       throw new AuthorizationError({
         message: `Session invalid: device is in state '${device?.status ?? "UNKNOWN"}'`,
@@ -289,9 +277,7 @@ export class UserSessionService {
     return this.currentSession;
   }
 
-  async getTrustedOperationContext(
-    tx?: TransactionClient,
-  ): Promise<TrustedOperationContext> {
+  async getTrustedOperationContext(tx?: TransactionClient): Promise<TrustedOperationContext> {
     const session = await this.validateCurrentSession(tx);
     return Object.freeze({
       correlationId: generateCorrelationId("op"),
@@ -317,10 +303,7 @@ export class UserSessionService {
     this.invalidateSession();
   }
 
-  async getUser(
-    userId: string,
-    tx?: TransactionClient,
-  ): Promise<UserIdentity | null> {
+  async getUser(userId: string, tx?: TransactionClient): Promise<UserIdentity | null> {
     const executor = tx ?? this.db;
     const rows = await executor.query<{
       id: string;

@@ -1,5 +1,4 @@
-export type ConflictStrategy =
-  "lww" | "append-only" | "additive" | "manual" | "immutable" | "crdt";
+export type ConflictStrategy = "lww" | "append-only" | "additive" | "manual" | "immutable" | "crdt";
 
 export interface ConflictPolicy {
   strategy: ConflictStrategy;

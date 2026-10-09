@@ -178,8 +178,6 @@ The `DataTable` component abstracts tabular display, sorting, filtering, and row
 2. **Permission-Aware Rendering**: Action buttons (Delete, Edit, Export) evaluate permissions via `useAuthorization()`:
    ```tsx
    const { can } = useAuthorization();
-   return can("widgets.delete", widget) ? (
-     <Button variant="destructive">Delete</Button>
-   ) : null;
+   return can("widgets.delete", widget) ? <Button variant="destructive">Delete</Button> : null;
    ```
 3. **No Secret Ingestion**: Forms and UI memory never retain cleartext credentials longer than required for immediate authentication.

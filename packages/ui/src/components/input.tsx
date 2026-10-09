@@ -8,17 +8,12 @@ export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> 
 
 const Input = React.forwardRef<HTMLInputElement, InputProps>(
   ({ className, type, label, error, id, ...props }, ref) => {
-    const inputId =
-      id ??
-      (label ? `input-${label.toLowerCase().replace(/\s+/g, "-")}` : undefined);
+    const inputId = id ?? (label ? `input-${label.toLowerCase().replace(/\s+/g, "-")}` : undefined);
 
     return (
       <div className="flex flex-col gap-1.5 w-full">
         {label && (
-          <label
-            htmlFor={inputId}
-            className="text-xs font-medium text-muted-foreground"
-          >
+          <label htmlFor={inputId} className="text-xs font-medium text-muted-foreground">
             {label}
           </label>
         )}

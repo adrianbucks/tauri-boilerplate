@@ -49,8 +49,7 @@ export function LoginPage() {
           </div>
           <CardTitle className="mt-4">Sign in</CardTitle>
           <CardDescription>
-            Authenticate this user and device through the native session
-            boundary.
+            Authenticate this user and device through the native session boundary.
           </CardDescription>
         </CardHeader>
         <CardContent>

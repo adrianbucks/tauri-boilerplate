@@ -100,41 +100,27 @@ export interface PlatformNativeGateway {
   getSyncEndpointInfo(): Promise<NativeSyncEndpointInfo>;
   signMessage(messageHex: string): Promise<string>;
   verifyMessage(request: VerifyMessageInput): Promise<boolean>;
-  authenticateUser(
-    request: AuthenticateUserRequest,
-  ): Promise<NativeSessionView>;
+  authenticateUser(request: AuthenticateUserRequest): Promise<NativeSessionView>;
   logoutUser(): Promise<void>;
   listWidgets(organisationId: string): Promise<NativeWidgetRecord[]>;
   createWidget(request: CreateNativeWidgetRequest): Promise<NativeWidgetRecord>;
-  createWidgets(
-    request: CreateNativeWidgetsRequest,
-  ): Promise<NativeWidgetRecord[]>;
+  createWidgets(request: CreateNativeWidgetsRequest): Promise<NativeWidgetRecord[]>;
   listOrganisations(): Promise<NativeOrganisationRecord[]>;
-  createOrganisation(
-    request: CreateNativeOrganisationRequest,
-  ): Promise<NativeOrganisationRecord>;
+  createOrganisation(request: CreateNativeOrganisationRequest): Promise<NativeOrganisationRecord>;
 }
 
-export function createPlatformNativeGateway(
-  invoker: NativeInvoker,
-): PlatformNativeGateway {
+export function createPlatformNativeGateway(invoker: NativeInvoker): PlatformNativeGateway {
   return {
-    getDeviceIdentity: () =>
-      invoker.invoke<NativeDeviceIdentity>("get_device_identity"),
-    getDatabaseHealth: () =>
-      invoker.invoke<NativeDatabaseHealth>("get_database_health"),
-    getCurrentSession: () =>
-      invoker.invoke<NativeSessionView | null>("get_current_session"),
-    getBackgroundStatus: () =>
-      invoker.invoke<NativeBackgroundStatus>("background_status"),
-    getSyncEndpointInfo: () =>
-      invoker.invoke<NativeSyncEndpointInfo>("sync_start_endpoint"),
+    getDeviceIdentity: () => invoker.invoke<NativeDeviceIdentity>("get_device_identity"),
+    getDatabaseHealth: () => invoker.invoke<NativeDatabaseHealth>("get_database_health"),
+    getCurrentSession: () => invoker.invoke<NativeSessionView | null>("get_current_session"),
+    getBackgroundStatus: () => invoker.invoke<NativeBackgroundStatus>("background_status"),
+    getSyncEndpointInfo: () => invoker.invoke<NativeSyncEndpointInfo>("sync_start_endpoint"),
     signMessage: (messageHex) =>
       invoker.invoke<string>("sign_message", {
         request: { message_hex: messageHex },
       }),
-    verifyMessage: (request) =>
-      invoker.invoke<boolean>("verify_message", { request }),
+    verifyMessage: (request) => invoker.invoke<boolean>("verify_message", { request }),
     authenticateUser: (request) =>
       invoker.invoke<NativeSessionView>("authenticate_user", { request }),
     logoutUser: () => invoker.invoke<void>("logout_user"),
@@ -142,12 +128,9 @@ export function createPlatformNativeGateway(
       invoker.invoke<NativeWidgetRecord[]>("list_widgets", {
         request: { organisation_id: organisationId },
       }),
-    createWidget: (request) =>
-      invoker.invoke<NativeWidgetRecord>("create_widget", { request }),
-    createWidgets: (request) =>
-      invoker.invoke<NativeWidgetRecord[]>("create_widgets", { request }),
-    listOrganisations: () =>
-      invoker.invoke<NativeOrganisationRecord[]>("list_organisations"),
+    createWidget: (request) => invoker.invoke<NativeWidgetRecord>("create_widget", { request }),
+    createWidgets: (request) => invoker.invoke<NativeWidgetRecord[]>("create_widgets", { request }),
+    listOrganisations: () => invoker.invoke<NativeOrganisationRecord[]>("list_organisations"),
     createOrganisation: (request) =>
       invoker.invoke<NativeOrganisationRecord>("create_organisation", {
         request,
@@ -178,11 +161,7 @@ export function createNativeSignFn(
  */
 export function createNativeVerifyFn(
   gateway: Pick<PlatformNativeGateway, "verifyMessage">,
-): (
-  signerPublicKey: string,
-  canonicalBytes: Uint8Array,
-  signatureHex: string,
-) => Promise<boolean> {
+): (signerPublicKey: string, canonicalBytes: Uint8Array, signatureHex: string) => Promise<boolean> {
   return async (
     signerPublicKey: string,
     canonicalBytes: Uint8Array,

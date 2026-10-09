@@ -124,10 +124,7 @@ describe("@features/identity-admin", () => {
       IDENTITY_ADMIN_PERMISSIONS.DEVICES_REVOKE,
       "sync.manage",
     ]) {
-      await db.execute(
-        `INSERT INTO core_permissions (id, name) VALUES (?, ?)`,
-        [perm, perm],
-      );
+      await db.execute(`INSERT INTO core_permissions (id, name) VALUES (?, ?)`, [perm, perm]);
       await db.execute(
         `INSERT INTO core_role_permissions (id, role_id, permission_id) VALUES (?, 'role_superadmin', ?)`,
         [`rp_${perm}`, perm],
@@ -195,12 +192,7 @@ describe("@features/identity-admin", () => {
       "INSERT INTO core_sync_group_members (id, group_id, device_id, status, joined_at) VALUES ('m1', 'grp_1', 'dev_laptop_2', 'ACTIVE', '2026-08-30T10:00:00Z');",
     );
 
-    await service.revokeDevice(
-      "dev_laptop_2",
-      "grp_1",
-      "Device reported stolen",
-      ctx,
-    );
+    await service.revokeDevice("dev_laptop_2", "grp_1", "Device reported stolen", ctx);
 
     const dev = await db.query<{ status: string }>(
       "SELECT status FROM core_devices WHERE device_id = ?",

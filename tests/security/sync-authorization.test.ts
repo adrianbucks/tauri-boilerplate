@@ -40,9 +40,7 @@ describe("Security Regression Suite — Sync & Pairing Authorization", () => {
     currentProtocolVersion: 1,
   };
 
-  function createValidHandshake(
-    overrides?: Partial<HandshakeMessage>,
-  ): HandshakeMessage {
+  function createValidHandshake(overrides?: Partial<HandshakeMessage>): HandshakeMessage {
     return {
       applicationId: "tauri-boilerplate-demo",
       applicationVersion: "0.1.0",
@@ -239,11 +237,7 @@ describe("Security Regression Suite — Sync & Pairing Authorization", () => {
 
     // Second attempt with same nonce must be rejected
     await expect(
-      HandshakeValidator.requireValid(
-        handshake,
-        { ...baseValidationOpts, seenNonces },
-        "corr_2",
-      ),
+      HandshakeValidator.requireValid(handshake, { ...baseValidationOpts, seenNonces }, "corr_2"),
     ).rejects.toThrow(ValidationError);
   });
 
@@ -255,10 +249,7 @@ describe("Security Regression Suite — Sync & Pairing Authorization", () => {
       applicationId: "tauri-boilerplate-demo",
     });
 
-    const canSync = await pairingService.canSync(
-      "dev_pending_1",
-      "grp_coventry",
-    );
+    const canSync = await pairingService.canSync("dev_pending_1", "grp_coventry");
     expect(canSync).toBe(false);
   });
 
@@ -277,14 +268,10 @@ describe("Security Regression Suite — Sync & Pairing Authorization", () => {
     await pairingService.approvePairing(req1.requestId, ctx);
 
     // Device 1 CAN sync Coventry data
-    expect(await pairingService.canSync("dev_coventry_1", "grp_coventry")).toBe(
-      true,
-    );
+    expect(await pairingService.canSync("dev_coventry_1", "grp_coventry")).toBe(true);
 
     // Device 1 CANNOT sync Birmingham data
-    expect(
-      await pairingService.canSync("dev_coventry_1", "grp_birmingham"),
-    ).toBe(false);
+    expect(await pairingService.canSync("dev_coventry_1", "grp_birmingham")).toBe(false);
 
     // Canonical namespaces are strictly isolated
     const nsCov = NamespaceGenerator.generate({
@@ -317,9 +304,7 @@ describe("Security Regression Suite — Sync & Pairing Authorization", () => {
       ctx,
     );
     await pairingService.approvePairing(req.requestId, ctx);
-    expect(
-      await pairingService.canSync("dev_laptop_temp", "grp_coventry"),
-    ).toBe(true);
+    expect(await pairingService.canSync("dev_laptop_temp", "grp_coventry")).toBe(true);
 
     // Revoke device
     await syncGroups.revokeMembership(
@@ -331,9 +316,7 @@ describe("Security Regression Suite — Sync & Pairing Authorization", () => {
     await identity.updateDeviceStatus("dev_laptop_temp", "REVOKED");
 
     // Immediately rejected
-    expect(
-      await pairingService.canSync("dev_laptop_temp", "grp_coventry"),
-    ).toBe(false);
+    expect(await pairingService.canSync("dev_laptop_temp", "grp_coventry")).toBe(false);
   });
 
   it("Replication Security: Inbox rejects tampered envelope signature", async () => {
@@ -388,9 +371,7 @@ describe("Security Regression Suite — Sync & Pairing Authorization", () => {
     });
 
     // Invariant #6: isDeleted must return true
-    expect(
-      await tombstoneService.isDeleted("widgets", "wid_deleted_1", "org_acme"),
-    ).toBe(true);
+    expect(await tombstoneService.isDeleted("widgets", "wid_deleted_1", "org_acme")).toBe(true);
 
     const pending = await tombstoneService.propagatePending();
     expect(pending.some((t) => t.entityId === "wid_deleted_1")).toBe(true);
@@ -411,10 +392,7 @@ describe("Security Regression Suite — Sync & Pairing Authorization", () => {
     };
 
     let pushIncoming: ((event: { payload: unknown }) => void) | undefined;
-    const mockListen = async (
-      _event: string,
-      handler: (event: { payload: unknown }) => void,
-    ) => {
+    const mockListen = async (_event: string, handler: (event: { payload: unknown }) => void) => {
       pushIncoming = handler;
       return () => {};
     };
@@ -428,9 +406,7 @@ describe("Security Regression Suite — Sync & Pairing Authorization", () => {
 
     // Invariant #5: Ensure transport never stores or exposes private keys
     const transportKeys = Object.keys(transport);
-    expect(transportKeys.some((k) => k.toLowerCase().includes("private"))).toBe(
-      false,
-    );
+    expect(transportKeys.some((k) => k.toLowerCase().includes("private"))).toBe(false);
 
     // Invariant #4: When an envelope arrives across iroh transport, it must pass verification before apply
     let receivedByHandler = false;

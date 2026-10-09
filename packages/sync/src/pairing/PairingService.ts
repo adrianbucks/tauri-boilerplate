@@ -109,10 +109,7 @@ export class PairingService {
   /**
    * Approves a pending pairing request and promotes the device membership to ACTIVE.
    */
-  async approvePairing(
-    requestId: string,
-    ctx: OperationContext,
-  ): Promise<PairingDecisionResult> {
+  async approvePairing(requestId: string, ctx: OperationContext): Promise<PairingDecisionResult> {
     return this.db.transaction(async (tx) => {
       const rows = await tx.query<{ device_id: string; group_id: string }>(
         "SELECT device_id, group_id FROM core_membership_requests WHERE id = ? LIMIT 1",
@@ -127,12 +124,7 @@ export class PairingService {
         });
       }
 
-      await this.syncGroups.approveMembership(
-        requestId,
-        ctx.userId ?? "system",
-        undefined,
-        tx,
-      );
+      await this.syncGroups.approveMembership(requestId, ctx.userId ?? "system", undefined, tx);
 
       // Mark device as APPROVED
       await this.identity.updateDeviceStatus(req.device_id, "APPROVED", tx);
@@ -172,11 +164,7 @@ export class PairingService {
       "SELECT status FROM core_devices WHERE device_id = ? LIMIT 1",
       [deviceId],
     );
-    if (
-      !device[0] ||
-      device[0].status === "REVOKED" ||
-      device[0].status === "UNREGISTERED"
-    ) {
+    if (!device[0] || device[0].status === "REVOKED" || device[0].status === "UNREGISTERED") {
       return false;
     }
 

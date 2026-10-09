@@ -238,9 +238,7 @@ Features may communicate with each other through services, not direct database a
 const warehouse = await warehouseService.findById(warehouseId);
 
 // ❌ Forbidden: Feature B queries Feature A's tables directly
-const warehouse = await db.query("SELECT * FROM warehouse_sites WHERE id = ?", [
-  id,
-]);
+const warehouse = await db.query("SELECT * FROM warehouse_sites WHERE id = ?", [id]);
 ```
 
 Optional dependencies allow a feature to behave differently based on whether another feature is installed:

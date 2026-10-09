@@ -84,21 +84,14 @@ export class SyncManager {
    * writes it to core_sync_outbox atomically (using the caller's transaction
    * if supplied).
    */
-  async enqueueOperation(
-    op: SyncOperation,
-    tx?: TransactionClient,
-  ): Promise<OutboxRecord> {
+  async enqueueOperation(op: SyncOperation, tx?: TransactionClient): Promise<OutboxRecord> {
     if (!this.signerPublicKey || !this.signFn) {
       throw new Error(
         "[SyncManager] Cannot enqueue operation: signerPublicKey and signFn must be configured on SyncManager.",
       );
     }
 
-    const envelope = await SyncEnvelopeBuilder.build(
-      op,
-      this.signerPublicKey,
-      this.signFn,
-    );
+    const envelope = await SyncEnvelopeBuilder.build(op, this.signerPublicKey, this.signFn);
 
     if (tx) {
       return this.outboxService.enqueue(envelope, tx);
@@ -164,13 +157,7 @@ export class SyncManager {
     const anyConnected = Array.from(this.peerStates.values()).some(
       (s) => s.getState() !== "DISCONNECTED",
     );
-    this.setState(
-      anyConnected
-        ? this.currentState
-        : this.transport
-          ? "IDLE"
-          : "DISCONNECTED",
-    );
+    this.setState(anyConnected ? this.currentState : this.transport ? "IDLE" : "DISCONNECTED");
   }
 
   getDiagnostics(): SyncDiagnostic[] {

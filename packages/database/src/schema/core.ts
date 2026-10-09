@@ -1,9 +1,4 @@
-import {
-  sqliteTable,
-  text,
-  integer,
-  primaryKey,
-} from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, primaryKey } from "drizzle-orm/sqlite-core";
 import { baseEntityColumns } from "./base.js";
 
 // Applications registry
@@ -140,12 +135,8 @@ export const coreSyncGroupPolicies = sqliteTable("core_sync_group_policies", {
     .notNull()
     .references(() => coreSyncGroups.id),
   namespacePattern: text("namespace_pattern").notNull(),
-  readAllowed: integer("read_allowed", { mode: "boolean" })
-    .notNull()
-    .default(true),
-  writeAllowed: integer("write_allowed", { mode: "boolean" })
-    .notNull()
-    .default(true),
+  readAllowed: integer("read_allowed", { mode: "boolean" }).notNull().default(true),
+  writeAllowed: integer("write_allowed", { mode: "boolean" }).notNull().default(true),
 });
 
 // Membership Requests
@@ -161,21 +152,18 @@ export const coreMembershipRequests = sqliteTable("core_membership_requests", {
 });
 
 // Membership Decisions
-export const coreMembershipDecisions = sqliteTable(
-  "core_membership_decisions",
-  {
-    id: text("id").primaryKey(),
-    requestId: text("request_id")
-      .notNull()
-      .references(() => coreMembershipRequests.id),
-    decidedBy: text("decided_by")
-      .notNull()
-      .references(() => coreUsers.id),
-    decision: text("decision").notNull(), // APPROVED | REJECTED
-    decidedAt: text("decided_at").notNull(),
-    signature: text("signature"),
-  },
-);
+export const coreMembershipDecisions = sqliteTable("core_membership_decisions", {
+  id: text("id").primaryKey(),
+  requestId: text("request_id")
+    .notNull()
+    .references(() => coreMembershipRequests.id),
+  decidedBy: text("decided_by")
+    .notNull()
+    .references(() => coreUsers.id),
+  decision: text("decision").notNull(), // APPROVED | REJECTED
+  decidedAt: text("decided_at").notNull(),
+  signature: text("signature"),
+});
 
 // Revocations
 export const coreRevocations = sqliteTable("core_revocations", {
@@ -187,9 +175,7 @@ export const coreRevocations = sqliteTable("core_revocations", {
     .references(() => coreUsers.id),
   revokedAt: text("revoked_at").notNull(),
   reason: text("reason").notNull(),
-  propagated: integer("propagated", { mode: "boolean" })
-    .notNull()
-    .default(false),
+  propagated: integer("propagated", { mode: "boolean" }).notNull().default(false),
 });
 
 // Audit Events (Append-only)

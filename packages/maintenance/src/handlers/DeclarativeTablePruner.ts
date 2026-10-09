@@ -52,13 +52,8 @@ export class DeclarativeTablePruner implements PruningHandler {
     this.defaultRetentionDays = policy.defaultRetentionDays;
   }
 
-  async countEligible(
-    connection: DatabaseConnection,
-    cutoff: Date,
-  ): Promise<number> {
-    const filter = this.policy.filterCondition
-      ? ` AND (${this.policy.filterCondition})`
-      : "";
+  async countEligible(connection: DatabaseConnection, cutoff: Date): Promise<number> {
+    const filter = this.policy.filterCondition ? ` AND (${this.policy.filterCondition})` : "";
     const sql = `SELECT COUNT(*) as count FROM ${this.policy.tableName} WHERE ${this.policy.timestampColumn} <= ?${filter}`;
     const rows = await connection.query<{
       count?: number;
@@ -70,9 +65,7 @@ export class DeclarativeTablePruner implements PruningHandler {
 
   async prune(ctx: PruningContext): Promise<PruningResult> {
     const start = performance.now();
-    const filter = this.policy.filterCondition
-      ? ` AND (${this.policy.filterCondition})`
-      : "";
+    const filter = this.policy.filterCondition ? ` AND (${this.policy.filterCondition})` : "";
     const deleteSql = `DELETE FROM ${this.policy.tableName} WHERE rowid IN (
       SELECT rowid FROM ${this.policy.tableName}
       WHERE ${this.policy.timestampColumn} <= ?${filter}
@@ -83,10 +76,7 @@ export class DeclarativeTablePruner implements PruningHandler {
     const isoCutoff = ctx.cutoffDate.toISOString();
 
     while (!ctx.signal?.aborted) {
-      const result = await ctx.connection.execute(deleteSql, [
-        isoCutoff,
-        ctx.batchSize,
-      ]);
+      const result = await ctx.connection.execute(deleteSql, [isoCutoff, ctx.batchSize]);
       if (result.rowsAffected === 0) break;
       rowsPruned += result.rowsAffected;
       if (result.rowsAffected < ctx.batchSize) break;

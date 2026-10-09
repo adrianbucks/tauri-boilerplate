@@ -23,15 +23,9 @@ import * as path from "node:path";
 import * as fs from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import ts from "typescript";
-import {
-  ManifestValidator,
-  DependencyResolver,
-} from "@platform/feature-system";
+import { ManifestValidator, DependencyResolver } from "@platform/feature-system";
 import type { FeatureManifest } from "@platform/feature-system";
-import {
-  scanFeaturePermissions,
-  buildPermissionConstantMap,
-} from "./scanner.js";
+import { scanFeaturePermissions, buildPermissionConstantMap } from "./scanner.js";
 import { checkPermissionCoverage } from "./checker.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -89,13 +83,9 @@ interface DiscoveredFeature {
   packageName: string;
 }
 
-async function discoverFeatures(
-  featuresDir: string,
-): Promise<DiscoveredFeature[]> {
+async function discoverFeatures(featuresDir: string): Promise<DiscoveredFeature[]> {
   if (!fs.existsSync(featuresDir)) {
-    console.error(
-      colour(c.red, `✖ Features directory not found: ${featuresDir}`),
-    );
+    console.error(colour(c.red, `✖ Features directory not found: ${featuresDir}`));
     process.exit(1);
   }
 
@@ -183,9 +173,7 @@ async function discoverFeatures(
 // Manifest extraction helpers
 // ---------------------------------------------------------------------------
 
-function findManifestExport(
-  mod: Record<string, unknown>,
-): FeatureManifest | null {
+function findManifestExport(mod: Record<string, unknown>): FeatureManifest | null {
   for (const key of Object.keys(mod)) {
     const val = mod[key];
     if (isFeatureManifest(val)) return val;
@@ -207,18 +195,10 @@ function isFeatureManifest(val: unknown): val is FeatureManifest {
  * Parses the manifest statically from its TypeScript source when no compiled
  * output is available or import fails. Uses TypeScript AST and constant resolution.
  */
-function parseManifestStatically(
-  manifestPath: string,
-  srcDir: string,
-): FeatureManifest | null {
+function parseManifestStatically(manifestPath: string, srcDir: string): FeatureManifest | null {
   try {
     const source = fs.readFileSync(manifestPath, "utf8");
-    const sourceFile = ts.createSourceFile(
-      manifestPath,
-      source,
-      ts.ScriptTarget.Latest,
-      true,
-    );
+    const sourceFile = ts.createSourceFile(manifestPath, source, ts.ScriptTarget.Latest, true);
 
     // Find all .ts files in srcDir to build constant map
     const sourceFiles: string[] = [];
@@ -226,10 +206,7 @@ function parseManifestStatically(
       for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
         const full = path.join(dir, entry.name);
         if (entry.isDirectory()) collectTsFiles(full);
-        else if (
-          entry.isFile() &&
-          (entry.name.endsWith(".ts") || entry.name.endsWith(".tsx"))
-        ) {
+        else if (entry.isFile() && (entry.name.endsWith(".ts") || entry.name.endsWith(".tsx"))) {
           sourceFiles.push(full);
         }
       }
@@ -242,17 +219,10 @@ function parseManifestStatically(
 
     function visit(node: ts.Node): void {
       if (ts.isPropertyAssignment(node) && ts.isIdentifier(node.name)) {
-        if (
-          node.name.text === "id" &&
-          ts.isStringLiteral(node.initializer) &&
-          !featureId
-        ) {
+        if (node.name.text === "id" && ts.isStringLiteral(node.initializer) && !featureId) {
           featureId = node.initializer.text;
         }
-        if (
-          node.name.text === "permissions" &&
-          ts.isArrayLiteralExpression(node.initializer)
-        ) {
+        if (node.name.text === "permissions" && ts.isArrayLiteralExpression(node.initializer)) {
           for (const elem of node.initializer.elements) {
             if (ts.isObjectLiteralExpression(elem)) {
               for (const prop of elem.properties) {
@@ -311,9 +281,7 @@ async function main(): Promise<void> {
   const { featuresDir, verbose } = parseArgs(argv);
 
   console.log(colour(c.bold, "\n🔍 Feature Manifest & Permission Validator"));
-  console.log(
-    colour(c.dim, `   WP-021 — Build-Time Feature Permission Enforcement Gate`),
-  );
+  console.log(colour(c.dim, `   WP-021 — Build-Time Feature Permission Enforcement Gate`));
   console.log(colour(c.dim, `   Features directory: ${featuresDir}\n`));
 
   // -------------------------------------------------------------------
@@ -322,9 +290,7 @@ async function main(): Promise<void> {
   const features = await discoverFeatures(featuresDir);
 
   if (features.length === 0) {
-    console.log(
-      colour(c.yellow, "⚠  No features discovered. Nothing to validate."),
-    );
+    console.log(colour(c.yellow, "⚠  No features discovered. Nothing to validate."));
     process.exit(0);
   }
 
@@ -338,9 +304,7 @@ async function main(): Promise<void> {
   // -------------------------------------------------------------------
   // 2. Manifest schema & dependency validation
   // -------------------------------------------------------------------
-  console.log(
-    colour(c.bold, "Phase 1: Manifest schema & dependency validation"),
-  );
+  console.log(colour(c.bold, "Phase 1: Manifest schema & dependency validation"));
   let manifestErrors = 0;
 
   for (const feature of features) {
@@ -376,16 +340,12 @@ async function main(): Promise<void> {
   // -------------------------------------------------------------------
   // 3. Source-level permission coverage scan
   // -------------------------------------------------------------------
-  console.log(
-    colour(c.bold, "\nPhase 2: Source-level permission coverage scan"),
-  );
+  console.log(colour(c.bold, "\nPhase 2: Source-level permission coverage scan"));
   let coverageErrors = 0;
   let totalWarnings = 0;
 
   for (const feature of features) {
-    console.log(
-      colour(c.cyan, `\n  Feature: ${feature.id} (${feature.packageName})`),
-    );
+    console.log(colour(c.cyan, `\n  Feature: ${feature.id} (${feature.packageName})`));
     console.log(colour(c.dim, `  Source:  ${feature.srcDir}`));
 
     const scanResult = scanFeaturePermissions(feature.srcDir);
@@ -398,9 +358,7 @@ async function main(): Promise<void> {
     // Print scan warnings (template literals, unresolvable references)
     for (const warning of checkResult.scanWarnings) {
       totalWarnings++;
-      console.warn(
-        colour(c.yellow, `  ⚠ [scan-warning] ${warning.file}:${warning.line}`),
-      );
+      console.warn(colour(c.yellow, `  ⚠ [scan-warning] ${warning.file}:${warning.line}`));
       console.warn(colour(c.dim, `      ${warning.message}`));
     }
 
@@ -445,19 +403,12 @@ async function main(): Promise<void> {
   // -------------------------------------------------------------------
   // 4. Summary
   // -------------------------------------------------------------------
-  console.log(
-    colour(c.bold, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"),
-  );
+  console.log(colour(c.bold, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"));
 
   const totalErrors = manifestErrors + coverageErrors;
 
   if (totalErrors === 0) {
-    console.log(
-      colour(
-        c.green,
-        `\n✅ All ${features.length} feature(s) passed validation.`,
-      ),
-    );
+    console.log(colour(c.green, `\n✅ All ${features.length} feature(s) passed validation.`));
     if (totalWarnings > 0) {
       console.log(
         colour(
@@ -476,31 +427,15 @@ async function main(): Promise<void> {
       ),
     );
     if (manifestErrors > 0) {
-      console.error(
-        colour(
-          c.red,
-          `   • ${manifestErrors} manifest schema/dependency error(s)`,
-        ),
-      );
+      console.error(colour(c.red, `   • ${manifestErrors} manifest schema/dependency error(s)`));
     }
     if (coverageErrors > 0) {
+      console.error(colour(c.red, `   • ${coverageErrors} undeclared permission reference(s)`));
       console.error(
-        colour(
-          c.red,
-          `   • ${coverageErrors} undeclared permission reference(s)`,
-        ),
+        colour(c.dim, `\n   Fix: Add the missing permission(s) to manifest.permissions[],`),
       );
       console.error(
-        colour(
-          c.dim,
-          `\n   Fix: Add the missing permission(s) to manifest.permissions[],`,
-        ),
-      );
-      console.error(
-        colour(
-          c.dim,
-          `   or remove the call site if the permission is no longer needed.\n`,
-        ),
+        colour(c.dim, `   or remove the call site if the permission is no longer needed.\n`),
       );
     }
     console.log();

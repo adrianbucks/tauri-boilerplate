@@ -209,8 +209,7 @@ export class HandshakeValidator {
     if (!result.valid) {
       throw new ValidationError({
         message: `Handshake verification failed: ${result.reason} (${result.code})`,
-        userMessage:
-          "Peer handshake rejected due to compatibility or security constraints",
+        userMessage: "Peer handshake rejected due to compatibility or security constraints",
         correlationId,
       });
     }
@@ -226,8 +225,7 @@ export class HandshakeValidator {
       if (!sigValid) {
         throw new ValidationError({
           message: `Handshake signature verification failed for device '${message.deviceId}': cryptographic signature is invalid`,
-          userMessage:
-            "Peer handshake rejected: cryptographic signature is invalid",
+          userMessage: "Peer handshake rejected: cryptographic signature is invalid",
           correlationId,
         });
       }

@@ -1,8 +1,5 @@
 import { ValidationError } from "@platform/core";
-import type {
-  FeatureManifest,
-  MigrationDefinition,
-} from "../manifest/FeatureManifest.js";
+import type { FeatureManifest, MigrationDefinition } from "../manifest/FeatureManifest.js";
 
 export interface ResolvedFeatureGraph {
   readonly orderedManifests: FeatureManifest[];
@@ -104,9 +101,7 @@ export class DependencyResolver {
       migration: MigrationDefinition;
     }[] = [];
     for (const manifest of order) {
-      const sortedMigs = [...manifest.migrations].sort(
-        (a, b) => a.version - b.version,
-      );
+      const sortedMigs = [...manifest.migrations].sort((a, b) => a.version - b.version);
       for (const migration of sortedMigs) {
         orderedMigrations.push({ featureId: manifest.id, migration });
       }

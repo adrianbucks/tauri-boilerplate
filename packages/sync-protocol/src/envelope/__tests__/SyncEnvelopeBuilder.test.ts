@@ -94,18 +94,18 @@ describe("SyncEnvelopeBuilder", () => {
       const op = makeOperation();
       const signFn = async (_bytes: Uint8Array) => FAKE_SIG;
 
-      await expect(
-        SyncEnvelopeBuilder.build(op, "not_a_valid_key", signFn),
-      ).rejects.toThrow("Invalid signer public key format");
+      await expect(SyncEnvelopeBuilder.build(op, "not_a_valid_key", signFn)).rejects.toThrow(
+        "Invalid signer public key format",
+      );
     });
 
     it("rejects if signFn returns an invalid signature format", async () => {
       const op = makeOperation();
       const badSignFn = async (_bytes: Uint8Array) => "tooshort";
 
-      await expect(
-        SyncEnvelopeBuilder.build(op, FAKE_PK, badSignFn),
-      ).rejects.toThrow("Invalid signature format");
+      await expect(SyncEnvelopeBuilder.build(op, FAKE_PK, badSignFn)).rejects.toThrow(
+        "Invalid signature format",
+      );
     });
   });
 
@@ -115,8 +115,7 @@ describe("SyncEnvelopeBuilder", () => {
       const signFn = async (_bytes: Uint8Array) => FAKE_SIG;
       const envelope = await SyncEnvelopeBuilder.build(op, FAKE_PK, signFn);
 
-      const verifyFn = async (_pk: string, _bytes: Uint8Array, _sig: string) =>
-        true;
+      const verifyFn = async (_pk: string, _bytes: Uint8Array, _sig: string) => true;
       const isValid = await SyncEnvelopeBuilder.verify(envelope, verifyFn);
       expect(isValid).toBe(true);
     });
@@ -126,8 +125,7 @@ describe("SyncEnvelopeBuilder", () => {
       const signFn = async (_bytes: Uint8Array) => FAKE_SIG;
       const envelope = await SyncEnvelopeBuilder.build(op, FAKE_PK, signFn);
 
-      const verifyFn = async (_pk: string, _bytes: Uint8Array, _sig: string) =>
-        false;
+      const verifyFn = async (_pk: string, _bytes: Uint8Array, _sig: string) => false;
       const isValid = await SyncEnvelopeBuilder.verify(envelope, verifyFn);
       expect(isValid).toBe(false);
     });

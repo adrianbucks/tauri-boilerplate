@@ -76,9 +76,7 @@ export function AdminPage() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">
-          Identity & Access Admin
-        </h1>
+        <h1 className="text-3xl font-bold tracking-tight">Identity & Access Admin</h1>
         <p className="text-muted-foreground mt-1">
           Manage users, device approvals, and sync group memberships.
         </p>
@@ -89,8 +87,8 @@ export function AdminPage() {
         <AlertTitle>Demo Mode</AlertTitle>
         <AlertDescription>
           This page displays representative mock data. In a full Tauri build,{" "}
-          <code>IdentityAdminService</code> performs live operations against the
-          native SQLite database, emitting audit events for every change.
+          <code>IdentityAdminService</code> performs live operations against the native SQLite
+          database, emitting audit events for every change.
         </AlertDescription>
       </Alert>
 
@@ -101,9 +99,7 @@ export function AdminPage() {
             <Users className="h-5 w-5 text-primary" />
             <CardTitle>Users</CardTitle>
           </div>
-          <CardDescription>
-            All user accounts in the primary organisation
-          </CardDescription>
+          <CardDescription>All user accounts in the primary organisation</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
@@ -114,15 +110,11 @@ export function AdminPage() {
               >
                 <div>
                   <div className="font-medium text-sm">{user.displayName}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {user.email}
-                  </div>
+                  <div className="text-xs text-muted-foreground">{user.email}</div>
                 </div>
                 <div className="flex items-center gap-2">
                   <Badge variant="outline">{user.role}</Badge>
-                  <Badge
-                    variant={user.status === "ACTIVE" ? "success" : "warning"}
-                  >
+                  <Badge variant={user.status === "ACTIVE" ? "success" : "warning"}>
                     {user.status}
                   </Badge>
                 </div>
@@ -139,9 +131,7 @@ export function AdminPage() {
             <Laptop className="h-5 w-5 text-primary" />
             <CardTitle>Device Registry</CardTitle>
           </div>
-          <CardDescription>
-            All registered devices and their pairing status
-          </CardDescription>
+          <CardDescription>All registered devices and their pairing status</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
@@ -152,9 +142,7 @@ export function AdminPage() {
               >
                 <div>
                   <div className="font-medium text-sm">{device.name}</div>
-                  <div className="text-xs text-muted-foreground font-mono">
-                    {device.deviceId}
-                  </div>
+                  <div className="text-xs text-muted-foreground font-mono">{device.deviceId}</div>
                   <div className="text-xs text-muted-foreground mt-0.5">
                     Last seen: {new Date(device.lastSeen).toLocaleString()}
                   </div>
@@ -166,9 +154,7 @@ export function AdminPage() {
                       Pending Approval
                     </Badge>
                   )}
-                  {device.status === "APPROVED" && (
-                    <Badge variant="success">Approved</Badge>
-                  )}
+                  {device.status === "APPROVED" && <Badge variant="success">Approved</Badge>}
                   {device.status === "REVOKED" && (
                     <Badge variant="destructive">
                       <ShieldOff className="h-3 w-3 mr-1" />
@@ -218,11 +204,8 @@ export function AdminPage() {
                 <div>
                   <div className="font-medium text-sm">{group.name}</div>
                   <div className="text-xs text-muted-foreground">
-                    {group.members} member{group.members !== 1 ? "s" : ""} ·
-                    Conflict policy:{" "}
-                    <code className="bg-muted px-1 rounded">
-                      {group.policy}
-                    </code>
+                    {group.members} member{group.members !== 1 ? "s" : ""} · Conflict policy:{" "}
+                    <code className="bg-muted px-1 rounded">{group.policy}</code>
                   </div>
                 </div>
                 <Badge variant="success">{group.status}</Badge>

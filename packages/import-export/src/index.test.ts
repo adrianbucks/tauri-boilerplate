@@ -37,10 +37,7 @@ describe("@platform/import-export", () => {
     validateRow: (row, rowIndex) => {
       const sku = String(row["sku"] ?? row["SKU"] ?? "").trim();
       const name = String(row["name"] ?? row["Item Name"] ?? "").trim();
-      const qty = parseInt(
-        String(row["quantity"] ?? row["Quantity"] ?? "0"),
-        10,
-      );
+      const qty = parseInt(String(row["quantity"] ?? row["Quantity"] ?? "0"), 10);
 
       if (!sku) {
         return {
@@ -125,9 +122,7 @@ describe("@platform/import-export", () => {
   });
 
   it("exports records to XLSX binary buffer", () => {
-    const items: TestItem[] = [
-      { id: "1", sku: "SKU-001", name: "Standard Bolt", quantity: 50 },
-    ];
+    const items: TestItem[] = [{ id: "1", sku: "SKU-001", name: "Standard Bolt", quantity: 50 }];
 
     const buffer = ExportEngine.toXlsx(items, testExportDef);
     expect(buffer).toBeInstanceOf(Uint8Array);
@@ -147,21 +142,14 @@ describe("@platform/import-export", () => {
       raw: false,
     });
     const sheet = workbook.Sheets[workbook.SheetNames[0]!]!;
-    expect(XLSX.utils.sheet_to_json<{ Value: string }>(sheet)[0]?.Value).toBe(
-      "'=SUM(A1:A2)",
-    );
+    expect(XLSX.utils.sheet_to_json<{ Value: string }>(sheet)[0]?.Value).toBe("'=SUM(A1:A2)");
   });
 
   it("imports valid CSV buffer, commits atomically, and emits audit events", async () => {
-    const csvContent =
-      "SKU,Item Name,Quantity\r\nSKU-A1,Widget Alpha,25\r\nSKU-B2,Widget Beta,40";
+    const csvContent = "SKU,Item Name,Quantity\r\nSKU-A1,Widget Alpha,25\r\nSKU-B2,Widget Beta,40";
     const buffer = new TextEncoder().encode(csvContent);
 
-    const summary = await importEngine.executeImport(
-      buffer,
-      testImportDef,
-      ctx,
-    );
+    const summary = await importEngine.executeImport(buffer, testImportDef, ctx);
 
     expect(summary.successfulRows).toBe(2);
     expect(summary.failedRows).toBe(0);
@@ -173,12 +161,8 @@ describe("@platform/import-export", () => {
     const auditEvents = await db.query<{ event_type: string }>(
       "SELECT event_type FROM core_audit_events",
     );
-    expect(auditEvents.some((e) => e.event_type === "IMPORT_STARTED")).toBe(
-      true,
-    );
-    expect(auditEvents.some((e) => e.event_type === "IMPORT_COMPLETED")).toBe(
-      true,
-    );
+    expect(auditEvents.some((e) => e.event_type === "IMPORT_STARTED")).toBe(true);
+    expect(auditEvents.some((e) => e.event_type === "IMPORT_COMPLETED")).toBe(true);
   });
 
   it("validates a buffer without opening a transaction or emitting audit events", () => {
@@ -205,15 +189,12 @@ describe("@platform/import-export", () => {
   it("rejects worksheets above the configured row limit", () => {
     const csvContent = [
       "SKU,Item Name,Quantity",
-      ...Array.from(
-        { length: 10_001 },
-        (_, index) => `SKU-${index},Widget ${index},1`,
-      ),
+      ...Array.from({ length: 10_001 }, (_, index) => `SKU-${index},Widget ${index},1`),
     ].join("\r\n");
 
-    expect(() =>
-      importEngine.parseBuffer(new TextEncoder().encode(csvContent)),
-    ).toThrow("Worksheet exceeds the maximum row count");
+    expect(() => importEngine.parseBuffer(new TextEncoder().encode(csvContent))).toThrow(
+      "Worksheet exceeds the maximum row count",
+    );
   });
 
   it("rejects workbooks above the configured sheet limit", () => {
@@ -236,20 +217,16 @@ describe("@platform/import-export", () => {
     const oversizedCell = "x".repeat(64 * 1024 + 1);
     const csvContent = `Value\r\n${oversizedCell}`;
 
-    expect(() =>
-      importEngine.parseBuffer(new TextEncoder().encode(csvContent)),
-    ).toThrow("Worksheet contains an oversized cell");
+    expect(() => importEngine.parseBuffer(new TextEncoder().encode(csvContent))).toThrow(
+      "Worksheet contains an oversized cell",
+    );
   });
 
   it("aborts import transaction on validation failure with error report", async () => {
     const csvContent = "SKU,Item Name,Quantity\r\n,Missing SKU Widget,25";
     const buffer = new TextEncoder().encode(csvContent);
 
-    const summary = await importEngine.executeImport(
-      buffer,
-      testImportDef,
-      ctx,
-    );
+    const summary = await importEngine.executeImport(buffer, testImportDef, ctx);
 
     expect(summary.successfulRows).toBe(0);
     expect(summary.failedRows).toBe(1);

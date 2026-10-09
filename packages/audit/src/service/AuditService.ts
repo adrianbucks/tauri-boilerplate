@@ -1,10 +1,6 @@
 import { getUtcIsoTimestamp, generateCorrelationId } from "@platform/core";
 import type { DatabaseConnection, TransactionClient } from "@platform/database";
-import type {
-  AuditEvent,
-  EmitAuditEventInput,
-  AuditEventType,
-} from "../types.js";
+import type { AuditEvent, EmitAuditEventInput, AuditEventType } from "../types.js";
 
 export interface QueryAuditOptions {
   eventType?: AuditEventType | undefined;
@@ -22,10 +18,7 @@ export class AuditService {
     this.db = db;
   }
 
-  async emit(
-    input: EmitAuditEventInput,
-    tx?: TransactionClient,
-  ): Promise<AuditEvent> {
+  async emit(input: EmitAuditEventInput, tx?: TransactionClient): Promise<AuditEvent> {
     const executor = tx ?? this.db;
     const id = generateCorrelationId("aud");
     const timestamp = getUtcIsoTimestamp();
@@ -56,9 +49,7 @@ export class AuditService {
       organisationId: input.organisationId,
       correlationId: input.correlationId,
       timestamp,
-      metadata: input.metadata
-        ? Object.freeze({ ...input.metadata })
-        : undefined,
+      metadata: input.metadata ? Object.freeze({ ...input.metadata }) : undefined,
     };
   }
 

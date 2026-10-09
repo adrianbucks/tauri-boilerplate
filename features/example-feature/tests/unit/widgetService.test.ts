@@ -37,10 +37,10 @@ describe("@features/example-feature", () => {
       WIDGET_PERMISSIONS.UPDATE,
       WIDGET_PERMISSIONS.DELETE,
     ]) {
-      await database.execute(
-        `INSERT OR IGNORE INTO core_permissions (id, name) VALUES (?, ?)`,
-        [perm, perm],
-      );
+      await database.execute(`INSERT OR IGNORE INTO core_permissions (id, name) VALUES (?, ?)`, [
+        perm,
+        perm,
+      ]);
       await database.execute(
         `INSERT OR IGNORE INTO core_role_permissions (id, role_id, permission_id) VALUES (?, ?, ?)`,
         [`${roleId}_${perm}`, roleId, perm],
@@ -194,13 +194,11 @@ describe("@features/example-feature", () => {
       );
 
       await expect(service.getWidgetById(widget.id, ctx)).resolves.toBeNull();
-      await expect(
-        service.updateWidget(widget.id, { quantity: 10 }, ctx),
-      ).rejects.toThrow("not found");
+      await expect(service.updateWidget(widget.id, { quantity: 10 }, ctx)).rejects.toThrow(
+        "not found",
+      );
       await service.deleteWidget(widget.id, ctx);
-      await expect(
-        service.getWidgetById(widget.id, otherOrganisationCtx),
-      ).resolves.toEqual(
+      await expect(service.getWidgetById(widget.id, otherOrganisationCtx)).resolves.toEqual(
         expect.objectContaining({ quantity: 5, deleted_at: null }),
       );
     });

@@ -12,11 +12,7 @@ import { SyncManager, OutboxService, TombstoneService } from "@platform/sync";
 import type { SyncEnvelope } from "@platform/sync-protocol";
 import { NotesRepository } from "./NotesRepository.js";
 import { NOTES_PERMISSIONS } from "./NotesManifest.js";
-import type {
-  NoteRecord,
-  CreateNoteInput,
-  UpdateNoteInput,
-} from "./NotesTypes.js";
+import type { NoteRecord, CreateNoteInput, UpdateNoteInput } from "./NotesTypes.js";
 
 export interface NotesServiceOptions {
   db: DatabaseConnection;
@@ -38,9 +34,7 @@ export class NotesService {
     this.repo = new NotesRepository(options.db);
     this.auth = options.auth ?? new AuthorizationEngine(options.db);
     this.outbox =
-      options.outbox ??
-      options.sync?.getOutboxService() ??
-      new OutboxService(options.db);
+      options.outbox ?? options.sync?.getOutboxService() ?? new OutboxService(options.db);
     this.tombstones = options.tombstones ?? new TombstoneService(options.db);
   }
 
@@ -74,9 +68,7 @@ export class NotesService {
       tx,
     );
     if (!decision.granted) {
-      throw new Error(
-        `Subject does not hold permission '${permission}': ${decision.reason}`,
-      );
+      throw new Error(`Subject does not hold permission '${permission}': ${decision.reason}`);
     }
   }
 

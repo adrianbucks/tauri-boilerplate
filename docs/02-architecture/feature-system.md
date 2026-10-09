@@ -81,10 +81,7 @@ Features are registered **explicitly** at application startup. No magic file dis
 ```typescript
 // apps/demo/src/bootstrap/features.ts
 import { platform } from "@platform/platform";
-import {
-  exampleFeatureManifest,
-  exampleFeatureRoutes,
-} from "@features/example-feature";
+import { exampleFeatureManifest, exampleFeatureRoutes } from "@features/example-feature";
 import { organisationsManifest } from "@features/organisations";
 import { identityAdminManifest } from "@features/identity-admin";
 
@@ -225,9 +222,7 @@ Features communicate through services, not direct database access:
 const warehouse = await warehouseService.findById(warehouseId, ctx);
 
 // ❌ Forbidden: Feature B queries Feature A's tables directly
-const warehouse = await db.query("SELECT * FROM warehouse_sites WHERE id = ?", [
-  id,
-]);
+const warehouse = await db.query("SELECT * FROM warehouse_sites WHERE id = ?", [id]);
 ```
 
 Optional dependencies allow a feature to behave differently based on whether another feature is installed:

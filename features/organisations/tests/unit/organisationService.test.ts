@@ -35,10 +35,10 @@ describe("@features/organisations", () => {
       ORGANISATION_PERMISSIONS.READ,
       ORGANISATION_PERMISSIONS.MANAGE,
     ]) {
-      await database.execute(
-        `INSERT OR IGNORE INTO core_permissions (id, name) VALUES (?, ?)`,
-        [perm, perm],
-      );
+      await database.execute(`INSERT OR IGNORE INTO core_permissions (id, name) VALUES (?, ?)`, [
+        perm,
+        perm,
+      ]);
       await database.execute(
         `INSERT OR IGNORE INTO core_role_permissions (id, role_id, permission_id) VALUES (?, ?, ?)`,
         [`${roleId}_${perm}`, roleId, perm],
@@ -124,18 +124,12 @@ describe("@features/organisations", () => {
 
     // Reject duplicate domain
     await expect(
-      service.createOrganisation(
-        { name: "Acme Corp", domain: "acme.com" },
-        ctx,
-      ),
+      service.createOrganisation({ name: "Acme Corp", domain: "acme.com" }, ctx),
     ).rejects.toThrow("already exists");
   });
 
   it("updates organisation name and settings", async () => {
-    const org = await service.createOrganisation(
-      { name: "Beta Corp", domain: "beta.com" },
-      ctx,
-    );
+    const org = await service.createOrganisation({ name: "Beta Corp", domain: "beta.com" }, ctx);
     await grantOrgPermissions(db, ctx.userId!, org.id);
 
     const organisationCtx = createOperationContext({
@@ -155,10 +149,7 @@ describe("@features/organisations", () => {
   });
 
   it("scopes organisation reads and updates to the operation context", async () => {
-    const own = await service.createOrganisation(
-      { name: "Org A", domain: "a.com" },
-      ctx,
-    );
+    const own = await service.createOrganisation({ name: "Org A", domain: "a.com" }, ctx);
     const other = await service.createOrganisation(
       { name: "Org B", domain: "b.com" },
       otherOrganisationCtx,
@@ -174,15 +165,9 @@ describe("@features/organisations", () => {
     const orgs = await service.listOrganisations(ownOrganisationCtx);
     expect(orgs).toHaveLength(1);
     expect(orgs[0]?.id).toBe(own.id);
+    await expect(service.getOrganisationById(other.id, ownOrganisationCtx)).resolves.toBeNull();
     await expect(
-      service.getOrganisationById(other.id, ownOrganisationCtx),
-    ).resolves.toBeNull();
-    await expect(
-      service.updateOrganisation(
-        other.id,
-        { name: "Tampered" },
-        ownOrganisationCtx,
-      ),
+      service.updateOrganisation(other.id, { name: "Tampered" }, ownOrganisationCtx),
     ).rejects.toThrow("not found");
   });
 

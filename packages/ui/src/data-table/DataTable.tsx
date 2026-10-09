@@ -89,17 +89,10 @@ export function DataTable<TData>({
                   <TableHead
                     key={header.id}
                     onClick={header.column.getToggleSortingHandler()}
-                    className={
-                      header.column.getCanSort()
-                        ? "cursor-pointer select-none"
-                        : ""
-                    }
+                    className={header.column.getCanSort() ? "cursor-pointer select-none" : ""}
                   >
                     <div className="flex items-center gap-1.5 font-semibold">
-                      {flexRender(
-                        header.column.columnDef.header,
-                        header.getContext(),
-                      )}
+                      {flexRender(header.column.columnDef.header, header.getContext())}
                       {header.column.getCanSort() && (
                         <span>
                           {header.column.getIsSorted() === "asc" ? (
@@ -136,10 +129,7 @@ export function DataTable<TData>({
                 >
                   {row.getVisibleCells().map((cell) => (
                     <TableCell key={cell.id}>
-                      {flexRender(
-                        cell.column.columnDef.cell,
-                        cell.getContext(),
-                      )}
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </TableCell>
                   ))}
                 </TableRow>
@@ -161,8 +151,7 @@ export function DataTable<TData>({
             Previous
           </Button>
           <span className="text-xs text-muted-foreground px-2">
-            Page {table.getState().pagination.pageIndex + 1} of{" "}
-            {table.getPageCount()}
+            Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount()}
           </span>
           <Button
             variant="outline"

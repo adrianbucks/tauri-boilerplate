@@ -3,9 +3,7 @@ import type { SyncState } from "../types.js";
 
 export class SyncStateMachine {
   private currentState: SyncState = "DISCONNECTED";
-  private readonly listeners = new Set<
-    (newState: SyncState, oldState: SyncState) => void
-  >();
+  private readonly listeners = new Set<(newState: SyncState, oldState: SyncState) => void>();
 
   getState(): SyncState {
     return this.currentState;
@@ -30,9 +28,7 @@ export class SyncStateMachine {
     }
   }
 
-  onStateChange(
-    listener: (newState: SyncState, oldState: SyncState) => void,
-  ): () => void {
+  onStateChange(listener: (newState: SyncState, oldState: SyncState) => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   }

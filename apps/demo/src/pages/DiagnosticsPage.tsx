@@ -39,10 +39,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import type { SyncOperation } from "@platform/sync-protocol";
-import type {
-  PruningCandidateStats,
-  MaintenanceReport,
-} from "@platform/maintenance";
+import type { PruningCandidateStats, MaintenanceReport } from "@platform/maintenance";
 import { usePlatform } from "../hooks/usePlatform.js";
 import type {
   NativeDatabaseHealth,
@@ -83,11 +80,7 @@ function DiagnosticRow({
         <span className="text-foreground mt-0.5 sm:mt-0">{icon}</span>
         <div>
           <span className="font-medium text-foreground">{label}</span>
-          {description && (
-            <p className="text-xs text-muted-foreground mt-0.5">
-              {description}
-            </p>
-          )}
+          {description && <p className="text-xs text-muted-foreground mt-0.5">{description}</p>}
         </div>
       </div>
       <div className="flex items-center gap-2 self-end sm:self-auto">
@@ -110,11 +103,7 @@ function DiagnosticRow({
         )}
         <div
           className={`h-2 w-2 shrink-0 rounded-full ${
-            status === "ok"
-              ? "bg-emerald-500"
-              : status === "warn"
-                ? "bg-amber-500"
-                : "bg-red-500"
+            status === "ok" ? "bg-emerald-500" : status === "warn" ? "bg-amber-500" : "bg-red-500"
           }`}
         />
       </div>
@@ -135,11 +124,9 @@ export function DiagnosticsPage() {
   const syncDiagnostics = platform?.sync.getDiagnostics() ?? [];
 
   const [dbHealth, setDbHealth] = useState<NativeDatabaseHealth | null>(null);
-  const [deviceIdentity, setDeviceIdentity] =
-    useState<NativeDeviceIdentity | null>(null);
+  const [deviceIdentity, setDeviceIdentity] = useState<NativeDeviceIdentity | null>(null);
   const [bgStatus, setBgStatus] = useState<NativeBackgroundStatus | null>(null);
-  const [syncEndpoint, setSyncEndpoint] =
-    useState<NativeSyncEndpointInfo | null>(null);
+  const [syncEndpoint, setSyncEndpoint] = useState<NativeSyncEndpointInfo | null>(null);
   const [tableCounts, setTableCounts] = useState<TableCounts>({
     outboxPending: 0,
     inboxTotal: 0,
@@ -150,12 +137,9 @@ export function DiagnosticsPage() {
   const [syncTriggering, setSyncTriggering] = useState(false);
   const [lastRefreshed, setLastRefreshed] = useState<Date>(new Date());
 
-  const [maintenanceStats, setMaintenanceStats] = useState<
-    PruningCandidateStats[]
-  >([]);
+  const [maintenanceStats, setMaintenanceStats] = useState<PruningCandidateStats[]>([]);
   const [isCompacting, setIsCompacting] = useState(false);
-  const [maintenanceReport, setMaintenanceReport] =
-    useState<MaintenanceReport | null>(null);
+  const [maintenanceReport, setMaintenanceReport] = useState<MaintenanceReport | null>(null);
 
   const [peerInput, setPeerInput] = useState("");
   const [isConnecting, setIsConnecting] = useState(false);
@@ -396,12 +380,10 @@ export function DiagnosticsPage() {
       {/* Header and Action Toolbar */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">
-            Diagnostics & Telemetry
-          </h1>
+          <h1 className="text-3xl font-bold tracking-tight">Diagnostics & Telemetry</h1>
           <p className="text-muted-foreground mt-1">
-            Real-time native platform health, durable SQLite metrics,
-            cryptographic custody, and P2P transport state.
+            Real-time native platform health, durable SQLite metrics, cryptographic custody, and P2P
+            transport state.
           </p>
         </div>
         <div className="flex items-center gap-2.5">
@@ -412,9 +394,7 @@ export function DiagnosticsPage() {
             disabled={isLoading}
             className="gap-1.5"
           >
-            <RefreshCw
-              className={`h-3.5 w-3.5 ${isLoading ? "animate-spin" : ""}`}
-            />
+            <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? "animate-spin" : ""}`} />
             Refresh
           </Button>
           <Button
@@ -424,9 +404,7 @@ export function DiagnosticsPage() {
             disabled={syncTriggering}
             className="gap-1.5"
           >
-            <Play
-              className={`h-3.5 w-3.5 ${syncTriggering ? "animate-pulse" : ""}`}
-            />
+            <Play className={`h-3.5 w-3.5 ${syncTriggering ? "animate-pulse" : ""}`} />
             Trigger Sync Now
           </Button>
         </div>
@@ -435,9 +413,7 @@ export function DiagnosticsPage() {
       {!isReady && (
         <Alert variant="warning">
           <AlertTitle>Platform Initialising</AlertTitle>
-          <AlertDescription>
-            Waiting for the platform to complete bootstrap...
-          </AlertDescription>
+          <AlertDescription>Waiting for the platform to complete bootstrap...</AlertDescription>
         </Alert>
       )}
 
@@ -469,17 +445,14 @@ export function DiagnosticsPage() {
         <Card className="bg-card/50">
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
-              <div className="text-xs font-medium text-muted-foreground">
-                SQLite Storage
-              </div>
+              <div className="text-xs font-medium text-muted-foreground">SQLite Storage</div>
               <Database className="h-4 w-4 text-emerald-500" />
             </div>
             <div className="mt-2 text-2xl font-bold">
               {dbHealth ? dbHealth.journal_mode.toUpperCase() : "Connecting..."}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              FK Constraints:{" "}
-              {dbHealth?.foreign_keys_enabled ? "Enforced" : "Disabled"}
+              FK Constraints: {dbHealth?.foreign_keys_enabled ? "Enforced" : "Disabled"}
             </p>
           </CardContent>
         </Card>
@@ -487,52 +460,36 @@ export function DiagnosticsPage() {
         <Card className="bg-card/50">
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
-              <div className="text-xs font-medium text-muted-foreground">
-                Device Identity
-              </div>
+              <div className="text-xs font-medium text-muted-foreground">Device Identity</div>
               <Key className="h-4 w-4 text-primary" />
             </div>
             <div className="mt-2 text-2xl font-bold font-mono truncate">
-              {deviceIdentity
-                ? deviceIdentity.device_id.slice(0, 12) + "..."
-                : "Loading..."}
+              {deviceIdentity ? deviceIdentity.device_id.slice(0, 12) + "..." : "Loading..."}
             </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Native Ed25519 Custody
-            </p>
+            <p className="text-xs text-muted-foreground mt-1">Native Ed25519 Custody</p>
           </CardContent>
         </Card>
 
         <Card className="bg-card/50">
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
-              <div className="text-xs font-medium text-muted-foreground">
-                P2P Replication
-              </div>
+              <div className="text-xs font-medium text-muted-foreground">P2P Replication</div>
               <Radio className="h-4 w-4 text-indigo-400" />
             </div>
             <div className="mt-2 text-2xl font-bold">{syncState}</div>
-            <p className="text-xs text-muted-foreground mt-1">
-              ALPN: tauri-boilerplate-sync/1.0
-            </p>
+            <p className="text-xs text-muted-foreground mt-1">ALPN: tauri-boilerplate-sync/1.0</p>
           </CardContent>
         </Card>
 
         <Card className="bg-card/50">
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
-              <div className="text-xs font-medium text-muted-foreground">
-                Pending Outbox
-              </div>
+              <div className="text-xs font-medium text-muted-foreground">Pending Outbox</div>
               <Layers className="h-4 w-4 text-amber-500" />
             </div>
-            <div className="mt-2 text-2xl font-bold">
-              {tableCounts.outboxPending}
-            </div>
+            <div className="mt-2 text-2xl font-bold">{tableCounts.outboxPending}</div>
             <p className="text-xs text-muted-foreground mt-1">
-              {bgStatus?.running
-                ? "Scheduler: Running (5s)"
-                : "Scheduler: Idle"}
+              {bgStatus?.running ? "Scheduler: Running (5s)" : "Scheduler: Idle"}
             </p>
           </CardContent>
         </Card>
@@ -548,18 +505,12 @@ export function DiagnosticsPage() {
                 Durable Native SQLite Engine (WP-001 / Gate G-01)
               </CardTitle>
               <CardDescription>
-                File-backed native persistence via rusqlite with WAL mode and
-                foreign key constraints
+                File-backed native persistence via rusqlite with WAL mode and foreign key
+                constraints
               </CardDescription>
             </div>
-            <Badge
-              variant={
-                dbHealth?.integrity_check === "ok" ? "success" : "warning"
-              }
-            >
-              {dbHealth?.integrity_check === "ok"
-                ? "Integrity OK"
-                : "Unverified"}
+            <Badge variant={dbHealth?.integrity_check === "ok" ? "success" : "warning"}>
+              {dbHealth?.integrity_check === "ok" ? "Integrity OK" : "Unverified"}
             </Badge>
           </div>
         </CardHeader>
@@ -581,9 +532,7 @@ export function DiagnosticsPage() {
           <DiagnosticRow
             label="Journal Mode"
             value={
-              dbHealth
-                ? `${dbHealth.journal_mode.toUpperCase()} (Write-Ahead Logging)`
-                : "WAL"
+              dbHealth ? `${dbHealth.journal_mode.toUpperCase()} (Write-Ahead Logging)` : "WAL"
             }
             icon={<Activity className="h-4 w-4" />}
             status="ok"
@@ -592,9 +541,7 @@ export function DiagnosticsPage() {
           <DiagnosticRow
             label="Foreign Key Enforcement"
             value={
-              dbHealth?.foreign_keys_enabled
-                ? "PRAGMA foreign_keys = ON (Active)"
-                : "Disabled"
+              dbHealth?.foreign_keys_enabled ? "PRAGMA foreign_keys = ON (Active)" : "Disabled"
             }
             icon={<CheckCircle2 className="h-4 w-4" />}
             status={dbHealth?.foreign_keys_enabled ? "ok" : "error"}
@@ -626,14 +573,11 @@ export function DiagnosticsPage() {
                 Cryptographic Device Identity (WP-005 / Gate G-02)
               </CardTitle>
               <CardDescription>
-                Authentic native Ed25519 device key custody — Invariant #5:
-                Private key never touches webview runtime
+                Authentic native Ed25519 device key custody — Invariant #5: Private key never
+                touches webview runtime
               </CardDescription>
             </div>
-            <Badge
-              variant="outline"
-              className="bg-primary/10 text-primary border-primary/20"
-            >
+            <Badge variant="outline" className="bg-primary/10 text-primary border-primary/20">
               Native Rust Custody
             </Badge>
           </div>
@@ -685,8 +629,7 @@ export function DiagnosticsPage() {
                 Live iroh QUIC Transport Endpoint (WP-014 / ADR-012)
               </CardTitle>
               <CardDescription>
-                Native iroh 1.2.0 QUIC endpoint over ALPN
-                tauri-boilerplate-sync/1.0
+                Native iroh 1.2.0 QUIC endpoint over ALPN tauri-boilerplate-sync/1.0
               </CardDescription>
             </div>
             <Badge variant={syncEndpoint ? "success" : "secondary"}>
@@ -720,9 +663,7 @@ export function DiagnosticsPage() {
           <DiagnosticRow
             label="Background OS Lifecycle"
             value={
-              bgStatus?.running
-                ? "Windows Tray Active (Close to Minimize)"
-                : "Foreground Process"
+              bgStatus?.running ? "Windows Tray Active (Close to Minimize)" : "Foreground Process"
             }
             icon={<Activity className="h-4 w-4" />}
             status="ok"
@@ -741,24 +682,18 @@ export function DiagnosticsPage() {
                 Active Peer Connections & Replication Operations
               </CardTitle>
               <CardDescription>
-                Direct node connection controls, mutual cryptographic
-                verification, and outbox test envelopes
+                Direct node connection controls, mutual cryptographic verification, and outbox test
+                envelopes
               </CardDescription>
             </div>
-            <Badge
-              variant={syncDiagnostics.length > 0 ? "success" : "secondary"}
-            >
-              {syncDiagnostics.length} Connected{" "}
-              {syncDiagnostics.length === 1 ? "Peer" : "Peers"}
+            <Badge variant={syncDiagnostics.length > 0 ? "success" : "secondary"}>
+              {syncDiagnostics.length} Connected {syncDiagnostics.length === 1 ? "Peer" : "Peers"}
             </Badge>
           </div>
         </CardHeader>
         <CardContent className="space-y-6">
           {/* Peer connection form */}
-          <form
-            onSubmit={handleConnectPeer}
-            className="flex flex-col sm:flex-row gap-2"
-          >
+          <form onSubmit={handleConnectPeer} className="flex flex-col sm:flex-row gap-2">
             <div className="flex-1">
               <Input
                 placeholder="Enter Remote iroh Node ID or Ticket..."
@@ -773,9 +708,7 @@ export function DiagnosticsPage() {
                 disabled={isConnecting || !peerInput.trim()}
                 className="gap-1.5"
               >
-                <UserPlus
-                  className={`h-4 w-4 ${isConnecting ? "animate-spin" : ""}`}
-                />
+                <UserPlus className={`h-4 w-4 ${isConnecting ? "animate-spin" : ""}`} />
                 {isConnecting ? "Connecting..." : "Connect Peer"}
               </Button>
               <Button
@@ -786,9 +719,7 @@ export function DiagnosticsPage() {
                 className="gap-1.5"
                 title="Signs a diagnostic envelope via native Ed25519 and enqueues to SQLite outbox"
               >
-                <Send
-                  className={`h-4 w-4 ${isEnqueuing ? "animate-spin" : ""}`}
-                />
+                <Send className={`h-4 w-4 ${isEnqueuing ? "animate-spin" : ""}`} />
                 {isEnqueuing ? "Enqueuing..." : "Enqueue Test Envelope"}
               </Button>
             </div>
@@ -799,8 +730,8 @@ export function DiagnosticsPage() {
               <Radio className="h-8 w-8 mx-auto text-muted-foreground/50 mb-2" />
               <p className="font-medium">No Active Peer Connections</p>
               <p className="text-xs text-muted-foreground mt-1">
-                Peers can be connected using their 32-byte Node ID above or
-                discovered via the iroh rendezvous service.
+                Peers can be connected using their 32-byte Node ID above or discovered via the iroh
+                rendezvous service.
               </p>
             </div>
           ) : (
@@ -812,9 +743,7 @@ export function DiagnosticsPage() {
                 >
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
-                      <span className="font-medium text-sm font-mono">
-                        {diag.peerId}
-                      </span>
+                      <span className="font-medium text-sm font-mono">{diag.peerId}</span>
                       <Badge
                         variant={
                           diag.state === "IDLE"
@@ -828,8 +757,8 @@ export function DiagnosticsPage() {
                       </Badge>
                     </div>
                     <div className="text-xs text-muted-foreground">
-                      Device: {diag.deviceId} · Mode: {diag.connectionMode} ·
-                      Protocol: v{diag.protocolVersion}
+                      Device: {diag.deviceId} · Mode: {diag.connectionMode} · Protocol: v
+                      {diag.protocolVersion}
                     </div>
                   </div>
                   <div className="flex items-center gap-2 self-end sm:self-auto">
@@ -860,17 +789,13 @@ export function DiagnosticsPage() {
                 Database Compaction & Data Pruning (WP-022 / Gate G-014)
               </CardTitle>
               <CardDescription>
-                Transaction-safe batch pruning of expired outbox, inbox, audit,
-                task, and feature records with SQLite page reclamation (VACUUM)
+                Transaction-safe batch pruning of expired outbox, inbox, audit, task, and feature
+                records with SQLite page reclamation (VACUUM)
               </CardDescription>
             </div>
             <div className="flex items-center gap-2 shrink-0">
               <Badge variant="outline" className="font-mono">
-                {maintenanceStats.reduce(
-                  (sum, s) => sum + s.eligibleRowCount,
-                  0,
-                )}{" "}
-                Eligible Rows
+                {maintenanceStats.reduce((sum, s) => sum + s.eligibleRowCount, 0)} Eligible Rows
               </Badge>
               <Button
                 size="sm"
@@ -879,9 +804,7 @@ export function DiagnosticsPage() {
                 disabled={isCompacting}
                 className="gap-1.5"
               >
-                <Sparkles
-                  className={`h-3.5 w-3.5 ${isCompacting ? "animate-spin" : ""}`}
-                />
+                <Sparkles className={`h-3.5 w-3.5 ${isCompacting ? "animate-spin" : ""}`} />
                 {isCompacting ? "Compacting..." : "Run Storage Maintenance"}
               </Button>
             </div>
@@ -896,31 +819,21 @@ export function DiagnosticsPage() {
                   <th className="py-2 px-3 font-medium">Description</th>
                   <th className="py-2 px-3 font-medium">Retention</th>
                   <th className="py-2 px-3 font-medium">Cutoff Date</th>
-                  <th className="py-2 px-3 font-medium text-right">
-                    Eligible Candidates
-                  </th>
+                  <th className="py-2 px-3 font-medium text-right">Eligible Candidates</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/50">
                 {maintenanceStats.length === 0 ? (
                   <tr>
-                    <td
-                      colSpan={5}
-                      className="py-4 text-center text-muted-foreground text-xs"
-                    >
+                    <td colSpan={5} className="py-4 text-center text-muted-foreground text-xs">
                       No registered pruning handlers discovered.
                     </td>
                   </tr>
                 ) : (
                   maintenanceStats.map((stat) => (
-                    <tr
-                      key={stat.handlerId}
-                      className="hover:bg-muted/30 transition-colors"
-                    >
+                    <tr key={stat.handlerId} className="hover:bg-muted/30 transition-colors">
                       <td className="py-2.5 px-3">
-                        <div className="font-medium text-foreground">
-                          {stat.displayName}
-                        </div>
+                        <div className="font-medium text-foreground">{stat.displayName}</div>
                         <div className="font-mono text-[11px] text-muted-foreground">
                           {stat.handlerId}
                         </div>
@@ -929,21 +842,17 @@ export function DiagnosticsPage() {
                         {stat.description}
                       </td>
                       <td className="py-2.5 px-3 text-xs font-mono">
-                        {stat.retentionDays}{" "}
-                        {stat.retentionDays === 1 ? "day" : "days"}
+                        {stat.retentionDays} {stat.retentionDays === 1 ? "day" : "days"}
                       </td>
                       <td className="py-2.5 px-3 text-xs font-mono text-muted-foreground">
                         {new Date(stat.cutoffDate).toLocaleDateString()}
                       </td>
                       <td className="py-2.5 px-3 text-right">
                         <Badge
-                          variant={
-                            stat.eligibleRowCount > 0 ? "warning" : "secondary"
-                          }
+                          variant={stat.eligibleRowCount > 0 ? "warning" : "secondary"}
                           className="font-mono text-xs"
                         >
-                          {stat.eligibleRowCount}{" "}
-                          {stat.eligibleRowCount === 1 ? "row" : "rows"}
+                          {stat.eligibleRowCount} {stat.eligibleRowCount === 1 ? "row" : "rows"}
                         </Badge>
                       </td>
                     </tr>
@@ -966,21 +875,14 @@ export function DiagnosticsPage() {
                   <span className="font-semibold text-foreground">
                     {maintenanceReport.totalRowsPruned}
                   </span>{" "}
-                  total rows in{" "}
-                  <span className="font-mono">
-                    {maintenanceReport.durationMs}ms
-                  </span>
+                  total rows in <span className="font-mono">{maintenanceReport.durationMs}ms</span>
                 </span>
               </div>
               <Badge
-                variant={
-                  maintenanceReport.vacuumExecuted ? "success" : "secondary"
-                }
+                variant={maintenanceReport.vacuumExecuted ? "success" : "secondary"}
                 className="self-start sm:self-auto text-[10px]"
               >
-                {maintenanceReport.vacuumExecuted
-                  ? "VACUUM Reclaimed"
-                  : "VACUUM Skipped"}
+                {maintenanceReport.vacuumExecuted ? "VACUUM Reclaimed" : "VACUUM Skipped"}
               </Badge>
             </div>
           )}
@@ -992,8 +894,7 @@ export function DiagnosticsPage() {
         <CardHeader>
           <CardTitle>Feature Topology & Capability Graph</CardTitle>
           <CardDescription>
-            Dependency topology and permission surface of loaded platform and
-            domain features
+            Dependency topology and permission surface of loaded platform and domain features
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -1007,21 +908,14 @@ export function DiagnosticsPage() {
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-medium">{f.id}</span>
                     {f.dependencies.map((dep) => (
-                      <span
-                        key={dep}
-                        className="text-[10px] text-muted-foreground"
-                      >
+                      <span key={dep} className="text-[10px] text-muted-foreground">
                         ← {dep}
                       </span>
                     ))}
                   </div>
                   <div className="flex flex-wrap gap-1 mt-1">
                     {f.permissions.map((p) => (
-                      <Badge
-                        key={p.name}
-                        variant="outline"
-                        className="text-[10px]"
-                      >
+                      <Badge key={p.name} variant="outline" className="text-[10px]">
                         {p.name}
                       </Badge>
                     ))}
@@ -1034,8 +928,7 @@ export function DiagnosticsPage() {
       </Card>
 
       <div className="text-xs text-center text-muted-foreground pb-4">
-        Last updated: {lastRefreshed.toLocaleTimeString()} · Tauri Boilerplate
-        Platform v0.1.0
+        Last updated: {lastRefreshed.toLocaleTimeString()} · Tauri Boilerplate Platform v0.1.0
       </div>
     </div>
   );

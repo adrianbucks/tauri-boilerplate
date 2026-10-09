@@ -159,9 +159,9 @@ describe("Security Regression Suite — RBAC & Scope Enforcement", () => {
     }
 
     // require() throws typed AuthorizationError
-    await expect(
-      auth.require(subject, "inventory.update", { warehouseId: "BHM" }),
-    ).rejects.toThrow(AuthorizationError);
+    await expect(auth.require(subject, "inventory.update", { warehouseId: "BHM" })).rejects.toThrow(
+      AuthorizationError,
+    );
   });
 
   it("denies action when user has no matching roles assigned", async () => {
@@ -229,9 +229,9 @@ describe("Security Regression Suite — RBAC & Scope Enforcement", () => {
         },
       };
 
-      await expect(
-        auth.requireTrusted(trustedCtx, "inventory.delete"),
-      ).rejects.toThrow(AuthorizationError);
+      await expect(auth.requireTrusted(trustedCtx, "inventory.delete")).rejects.toThrow(
+        AuthorizationError,
+      );
     });
 
     it("strictly enforces scope constraints on TrustedOperationContext", async () => {
@@ -295,12 +295,7 @@ describe("Security Regression Suite — RBAC & Scope Enforcement", () => {
     });
 
     it("IdentityAdminService strictly rejects cross-tenant user creation", async () => {
-      const identityService = new IdentityAdminService(
-        db,
-        undefined,
-        undefined,
-        auth,
-      );
+      const identityService = new IdentityAdminService(db, undefined, undefined, auth);
       const ctx = createOperationContext({
         userId: "usr_attacker",
         deviceId: "dev_attacker_1",
@@ -319,12 +314,7 @@ describe("Security Regression Suite — RBAC & Scope Enforcement", () => {
     });
 
     it("IdentityAdminService strictly rejects user creation without users.create permission", async () => {
-      const identityService = new IdentityAdminService(
-        db,
-        undefined,
-        undefined,
-        auth,
-      );
+      const identityService = new IdentityAdminService(db, undefined, undefined, auth);
       const ctx = createOperationContext({
         userId: "usr_cov_worker",
         deviceId: "dev_cov_1",

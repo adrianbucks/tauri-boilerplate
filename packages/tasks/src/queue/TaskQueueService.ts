@@ -12,11 +12,7 @@
  *     the existing record when deduplication applies.
  */
 
-import {
-  generateCorrelationId,
-  getUtcIsoTimestamp,
-  DatabaseError,
-} from "@platform/core";
+import { generateCorrelationId, getUtcIsoTimestamp, DatabaseError } from "@platform/core";
 import type { DatabaseConnection, TransactionClient } from "@platform/database";
 import {
   DEFAULT_RETRY_POLICY,
@@ -84,8 +80,7 @@ function rowToRecord<TPayload>(row: TaskRow): TaskRecord<TPayload> {
   };
 }
 
-type Executor =
-  Pick<DatabaseConnection, "query" | "execute"> | TransactionClient;
+type Executor = Pick<DatabaseConnection, "query" | "execute"> | TransactionClient;
 
 // ---------------------------------------------------------------------------
 // TaskQueueService
@@ -166,10 +161,9 @@ export class TaskQueueService {
       ],
     );
 
-    const rows = await executor.query<TaskRow>(
-      `SELECT * FROM core_background_tasks WHERE id = ?`,
-      [id],
-    );
+    const rows = await executor.query<TaskRow>(`SELECT * FROM core_background_tasks WHERE id = ?`, [
+      id,
+    ]);
 
     if (rows.length === 0) {
       throw new DatabaseError({
@@ -210,9 +204,7 @@ export class TaskQueueService {
         : "";
 
     const params: unknown[] =
-      taskTypes && taskTypes.length > 0
-        ? [now, ...taskTypes, limit]
-        : [now, limit];
+      taskTypes && taskTypes.length > 0 ? [now, ...taskTypes, limit] : [now, limit];
 
     const eligible = await executor.query<{ id: string }>(
       `SELECT id FROM core_background_tasks
@@ -290,10 +282,9 @@ export class TaskQueueService {
     const now = getUtcIsoTimestamp();
 
     // Fetch current task state to determine retry eligibility
-    const rows = await executor.query<TaskRow>(
-      `SELECT * FROM core_background_tasks WHERE id = ?`,
-      [taskId],
-    );
+    const rows = await executor.query<TaskRow>(`SELECT * FROM core_background_tasks WHERE id = ?`, [
+      taskId,
+    ]);
 
     if (rows.length === 0) return { willRetry: false }; // Task not found — nothing to update
 
@@ -306,18 +297,12 @@ export class TaskQueueService {
       jitter: 0.25,
     };
 
-    const decision = this.retryCalculator.decide(
-      error,
-      row.attempt_count,
-      policy,
-    );
+    const decision = this.retryCalculator.decide(error, row.attempt_count, policy);
     const errorMessage = error instanceof Error ? error.message : String(error);
 
     if (decision.retryable && decision.delayMs !== undefined) {
       // Reschedule: push scheduled_at forward by delayMs from now
-      const nextScheduledAt = new Date(
-        Date.now() + decision.delayMs,
-      ).toISOString();
+      const nextScheduledAt = new Date(Date.now() + decision.delayMs).toISOString();
 
       await executor.execute(
         `UPDATE core_background_tasks
@@ -355,11 +340,7 @@ export class TaskQueueService {
    * @param reason - Human-readable cancellation reason.
    * @param tx     - Optional transaction client.
    */
-  async cancel(
-    taskId: string,
-    reason: string,
-    tx?: TransactionClient,
-  ): Promise<void> {
+  async cancel(taskId: string, reason: string, tx?: TransactionClient): Promise<void> {
     const executor: Executor = tx ?? this.db;
     const now = getUtcIsoTimestamp();
     await executor.execute(
@@ -410,11 +391,7 @@ export class TaskQueueService {
   /**
    * Returns all tasks for an organisation in a given state.
    */
-  async listByState(
-    organisationId: string,
-    state: TaskState,
-    limit = 100,
-  ): Promise<TaskRecord[]> {
+  async listByState(organisationId: string, state: TaskState, limit = 100): Promise<TaskRecord[]> {
     const rows = await this.db.query<TaskRow>(
       `SELECT * FROM core_background_tasks
          WHERE organisation_id = ? AND state = ?
@@ -428,13 +405,10 @@ export class TaskQueueService {
   /**
    * Finds a single task by id.
    */
-  async findById<TPayload = unknown>(
-    taskId: string,
-  ): Promise<TaskRecord<TPayload> | null> {
-    const rows = await this.db.query<TaskRow>(
-      `SELECT * FROM core_background_tasks WHERE id = ?`,
-      [taskId],
-    );
+  async findById<TPayload = unknown>(taskId: string): Promise<TaskRecord<TPayload> | null> {
+    const rows = await this.db.query<TaskRow>(`SELECT * FROM core_background_tasks WHERE id = ?`, [
+      taskId,
+    ]);
     return rows.length > 0 ? rowToRecord<TPayload>(rows[0]!) : null;
   }
 }

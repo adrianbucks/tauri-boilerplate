@@ -1,8 +1,5 @@
 import { getUtcIsoTimestamp, generateCorrelationId } from "@platform/core";
-import type {
-  DatabaseConnection,
-  TransactionClient,
-} from "../connection/DatabaseConnection.js";
+import type { DatabaseConnection, TransactionClient } from "../connection/DatabaseConnection.js";
 
 export interface FindOptions {
   limit?: number;
@@ -24,9 +21,7 @@ export abstract class BaseRepository<TRecord extends { id: string }> {
     this.db = db;
   }
 
-  protected getExecutor(
-    tx?: TransactionClient,
-  ): DatabaseConnection | TransactionClient {
+  protected getExecutor(tx?: TransactionClient): DatabaseConnection | TransactionClient {
     return tx ?? this.db;
   }
 
@@ -37,18 +32,14 @@ export abstract class BaseRepository<TRecord extends { id: string }> {
     return rows[0] ?? null;
   }
 
-  async findAll(
-    options?: FindOptions,
-    tx?: TransactionClient,
-  ): Promise<TRecord[]> {
+  async findAll(options?: FindOptions, tx?: TransactionClient): Promise<TRecord[]> {
     const executor = this.getExecutor(tx);
     let sql = `SELECT * FROM ${this.tableName}`;
     const params: unknown[] = [];
     const whereClauses: string[] = [];
 
     const shouldFilterDeleted =
-      options?.excludeDeleted === true ||
-      (this.supportsSoftDelete && !options?.includeDeleted);
+      options?.excludeDeleted === true || (this.supportsSoftDelete && !options?.includeDeleted);
 
     if (shouldFilterDeleted) {
       whereClauses.push("deleted_at IS NULL");
@@ -88,11 +79,7 @@ export abstract class BaseRepository<TRecord extends { id: string }> {
     return record;
   }
 
-  async update(
-    id: string,
-    updates: Partial<TRecord>,
-    tx?: TransactionClient,
-  ): Promise<void> {
+  async update(id: string, updates: Partial<TRecord>, tx?: TransactionClient): Promise<void> {
     const executor = this.getExecutor(tx);
     const sanitized = { ...updates };
     delete (sanitized as Record<string, unknown>)["id"];
@@ -100,20 +87,14 @@ export abstract class BaseRepository<TRecord extends { id: string }> {
     const keys = Object.keys(sanitized);
     if (keys.length === 0) return;
 
-    const setClauses = keys
-      .map((k) => `${this.camelToSnake(k)} = ?`)
-      .join(", ");
+    const setClauses = keys.map((k) => `${this.camelToSnake(k)} = ?`).join(", ");
     const values = [...Object.values(sanitized), id];
 
     const sql = `UPDATE ${this.tableName} SET ${setClauses} WHERE id = ?`;
     await executor.execute(sql, values);
   }
 
-  async softDelete(
-    id: string,
-    deletedBy: string,
-    tx?: TransactionClient,
-  ): Promise<void> {
+  async softDelete(id: string, deletedBy: string, tx?: TransactionClient): Promise<void> {
     const executor = this.getExecutor(tx);
     const now = getUtcIsoTimestamp();
     const opId = generateCorrelationId("del");

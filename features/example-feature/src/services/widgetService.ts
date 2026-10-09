@@ -111,11 +111,7 @@ export class WidgetService {
     return this.db.transaction(async (tx) => {
       await this.requirePermission(ctx, WIDGET_PERMISSIONS.CREATE, tx);
 
-      const existing = await this.repo.findBySku(
-        normalizedSku,
-        subject.organisationId,
-        tx,
-      );
+      const existing = await this.repo.findBySku(normalizedSku, subject.organisationId, tx);
       if (existing) {
         throw new ValidationError({
           message: `Widget with SKU '${normalizedSku}' already exists`,
@@ -179,10 +175,7 @@ export class WidgetService {
     await this.requirePermission(ctx, WIDGET_PERMISSIONS.UPDATE);
     const subject = extractContextSubject(ctx);
 
-    const existing = await this.repo.findByIdWithinOrganisation(
-      id,
-      subject.organisationId,
-    );
+    const existing = await this.repo.findByIdWithinOrganisation(id, subject.organisationId);
     if (!existing || existing.deletedAt) {
       throw new ValidationError({
         message: `Widget with ID '${id}' not found`,
@@ -207,23 +200,16 @@ export class WidgetService {
       }
       updates.quantity = input.quantity;
     }
-    if (input.description !== undefined)
-      updates.description = input.description;
+    if (input.description !== undefined) updates.description = input.description;
 
     await this.repo.update(id, updates);
   }
 
-  async deleteWidget(
-    id: string,
-    ctx: OperationContext | TrustedOperationContext,
-  ): Promise<void> {
+  async deleteWidget(id: string, ctx: OperationContext | TrustedOperationContext): Promise<void> {
     await this.requirePermission(ctx, WIDGET_PERMISSIONS.DELETE);
     const subject = extractContextSubject(ctx);
 
-    const existing = await this.repo.findByIdWithinOrganisation(
-      id,
-      subject.organisationId,
-    );
+    const existing = await this.repo.findByIdWithinOrganisation(id, subject.organisationId);
     if (!existing || existing.deletedAt) {
       return;
     }

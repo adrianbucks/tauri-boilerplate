@@ -127,9 +127,7 @@ export class TombstoneService {
       deleted_by: string;
       delete_operation_id: string;
       replicated_at: string | null;
-    }>(
-      `SELECT * FROM core_sync_tombstones WHERE replicated_at IS NULL ORDER BY deleted_at ASC`,
-    );
+    }>(`SELECT * FROM core_sync_tombstones WHERE replicated_at IS NULL ORDER BY deleted_at ASC`);
     return rows.map((r) => ({
       id: r.id,
       createdAt: r.created_at,

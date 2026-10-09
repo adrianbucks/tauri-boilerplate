@@ -84,10 +84,7 @@ await authorization.requireTrusted(trustedContext, "widgets.write", {
 });
 
 // ✅ Tenant-scoped repository queries
-const widget = await widgetRepository.findByIdWithinOrganisation(
-  id,
-  trustedContext.organisationId,
-);
+const widget = await widgetRepository.findByIdWithinOrganisation(id, trustedContext.organisationId);
 
 // ✅ Atomic business mutations with transactional audit and outbox
 await db.transaction(async (tx) => {
@@ -106,11 +103,7 @@ await tombstoneService.markDeleted({
 
 // ✅ Deterministic canonical serialization and cryptographic verification
 const canonicalBytes = canonicalSerialize(envelopeWithoutSignature);
-const isValid = await verifySignature(
-  canonicalBytes,
-  envelope.signature,
-  peerPublicKey,
-);
+const isValid = await verifySignature(canonicalBytes, envelope.signature, peerPublicKey);
 
 // ✅ Idempotent inbox processing
 await inboxService.receiveEnvelope(envelope);

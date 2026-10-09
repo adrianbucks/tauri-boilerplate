@@ -45,9 +45,7 @@ async function applySchema(db: MemoryDatabaseConnection): Promise<void> {
   `);
 }
 
-function makeDefinition(
-  overrides: Partial<TaskDefinition> = {},
-): TaskDefinition {
+function makeDefinition(overrides: Partial<TaskDefinition> = {}): TaskDefinition {
   return {
     taskType: "test.work",
     payload: { n: 1 },
@@ -124,9 +122,7 @@ describe("TaskWorker", () => {
 
   it("cancels tasks for which no handler is registered", async () => {
     // Enqueue a task type for which NO handler is registered
-    const task = await queue.enqueue(
-      makeDefinition({ taskType: "unknown.type" }),
-    );
+    const task = await queue.enqueue(makeDefinition({ taskType: "unknown.type" }));
 
     // Register a dummy handler so the worker claims tasks at all (it filters by registered types)
     // — we need the worker to be willing to claim "unknown.type", so register a handler for it
@@ -157,9 +153,7 @@ describe("TaskWorker", () => {
       throw new Error("handler blew up");
     });
 
-    const task = await queue.enqueue(
-      makeDefinition({ retryPolicy: { maxAttempts: 1 } }),
-    );
+    const task = await queue.enqueue(makeDefinition({ retryPolicy: { maxAttempts: 1 } }));
     worker.start();
 
     try {
@@ -193,9 +187,7 @@ describe("TaskWorker", () => {
       throw new Error("fatal failure");
     });
 
-    const task = await queue.enqueue(
-      makeDefinition({ retryPolicy: { maxAttempts: 1 } }),
-    );
+    const task = await queue.enqueue(makeDefinition({ retryPolicy: { maxAttempts: 1 } }));
     customWorker.start();
 
     try {
@@ -255,19 +247,16 @@ describe("TaskWorker", () => {
   it("fires the AbortSignal when the task times out", async () => {
     let signalAborted = false;
 
-    worker.register(
-      "test.work",
-      async (_payload, ctx: TaskExecutionContext) => {
-        await new Promise<void>((resolve) => {
-          ctx.signal.addEventListener("abort", () => {
-            signalAborted = true;
-            resolve();
-          });
-          // Safety valve: also resolve after 2s even if abort doesn't fire
-          setTimeout(resolve, 2_000);
+    worker.register("test.work", async (_payload, ctx: TaskExecutionContext) => {
+      await new Promise<void>((resolve) => {
+        ctx.signal.addEventListener("abort", () => {
+          signalAborted = true;
+          resolve();
         });
-      },
-    );
+        // Safety valve: also resolve after 2s even if abort doesn't fire
+        setTimeout(resolve, 2_000);
+      });
+    });
 
     // Very short timeout so the AbortController fires quickly
     const task = await queue.enqueue(makeDefinition({ timeoutMs: 100 }));

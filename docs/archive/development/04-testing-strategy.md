@@ -219,20 +219,14 @@ describe("sync authorisation", () => {
   it("rejects operation with invalid signature (when signatures enabled)");
 
   // Revocation
-  it(
-    "device revoked mid-session: existing session terminates, new session refused",
-  );
+  it("device revoked mid-session: existing session terminates, new session refused");
   it("revocation propagates to connected peers on reconnect");
   it("revoked device continues local operations (offline policy)");
 });
 
 describe("RBAC", () => {
-  it(
-    "user without inventory.read cannot access inventory data via any code path",
-  );
-  it(
-    "user with scoped permission for COV cannot access BHM via that permission",
-  );
+  it("user without inventory.read cannot access inventory data via any code path");
+  it("user with scoped permission for COV cannot access BHM via that permission");
   it("admin cannot grant a permission they do not themselves have");
   it("role without permission cannot use require() for that permission");
 });

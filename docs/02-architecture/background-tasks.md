@@ -78,8 +78,7 @@ Background work is a **durable platform concern**, never an ephemeral React comp
 ```typescript
 // packages/tasks/src/types.ts
 
-export type TaskState =
-  "PENDING" | "RUNNING" | "COMPLETED" | "FAILED" | "CANCELLED";
+export type TaskState = "PENDING" | "RUNNING" | "COMPLETED" | "FAILED" | "CANCELLED";
 
 export interface TaskRetryPolicy {
   readonly maxAttempts: number;

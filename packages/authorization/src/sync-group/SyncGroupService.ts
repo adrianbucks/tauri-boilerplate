@@ -11,13 +11,7 @@ import type { DatabaseConnection, TransactionClient } from "@platform/database";
 import { AuthorizationEngine } from "../engine/AuthorizationEngine.js";
 
 export type MembershipStatus =
-  | "REQUESTED"
-  | "APPROVED"
-  | "ACTIVE"
-  | "SUSPENDED"
-  | "EXPIRED"
-  | "REVOKED"
-  | "REJECTED";
+  "REQUESTED" | "APPROVED" | "ACTIVE" | "SUSPENDED" | "EXPIRED" | "REVOKED" | "REJECTED";
 
 export interface SyncGroup {
   readonly id: string;
@@ -78,12 +72,7 @@ export class SyncGroupService {
     );
     const roles = Object.freeze(roleRows.map((r) => r.role_id));
 
-    await this.auth.require(
-      { userId, organisationId, roles },
-      permission,
-      undefined,
-      tx,
-    );
+    await this.auth.require({ userId, organisationId, roles }, permission, undefined, tx);
   }
 
   async createGroup(
@@ -173,9 +162,7 @@ export class SyncGroupService {
     if (typeof approver === "object" && approver !== null) {
       await this.requirePermission(approver, "sync.manage", tx);
       approverUserId =
-        "principal" in approver
-          ? approver.principal.userId
-          : (approver.userId ?? "system");
+        "principal" in approver ? approver.principal.userId : (approver.userId ?? "system");
     } else {
       approverUserId = approver;
     }
@@ -186,9 +173,7 @@ export class SyncGroupService {
       group_id: string;
       user_id: string | null;
       status: string;
-    }>("SELECT * FROM core_membership_requests WHERE id = ? LIMIT 1", [
-      requestId,
-    ]);
+    }>("SELECT * FROM core_membership_requests WHERE id = ? LIMIT 1", [requestId]);
 
     const req = reqRows[0];
     if (!req) {
@@ -206,21 +191,13 @@ export class SyncGroupService {
     // Record decision
     await executor.execute(
       "INSERT INTO core_membership_decisions (id, request_id, decided_by, decision, decided_at, signature) VALUES (?, ?, ?, ?, ?, ?)",
-      [
-        decisionId,
-        requestId,
-        approverUserId,
-        "APPROVED",
-        now,
-        signature ?? null,
-      ],
+      [decisionId, requestId, approverUserId, "APPROVED", now, signature ?? null],
     );
 
     // Update request status
-    await executor.execute(
-      "UPDATE core_membership_requests SET status = 'APPROVED' WHERE id = ?",
-      [requestId],
-    );
+    await executor.execute("UPDATE core_membership_requests SET status = 'APPROVED' WHERE id = ?", [
+      requestId,
+    ]);
 
     // Insert or update member record
     await executor.execute(
@@ -242,9 +219,7 @@ export class SyncGroupService {
     if (typeof revokedBy === "object" && revokedBy !== null) {
       await this.requirePermission(revokedBy, "sync.manage", tx);
       revokedByUserId =
-        "principal" in revokedBy
-          ? revokedBy.principal.userId
-          : (revokedBy.userId ?? "system");
+        "principal" in revokedBy ? revokedBy.principal.userId : (revokedBy.userId ?? "system");
     } else {
       revokedByUserId = revokedBy;
     }
@@ -277,9 +252,7 @@ export class SyncGroupService {
     if (typeof rejector === "object" && rejector !== null) {
       await this.requirePermission(rejector, "sync.manage", tx);
       rejectorUserId =
-        "principal" in rejector
-          ? rejector.principal.userId
-          : (rejector.userId ?? "system");
+        "principal" in rejector ? rejector.principal.userId : (rejector.userId ?? "system");
     } else {
       rejectorUserId = rejector;
     }
@@ -294,17 +267,12 @@ export class SyncGroupService {
     );
 
     // Mark request as REJECTED
-    await executor.execute(
-      "UPDATE core_membership_requests SET status = 'REJECTED' WHERE id = ?",
-      [requestId],
-    );
+    await executor.execute("UPDATE core_membership_requests SET status = 'REJECTED' WHERE id = ?", [
+      requestId,
+    ]);
   }
 
-  async canSync(
-    deviceId: string,
-    groupId: string,
-    tx?: TransactionClient,
-  ): Promise<boolean> {
+  async canSync(deviceId: string, groupId: string, tx?: TransactionClient): Promise<boolean> {
     const executor = tx ?? this.db;
     const rows = await executor.query<{ status: MembershipStatus }>(
       "SELECT status FROM core_sync_group_members WHERE device_id = ? AND group_id = ? LIMIT 1",

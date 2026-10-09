@@ -39,10 +39,7 @@ describe("Security Regression Suite — Android Lifecycle & Signing Governance",
     workspaceRoot,
     "apps/demo/src-tauri/gen/android/app/src/main/java/com/tauri/boilerplate/demo/MainActivity.kt",
   );
-  const releaseWorkflowPath = path.join(
-    workspaceRoot,
-    ".github/workflows/release.yml",
-  );
+  const releaseWorkflowPath = path.join(workspaceRoot, ".github/workflows/release.yml");
 
   const manifestSource = fs.readFileSync(androidManifestPath, "utf8");
   const buildGradleSource = fs.readFileSync(buildGradlePath, "utf8");
@@ -55,9 +52,7 @@ describe("Security Regression Suite — Android Lifecycle & Signing Governance",
   // -------------------------------------------------------------------------
   it("Invariant #8: AndroidManifest.xml declares strictly scoped permissions without broad capabilities", () => {
     const permissionMatches = [
-      ...manifestSource.matchAll(
-        /<uses-permission\s+android:name="([^"]+)"\s*\/>/g,
-      ),
+      ...manifestSource.matchAll(/<uses-permission\s+android:name="([^"]+)"\s*\/>/g),
     ].map((m) => m[1]);
 
     // Permitted low-risk network permissions
@@ -71,15 +66,9 @@ describe("Security Regression Suite — Android Lifecycle & Signing Governance",
     }
 
     // Explicitly forbid broad/risky permissions
-    expect(permissionMatches).not.toContain(
-      "android.permission.READ_EXTERNAL_STORAGE",
-    );
-    expect(permissionMatches).not.toContain(
-      "android.permission.WRITE_EXTERNAL_STORAGE",
-    );
-    expect(permissionMatches).not.toContain(
-      "android.permission.ACCESS_FINE_LOCATION",
-    );
+    expect(permissionMatches).not.toContain("android.permission.READ_EXTERNAL_STORAGE");
+    expect(permissionMatches).not.toContain("android.permission.WRITE_EXTERNAL_STORAGE");
+    expect(permissionMatches).not.toContain("android.permission.ACCESS_FINE_LOCATION");
     expect(permissionMatches).not.toContain("android.permission.CAMERA");
     expect(permissionMatches).not.toContain("android.permission.RECORD_AUDIO");
   });
@@ -88,21 +77,13 @@ describe("Security Regression Suite — Android Lifecycle & Signing Governance",
   // Test 2: Cleartext traffic is disabled by default
   // -------------------------------------------------------------------------
   it("Enforces usesCleartextTraffic=false by default and in release builds", () => {
-    expect(manifestSource).toContain(
-      'android:usesCleartextTraffic="${usesCleartextTraffic}"',
-    );
-    expect(buildGradleSource).toContain(
-      'manifestPlaceholders["usesCleartextTraffic"] = "false"',
-    );
+    expect(manifestSource).toContain('android:usesCleartextTraffic="${usesCleartextTraffic}"');
+    expect(buildGradleSource).toContain('manifestPlaceholders["usesCleartextTraffic"] = "false"');
 
     // Verify debug is the only buildType with cleartext enabled
-    const debugBlock = buildGradleSource.match(
-      /getByName\("debug"\)\s*\{([^}]+)\}/,
-    );
+    const debugBlock = buildGradleSource.match(/getByName\("debug"\)\s*\{([^}]+)\}/);
     expect(debugBlock).not.toBeNull();
-    expect(debugBlock?.[1]).toContain(
-      'manifestPlaceholders["usesCleartextTraffic"] = "true"',
-    );
+    expect(debugBlock?.[1]).toContain('manifestPlaceholders["usesCleartextTraffic"] = "true"');
 
     const releaseBlock = buildGradleSource.match(
       /getByName\("release"\)\s*\{([\s\S]*?)(?=\n\s*getByName|\n\s*kotlinOptions|\n\s*buildFeatures)/,
@@ -117,9 +98,7 @@ describe("Security Regression Suite — Android Lifecycle & Signing Governance",
   // Test 3: WorkManager dependency and Android SDK minimums
   // -------------------------------------------------------------------------
   it("Declares androidx.work runtime dependency and satisfies minSdk >= 24", () => {
-    expect(buildGradleSource).toContain(
-      'implementation("androidx.work:work-runtime-ktx:',
-    );
+    expect(buildGradleSource).toContain('implementation("androidx.work:work-runtime-ktx:');
 
     const minSdkMatch = buildGradleSource.match(/minSdk\s*=\s*(\d+)/);
     expect(minSdkMatch).not.toBeNull();
@@ -133,9 +112,7 @@ describe("Security Regression Suite — Android Lifecycle & Signing Governance",
   it("WorkManager scheduler enforces NetworkType.CONNECTED and requiresBatteryNotLow(true)", () => {
     expect(mainActivitySource).toContain("NetworkType.CONNECTED");
     expect(mainActivitySource).toContain("setRequiresBatteryNotLow(true)");
-    expect(mainActivitySource).toContain(
-      "PeriodicWorkRequestBuilder<SyncWorker>",
-    );
+    expect(mainActivitySource).toContain("PeriodicWorkRequestBuilder<SyncWorker>");
     expect(mainActivitySource).toContain("ExistingPeriodicWorkPolicy.KEEP");
   });
 
@@ -143,12 +120,8 @@ describe("Security Regression Suite — Android Lifecycle & Signing Governance",
   // Test 5: Invariant #5: Zero hardcoded secrets in build.gradle.kts
   // -------------------------------------------------------------------------
   it("Invariant #5: Keystore signing configuration pulls from environment without hardcoded passwords", () => {
-    expect(buildGradleSource).toContain(
-      'System.getenv("ANDROID_KEYSTORE_PATH")',
-    );
-    expect(buildGradleSource).toContain(
-      'System.getenv("ANDROID_KEYSTORE_PASSWORD")',
-    );
+    expect(buildGradleSource).toContain('System.getenv("ANDROID_KEYSTORE_PATH")');
+    expect(buildGradleSource).toContain('System.getenv("ANDROID_KEYSTORE_PASSWORD")');
     expect(buildGradleSource).toContain('System.getenv("ANDROID_KEY_ALIAS")');
 
     // Must not contain hardcoded plaintext credentials
@@ -160,10 +133,7 @@ describe("Security Regression Suite — Android Lifecycle & Signing Governance",
   // Test 6: Invariant #5: Zero keystore or private key binaries committed
   // -------------------------------------------------------------------------
   it("Invariant #5: No binary release keystores (*.jks, *.keystore) are tracked in git repository", () => {
-    const androidAppDir = path.join(
-      workspaceRoot,
-      "apps/demo/src-tauri/gen/android/app",
-    );
+    const androidAppDir = path.join(workspaceRoot, "apps/demo/src-tauri/gen/android/app");
     const files = fs.readdirSync(androidAppDir);
 
     const forbiddenExtensions = [".jks", ".keystore", ".p12", ".pfx"];

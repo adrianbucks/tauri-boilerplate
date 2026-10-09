@@ -33,9 +33,7 @@ const REDACTED_KEYS = new Set([
   "authorization",
 ]);
 
-function sanitizeData(
-  data?: Record<string, unknown>,
-): Record<string, unknown> | undefined {
+function sanitizeData(data?: Record<string, unknown>): Record<string, unknown> | undefined {
   if (!data) return undefined;
   const sanitized: Record<string, unknown> = {};
 
@@ -132,15 +130,12 @@ export class ConsoleLogger implements Logger {
     if (!this.shouldLog("error")) return;
     const entry: LogEntry = {
       level: "error",
-      message:
-        error instanceof Error ? `${message}: ${error.message}` : message,
+      message: error instanceof Error ? `${message}: ${error.message}` : message,
       timestamp: getUtcIsoTimestamp(),
       ...context,
       data: {
         ...(context?.data ?? {}),
-        ...(error instanceof Error && error.stack
-          ? { stack: error.stack }
-          : {}),
+        ...(error instanceof Error && error.stack ? { stack: error.stack } : {}),
       },
     };
     console.error(this.formatEntry(entry));

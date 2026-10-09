@@ -68,10 +68,7 @@ await authorization.requireTrusted(trustedContext, "widgets.write", {
 });
 
 // ✅ 2. Tenant-scoped repository queries
-const widget = await widgetRepository.findByIdWithinOrganisation(
-  id,
-  trustedContext.organisationId,
-);
+const widget = await widgetRepository.findByIdWithinOrganisation(id, trustedContext.organisationId);
 
 // ✅ 3. Atomic business mutations with transactional audit and outbox
 await db.transaction(async (tx) => {

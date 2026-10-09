@@ -5,8 +5,7 @@ export const organisationsManifest: FeatureManifest = {
   id: "organisations",
   name: "Organisations Management",
   version: "1.0.0",
-  description:
-    "Manages organisation tenancies, settings, and root domain entities.",
+  description: "Manages organisation tenancies, settings, and root domain entities.",
   dependencies: [],
   optionalDependencies: [],
   permissions: [

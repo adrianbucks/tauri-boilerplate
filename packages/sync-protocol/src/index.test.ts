@@ -116,10 +116,7 @@ describe("@platform/sync-protocol", () => {
     });
 
     it("rejects incompatible protocol version", () => {
-      const result = HandshakeValidator.validate(
-        { ...validMessage, protocolVersion: 0 },
-        options,
-      );
+      const result = HandshakeValidator.validate({ ...validMessage, protocolVersion: 0 }, options);
       expect(result.valid).toBe(false);
       expect(result.code).toBe("PROTOCOL_INCOMPATIBLE");
     });

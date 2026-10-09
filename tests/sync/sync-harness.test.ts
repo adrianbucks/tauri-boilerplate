@@ -115,10 +115,7 @@ class VirtualSyncDevice {
   ): Promise<WidgetRecord> {
     const ctx = this.getContext();
 
-    const w = await this.widgets.createWidget(
-      { name, sku, quantity, syncGroupId },
-      ctx,
-    );
+    const w = await this.widgets.createWidget({ name, sku, quantity, syncGroupId }, ctx);
     const logicalTimestamp = this.hlc.now();
     this.entityTimestamps.set(w.id, logicalTimestamp);
 
@@ -143,17 +140,11 @@ class VirtualSyncDevice {
     return w;
   }
 
-  async applyRemoteOperation(
-    op: SyncOperation,
-    conflictRegistry: ConflictRegistry,
-  ): Promise<void> {
+  async applyRemoteOperation(op: SyncOperation, conflictRegistry: ConflictRegistry): Promise<void> {
     // 1. Advance local clock with remote HLC
     this.hlc.update(op.logicalTimestamp);
 
-    const existing = await this.widgets.getWidgetById(
-      op.entityId,
-      this.getContext(),
-    );
+    const existing = await this.widgets.getWidgetById(op.entityId, this.getContext());
     if (!existing) {
       // Direct insert
       const item = op.payload as WidgetRecord;
@@ -189,8 +180,7 @@ class VirtualSyncDevice {
     }
 
     // Conflict resolution comparing local write timestamp vs remote write timestamp
-    const localTimestamp =
-      this.entityTimestamps.get(op.entityId) ?? "000000000000_0000_init";
+    const localTimestamp = this.entityTimestamps.get(op.entityId) ?? "000000000000_0000_init";
     const resolution = conflictRegistry.resolve({
       entityId: op.entityId,
       entityType: op.entityType,
@@ -238,28 +228,18 @@ describe("Multi-Device Sync Harness — Simulated P2P Replication", () => {
 
   it("Device A writes offline → connects → Device B receives and converges", async () => {
     // 1. Device A creates widget offline
-    const widgetA = await devA.createLocalWidget(
-      "Acme Gear",
-      "GEAR-01",
-      10,
-      "grp_coventry",
-    );
+    const widgetA = await devA.createLocalWidget("Acme Gear", "GEAR-01", 10, "grp_coventry");
     expect(devA.outgoingQueue).toHaveLength(1);
 
     // Device B does not have it yet
-    expect(
-      await devB.widgets.getWidgetById(widgetA.id, devB.getContext()),
-    ).toBeNull();
+    expect(await devB.widgets.getWidgetById(widgetA.id, devB.getContext())).toBeNull();
 
     // 2. Transmit operation to Device B
     const op = devA.outgoingQueue.shift()!;
     await devB.applyRemoteOperation(op, conflicts);
 
     // 3. Device B now has the record
-    const widgetB = await devB.widgets.getWidgetById(
-      widgetA.id,
-      devB.getContext(),
-    );
+    const widgetB = await devB.widgets.getWidgetById(widgetA.id, devB.getContext());
     expect(widgetB).not.toBeNull();
     expect(widgetB?.sku).toBe("GEAR-01");
     expect(widgetB?.quantity).toBe(10);
@@ -267,12 +247,7 @@ describe("Multi-Device Sync Harness — Simulated P2P Replication", () => {
 
   it("Deterministic LWW conflict resolution: latest HLC timestamp wins on both devices", async () => {
     // Device A and Device B both start with same initial record
-    const w1 = await devA.createLocalWidget(
-      "Original Valve",
-      "VALVE-01",
-      5,
-      "grp_coventry",
-    );
+    const w1 = await devA.createLocalWidget("Original Valve", "VALVE-01", 5, "grp_coventry");
     await devB.applyRemoteOperation(devA.outgoingQueue.shift()!, conflicts);
 
     // Device A edits offline at t_a

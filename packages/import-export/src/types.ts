@@ -55,9 +55,7 @@ export interface ImportSummary {
 
 export interface ExportColumn<T> {
   readonly header: string;
-  readonly accessor: (
-    record: T,
-  ) => string | number | boolean | null | undefined;
+  readonly accessor: (record: T) => string | number | boolean | null | undefined;
 }
 
 export interface ExportDefinition<T> {

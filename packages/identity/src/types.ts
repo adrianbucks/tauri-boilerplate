@@ -1,12 +1,7 @@
 export type DevicePlatform = "windows" | "android" | "linux" | "darwin" | "web";
 
 export type DeviceStatus =
-  | "UNREGISTERED"
-  | "PENDING_APPROVAL"
-  | "APPROVED"
-  | "ACTIVE"
-  | "SUSPENDED"
-  | "REVOKED";
+  "UNREGISTERED" | "PENDING_APPROVAL" | "APPROVED" | "ACTIVE" | "SUSPENDED" | "REVOKED";
 
 export type UserStatus = "ACTIVE" | "SUSPENDED" | "REVOKED";
 

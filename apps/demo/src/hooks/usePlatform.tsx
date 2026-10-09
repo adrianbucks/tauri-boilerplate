@@ -22,10 +22,7 @@ interface PlatformContextValue {
   nativeGateway: PlatformNativeGateway | null;
   nativeSession: NativeSessionView | null;
   transport: IrohSyncTransport | null;
-  authenticate: (request: {
-    user_id: string;
-    password: string;
-  }) => Promise<void>;
+  authenticate: (request: { user_id: string; password: string }) => Promise<void>;
   logout: () => Promise<void>;
   syncState: SyncState;
   isReady: boolean;
@@ -51,9 +48,7 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
   const [nativeGateway] = useState<PlatformNativeGateway>(() =>
     createPlatformNativeGateway({ invoke }),
   );
-  const [nativeSession, setNativeSession] = useState<NativeSessionView | null>(
-    null,
-  );
+  const [nativeSession, setNativeSession] = useState<NativeSessionView | null>(null);
   const [transport, setTransport] = useState<IrohSyncTransport | null>(null);
   const [syncState, setSyncState] = useState<SyncState>("DISCONNECTED");
   const [isReady, setIsReady] = useState(false);
@@ -142,27 +137,22 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
       // Subscribe to tray-initiated "Sync Now" requests.
       // SECURITY: the payload is a UTC unix-second timestamp string only —
       // no credentials or private key material ever appear in this event.
-      const unlisten = await listen<string>(
-        "background://sync-now-requested",
-        (_event) => {
-          // Re-invoke background_start as an idempotent sync-now trigger.
-          // The OutboxScheduler will emit background://sync-tick on its next
-          // tick; for an immediate drain the TypeScript OutboxSyncWorker
-          // should subscribe to this channel independently.
-          invoke("background_start").catch(() => {
-            // Scheduler already running — no action needed.
-          });
-        },
-      );
+      const unlisten = await listen<string>("background://sync-now-requested", (_event) => {
+        // Re-invoke background_start as an idempotent sync-now trigger.
+        // The OutboxScheduler will emit background://sync-tick on its next
+        // tick; for an immediate drain the TypeScript OutboxSyncWorker
+        // should subscribe to this channel independently.
+        invoke("background_start").catch(() => {
+          // Scheduler already running — no action needed.
+        });
+      });
       unlistenRef.current = unlisten;
 
       const unlistenTick = await listen<{ pending_count: number }>(
         "background://sync-tick",
         (event) => {
           if (p.isSyncConfigured()) {
-            p.sync.setState(
-              event.payload.pending_count > 0 ? "SYNCING" : "IDLE",
-            );
+            p.sync.setState(event.payload.pending_count > 0 ? "SYNCING" : "IDLE");
           }
         },
       );

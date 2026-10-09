@@ -36,9 +36,7 @@ export class ExportEngine {
       definition.columns.forEach((col) => {
         const value = col.accessor(record);
         rowObj[this.sanitizeSpreadsheetString(col.header)] =
-          typeof value === "string"
-            ? this.sanitizeSpreadsheetString(value)
-            : (value ?? "");
+          typeof value === "string" ? this.sanitizeSpreadsheetString(value) : (value ?? "");
       });
       return rowObj;
     });

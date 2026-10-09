@@ -90,9 +90,7 @@ export class InboxService {
         apply_status: ApplyStatus;
         applied_at: string | null;
         conflict_id: string | null;
-      }>(`SELECT * FROM core_sync_inbox WHERE envelope_id = ? LIMIT 1`, [
-        envelope.envelopeId,
-      ]);
+      }>(`SELECT * FROM core_sync_inbox WHERE envelope_id = ? LIMIT 1`, [envelope.envelopeId]);
       return mapRow(rows[0]!);
     }
 
@@ -211,14 +209,12 @@ export class InboxService {
         );
         applied++;
       } catch (err) {
-        const isConflict =
-          err instanceof Error &&
-          err.message.toLowerCase().includes("conflict");
+        const isConflict = err instanceof Error && err.message.toLowerCase().includes("conflict");
         const newStatus = isConflict ? "CONFLICT" : "FAILED";
-        await executor.execute(
-          `UPDATE core_sync_inbox SET apply_status = ? WHERE id = ?`,
-          [newStatus, record.id],
-        );
+        await executor.execute(`UPDATE core_sync_inbox SET apply_status = ? WHERE id = ?`, [
+          newStatus,
+          record.id,
+        ]);
         if (isConflict) {
           conflicts++;
         } else {
@@ -255,10 +251,9 @@ export class InboxService {
       apply_status: ApplyStatus;
       applied_at: string | null;
       conflict_id: string | null;
-    }>(
-      `SELECT * FROM core_sync_inbox WHERE apply_status = ? ORDER BY logical_timestamp ASC`,
-      [status],
-    );
+    }>(`SELECT * FROM core_sync_inbox WHERE apply_status = ? ORDER BY logical_timestamp ASC`, [
+      status,
+    ]);
     return rows.map(mapRow);
   }
 }

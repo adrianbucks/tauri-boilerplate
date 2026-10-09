@@ -88,26 +88,8 @@ for (const cand of windowsCandidates) {
 
 // 2. Android Bundles
 const androidCandidates = [
-  path.join(
-    APP_DIR,
-    "src-tauri",
-    "gen",
-    "android",
-    "app",
-    "build",
-    "outputs",
-    "apk",
-  ),
-  path.join(
-    APP_DIR,
-    "src-tauri",
-    "gen",
-    "android",
-    "app",
-    "build",
-    "outputs",
-    "bundle",
-  ),
+  path.join(APP_DIR, "src-tauri", "gen", "android", "app", "build", "outputs", "apk"),
+  path.join(APP_DIR, "src-tauri", "gen", "android", "app", "build", "outputs", "bundle"),
 ];
 
 let androidFound = [];
@@ -140,12 +122,8 @@ if (androidFound.length > 0) {
     console.log(`  -> Copied: ${info.name} (${info.size})`);
   }
 } else {
-  console.log(
-    "ℹ️  No Android APKs found in src-tauri/gen/android/.../outputs.",
-  );
-  console.log(
-    "   Build Android with: pnpm --filter @apps/demo tauri -- android build --apk",
-  );
+  console.log("ℹ️  No Android APKs found in src-tauri/gen/android/.../outputs.");
+  console.log("   Build Android with: pnpm --filter @apps/demo tauri -- android build --apk");
 }
 
 console.log("\n----------------------------------------");

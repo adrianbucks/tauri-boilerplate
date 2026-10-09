@@ -27,10 +27,7 @@ import {
   type ImportDefinition,
   type ExportDefinition,
 } from "@platform/import-export";
-import {
-  KeyboardWedgeScanner,
-  type BarcodeScanResult,
-} from "@platform/hardware";
+import { KeyboardWedgeScanner, type BarcodeScanResult } from "@platform/hardware";
 import { createOperationContext } from "@platform/core";
 import { usePlatform } from "../hooks/usePlatform.js";
 
@@ -53,20 +50,12 @@ const widgetExportDef: ExportDefinition<WidgetRecord> = {
   ],
 };
 
-function WidgetRow({
-  widget,
-  isHighlighted,
-}: {
-  widget: WidgetRecord;
-  isHighlighted: boolean;
-}) {
+function WidgetRow({ widget, isHighlighted }: { widget: WidgetRecord; isHighlighted: boolean }) {
   const isDeleted = Boolean(widget.deletedAt);
   return (
     <div
       className={`flex items-start justify-between rounded-lg border px-4 py-3 transition-all duration-300 ${
-        isHighlighted
-          ? "border-primary bg-primary/10 ring-2 ring-primary"
-          : "border-border bg-card"
+        isHighlighted ? "border-primary bg-primary/10 ring-2 ring-primary" : "border-border bg-card"
       } ${isDeleted ? "opacity-50" : ""}`}
     >
       <div className="flex items-start gap-3">
@@ -76,15 +65,10 @@ function WidgetRow({
         <div>
           <div className="font-medium text-sm">{widget.name}</div>
           <div className="text-xs text-muted-foreground mt-0.5">
-            SKU:{" "}
-            <code className="bg-muted px-1 rounded font-mono">
-              {widget.sku}
-            </code>
+            SKU: <code className="bg-muted px-1 rounded font-mono">{widget.sku}</code>
           </div>
           {widget.description && (
-            <div className="text-xs text-muted-foreground mt-0.5">
-              {widget.description}
-            </div>
+            <div className="text-xs text-muted-foreground mt-0.5">{widget.description}</div>
           )}
         </div>
       </div>
@@ -112,17 +96,13 @@ export function WidgetsPage() {
   const [error, setError] = useState<string | null>(null);
 
   // Hardware scanner state
-  const [lastScannedBarcode, setLastScannedBarcode] = useState<string | null>(
-    null,
-  );
+  const [lastScannedBarcode, setLastScannedBarcode] = useState<string | null>(null);
   const [highlightedSku, setHighlightedSku] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadWidgets = useCallback(async () => {
     if (nativeGateway && nativeSession) {
-      const nativeWidgets = await nativeGateway.listWidgets(
-        nativeSession.organisation_id,
-      );
+      const nativeWidgets = await nativeGateway.listWidgets(nativeSession.organisation_id);
       setWidgets(
         nativeWidgets.map((widget) => ({
           id: widget.id,
@@ -224,17 +204,11 @@ export function WidgetsPage() {
 
     try {
       const buffer = await file.arrayBuffer();
-      const widgetImportDef: Pick<
-        ImportDefinition<WidgetImportRecord>,
-        "validateRow"
-      > = {
+      const widgetImportDef: Pick<ImportDefinition<WidgetImportRecord>, "validateRow"> = {
         validateRow: (rawRow, rowIndex) => {
           const rawSku = String(rawRow["sku"] ?? rawRow["SKU"] ?? "").trim();
           const rawName = String(rawRow["name"] ?? rawRow["Name"] ?? "").trim();
-          const rawQty = parseInt(
-            String(rawRow["quantity"] ?? rawRow["Quantity"] ?? "0"),
-            10,
-          );
+          const rawQty = parseInt(String(rawRow["quantity"] ?? rawRow["Quantity"] ?? "0"), 10);
 
           if (!rawSku) {
             return {
@@ -269,9 +243,7 @@ export function WidgetsPage() {
               sku: rawSku.toUpperCase(),
               name: rawName,
               quantity: isNaN(rawQty) ? 0 : Math.max(0, rawQty),
-              description: String(
-                rawRow["description"] ?? rawRow["Description"] ?? "",
-              ),
+              description: String(rawRow["description"] ?? rawRow["Description"] ?? ""),
             },
           };
         },
@@ -338,8 +310,8 @@ export function WidgetsPage() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Widgets</h1>
           <p className="text-muted-foreground mt-1">
-            Example domain feature — demonstrates SQLite repository, Bulk
-            Import/Export, and Barcode Hardware scanning.
+            Example domain feature — demonstrates SQLite repository, Bulk Import/Export, and Barcode
+            Hardware scanning.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -414,9 +386,7 @@ export function WidgetsPage() {
       <Card>
         <CardHeader>
           <CardTitle>Create Widget</CardTitle>
-          <CardDescription>
-            Add a widget to the authenticated native database.
-          </CardDescription>
+          <CardDescription>Add a widget to the authenticated native database.</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex flex-wrap gap-3 max-w-3xl">
@@ -449,12 +419,7 @@ export function WidgetsPage() {
               <Button
                 onClick={handleCreate}
                 isLoading={loading}
-                disabled={
-                  !nativeGateway ||
-                  !nativeSession ||
-                  !name.trim() ||
-                  !sku.trim()
-                }
+                disabled={!nativeGateway || !nativeSession || !name.trim() || !sku.trim()}
               >
                 <Plus className="h-4 w-4 mr-1" />
                 Create
@@ -479,11 +444,7 @@ export function WidgetsPage() {
           ) : (
             <div className="space-y-3">
               {widgets.map((w) => (
-                <WidgetRow
-                  key={w.id}
-                  widget={w}
-                  isHighlighted={highlightedSku === w.sku}
-                />
+                <WidgetRow key={w.id} widget={w} isHighlighted={highlightedSku === w.sku} />
               ))}
             </div>
           )}

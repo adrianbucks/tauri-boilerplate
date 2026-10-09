@@ -142,34 +142,16 @@ interface SyncManager {
 }
 
 interface SyncGroupService {
-  createGroup(
-    input: CreateGroupInput,
-    ctx: OperationContext,
-  ): Promise<SyncGroup>;
-  requestMembership(
-    groupId: string,
-    ctx: OperationContext,
-  ): Promise<MembershipRequest>;
+  createGroup(input: CreateGroupInput, ctx: OperationContext): Promise<SyncGroup>;
+  requestMembership(groupId: string, ctx: OperationContext): Promise<MembershipRequest>;
   approve(requestId: string, ctx: OperationContext): Promise<void>;
-  reject(
-    requestId: string,
-    reason: string,
-    ctx: OperationContext,
-  ): Promise<void>;
-  revoke(
-    deviceId: string,
-    groupId: string,
-    reason: string,
-    ctx: OperationContext,
-  ): Promise<void>;
+  reject(requestId: string, reason: string, ctx: OperationContext): Promise<void>;
+  revoke(deviceId: string, groupId: string, reason: string, ctx: OperationContext): Promise<void>;
   canSync(deviceId: string, groupId: string): Promise<boolean>;
 }
 
 interface AuditService {
-  emit(
-    event: Omit<AuditEvent, "id" | "timestamp">,
-    tx?: Transaction,
-  ): Promise<void>;
+  emit(event: Omit<AuditEvent, "id" | "timestamp">, tx?: Transaction): Promise<void>;
 }
 
 interface DatabaseService {

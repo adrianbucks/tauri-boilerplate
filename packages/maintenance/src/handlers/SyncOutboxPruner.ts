@@ -1,9 +1,5 @@
 import type { DatabaseConnection } from "@platform/database";
-import type {
-  PruningContext,
-  PruningHandler,
-  PruningResult,
-} from "../types.js";
+import type { PruningContext, PruningHandler, PruningResult } from "../types.js";
 
 export class SyncOutboxPruner implements PruningHandler {
   readonly id = "core.sync.outbox";
@@ -12,10 +8,7 @@ export class SyncOutboxPruner implements PruningHandler {
     "Prunes successfully dispatched sync envelopes (status = 'SENT') past retention cutoff";
   readonly defaultRetentionDays = 14;
 
-  async countEligible(
-    connection: DatabaseConnection,
-    cutoff: Date,
-  ): Promise<number> {
+  async countEligible(connection: DatabaseConnection, cutoff: Date): Promise<number> {
     const isoCutoff = cutoff.toISOString();
     const sql = `
       SELECT COUNT(*) as count FROM core_sync_outbox
@@ -45,11 +38,7 @@ export class SyncOutboxPruner implements PruningHandler {
 
     let rowsPruned = 0;
     while (!ctx.signal?.aborted) {
-      const result = await ctx.connection.execute(deleteSql, [
-        isoCutoff,
-        isoCutoff,
-        ctx.batchSize,
-      ]);
+      const result = await ctx.connection.execute(deleteSql, [isoCutoff, isoCutoff, ctx.batchSize]);
       if (result.rowsAffected === 0) break;
       rowsPruned += result.rowsAffected;
       if (result.rowsAffected < ctx.batchSize) break;

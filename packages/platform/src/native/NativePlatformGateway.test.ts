@@ -63,18 +63,14 @@ describe("PlatformNativeGateway", () => {
       organisation_id: "org_1",
       sync_group_id: "group_1",
       correlation_id: "corr_bulk_1",
-      widgets: [
-        { name: "Widget 2", sku: "W-2", quantity: 3, description: "Bulk" },
-      ],
+      widgets: [{ name: "Widget 2", sku: "W-2", quantity: 3, description: "Bulk" }],
     });
     expect(invoke).toHaveBeenLastCalledWith("create_widgets", {
       request: {
         organisation_id: "org_1",
         sync_group_id: "group_1",
         correlation_id: "corr_bulk_1",
-        widgets: [
-          { name: "Widget 2", sku: "W-2", quantity: 3, description: "Bulk" },
-        ],
+        widgets: [{ name: "Widget 2", sku: "W-2", quantity: 3, description: "Bulk" }],
       },
     });
     await gateway.listOrganisations();

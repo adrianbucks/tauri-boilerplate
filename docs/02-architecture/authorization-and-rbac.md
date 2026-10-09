@@ -53,8 +53,7 @@ interface AuthorizationEngine {
 }
 
 type AuthorizationDecision =
-  | { granted: true }
-  | { granted: false; reason: string; code: AuthorizationDeniedCode };
+  { granted: true } | { granted: false; reason: string; code: AuthorizationDeniedCode };
 ```
 
 ---
@@ -236,20 +235,10 @@ Sync groups determine which replication streams a device participates in.
 
 ```typescript
 interface SyncGroupService {
-  createGroup(
-    input: CreateGroupInput,
-    ctx: TrustedOperationContext,
-  ): Promise<SyncGroup>;
-  requestMembership(
-    groupId: string,
-    ctx: TrustedOperationContext,
-  ): Promise<MembershipRequest>;
+  createGroup(input: CreateGroupInput, ctx: TrustedOperationContext): Promise<SyncGroup>;
+  requestMembership(groupId: string, ctx: TrustedOperationContext): Promise<MembershipRequest>;
   approve(requestId: string, ctx: TrustedOperationContext): Promise<void>;
-  reject(
-    requestId: string,
-    reason: string,
-    ctx: TrustedOperationContext,
-  ): Promise<void>;
+  reject(requestId: string, reason: string, ctx: TrustedOperationContext): Promise<void>;
   revoke(
     deviceId: string,
     groupId: string,
@@ -303,9 +292,7 @@ const { can } = useAuthorization();
 
 // Button visibility
 {
-  can("widgets.create", { organisationId }) && (
-    <Button onClick={handleCreate}>Add Widget</Button>
-  );
+  can("widgets.create", { organisationId }) && <Button onClick={handleCreate}>Add Widget</Button>;
 }
 ```
 

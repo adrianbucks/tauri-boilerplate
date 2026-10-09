@@ -46,8 +46,7 @@ describe("@platform/feature-system", () => {
     syncPolicies: [
       {
         entityType: "inventory_item",
-        namespacePattern:
-          "{application}/{organisation}/{syncGroup}/inventory/items",
+        namespacePattern: "{application}/{organisation}/{syncGroup}/inventory/items",
         conflictPolicy: { strategy: "lww" },
         syncable: true,
       },
@@ -61,9 +60,7 @@ describe("@platform/feature-system", () => {
 
     it("rejects invalid kebab-case IDs", () => {
       const invalid = { ...orgManifest, id: "Invalid_Name" };
-      expect(() => ManifestValidator.validate(invalid)).toThrow(
-        "must be lowercase kebab-case",
-      );
+      expect(() => ManifestValidator.validate(invalid)).toThrow("must be lowercase kebab-case");
     });
 
     it("rejects invalid permission format", () => {
@@ -71,9 +68,7 @@ describe("@platform/feature-system", () => {
         ...orgManifest,
         permissions: [{ name: "invalidpermission", description: "desc" }],
       };
-      expect(() => ManifestValidator.validate(invalid)).toThrow(
-        "hierarchical dot-notation",
-      );
+      expect(() => ManifestValidator.validate(invalid)).toThrow("hierarchical dot-notation");
     });
 
     it("rejects duplicate migration versions", () => {
@@ -84,9 +79,7 @@ describe("@platform/feature-system", () => {
           { version: 1, name: "m2", sql: "...", checksum: "c2" },
         ],
       };
-      expect(() => ManifestValidator.validate(invalid)).toThrow(
-        "Duplicate migration version",
-      );
+      expect(() => ManifestValidator.validate(invalid)).toThrow("Duplicate migration version");
     });
 
     it("rejects duplicate permission names across features", () => {
@@ -95,22 +88,16 @@ describe("@platform/feature-system", () => {
         permissions: [{ name: "organisations.read", description: "Duplicate" }],
       };
 
-      expect(() =>
-        DependencyResolver.resolve([orgManifest, duplicate]),
-      ).toThrow("declared by both");
+      expect(() => DependencyResolver.resolve([orgManifest, duplicate])).toThrow(
+        "declared by both",
+      );
     });
   });
 
   describe("DependencyResolver", () => {
     it("resolves dependency order correctly", () => {
-      const result = DependencyResolver.resolve([
-        inventoryManifest,
-        orgManifest,
-      ]);
-      expect(result.orderedManifests.map((m) => m.id)).toEqual([
-        "organisations",
-        "inventory",
-      ]);
+      const result = DependencyResolver.resolve([inventoryManifest, orgManifest]);
+      expect(result.orderedManifests.map((m) => m.id)).toEqual(["organisations", "inventory"]);
     });
 
     it("throws error when hard dependency is missing", () => {
@@ -120,9 +107,9 @@ describe("@platform/feature-system", () => {
     });
 
     it("rejects duplicate feature IDs", () => {
-      expect(() =>
-        DependencyResolver.resolve([orgManifest, { ...orgManifest }]),
-      ).toThrow("Duplicate feature ID");
+      expect(() => DependencyResolver.resolve([orgManifest, { ...orgManifest }])).toThrow(
+        "Duplicate feature ID",
+      );
     });
 
     it("detects and reports circular dependencies", () => {

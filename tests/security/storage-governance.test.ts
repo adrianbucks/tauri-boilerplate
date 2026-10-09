@@ -186,13 +186,7 @@ describe("Security Regression Suite — Storage Governance & Compaction (Gate G-
       ) VALUES
         ('tb_unreplicated', ?, 'org_1', 'grp_1', 'feat_1', 'widgets', 'w1', ?, 'usr1', 'del_op_1', NULL),
         ('tb_replicated', ?, 'org_1', 'grp_1', 'feat_1', 'widgets', 'w2', ?, 'usr1', 'del_op_2', ?);`,
-      [
-        prehistoricDate,
-        prehistoricDate,
-        prehistoricDate,
-        prehistoricDate,
-        prehistoricDate,
-      ],
+      [prehistoricDate, prehistoricDate, prehistoricDate, prehistoricDate, prehistoricDate],
     );
 
     orchestrator.setRetentionOverride("core.sync.tombstones", 0);
@@ -248,10 +242,7 @@ describe("Security Regression Suite — Storage Governance & Compaction (Gate G-
     );
 
     expect(remaining).toHaveLength(2);
-    expect(remaining.map((r) => r.id)).toEqual([
-      "task_pending",
-      "task_running",
-    ]);
+    expect(remaining.map((r) => r.id)).toEqual(["task_pending", "task_running"]);
   });
 
   // -------------------------------------------------------------------------
@@ -317,9 +308,7 @@ describe("Security Regression Suite — Storage Governance & Compaction (Gate G-
     await platform.init();
 
     // Verify policy was auto-registered in the platform's maintenance registry
-    const handler = platform.maintenanceRegistry.getHandler(
-      "domain.telemetry_events",
-    );
+    const handler = platform.maintenanceRegistry.getHandler("domain.telemetry_events");
     expect(handler).toBeDefined();
     expect(handler?.displayName).toBe("Domain Telemetry Events Pruner");
 
@@ -335,9 +324,7 @@ describe("Security Regression Suite — Storage Governance & Compaction (Gate G-
     const report = await platform.runMaintenance({ skipVacuum: true });
     expect(report.success).toBe(true);
 
-    const remaining = await db.query<{ id: string }>(
-      "SELECT id FROM domain_telemetry_events",
-    );
+    const remaining = await db.query<{ id: string }>("SELECT id FROM domain_telemetry_events");
     expect(remaining).toHaveLength(1);
     expect(remaining[0]?.id).toBe("e2");
   });

@@ -9,8 +9,7 @@
 // Task State
 // ---------------------------------------------------------------------------
 
-export type TaskState =
-  "PENDING" | "RUNNING" | "COMPLETED" | "FAILED" | "CANCELLED";
+export type TaskState = "PENDING" | "RUNNING" | "COMPLETED" | "FAILED" | "CANCELLED";
 
 // ---------------------------------------------------------------------------
 // Retry Policy
@@ -157,11 +156,7 @@ export interface TaskWorkerOptions {
    * Called only when a task has exhausted all retry attempts and is
    * permanently in FAILED state. Useful for alerting / observability.
    */
-  readonly onNonRetryableError?: (
-    taskId: string,
-    taskType: string,
-    error: unknown,
-  ) => void;
+  readonly onNonRetryableError?: (taskId: string, taskType: string, error: unknown) => void;
   /**
    * Called after each poll cycle even if no tasks were found. Useful for
    * heartbeat monitoring.

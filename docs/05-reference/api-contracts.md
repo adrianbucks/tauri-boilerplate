@@ -132,11 +132,7 @@ export interface DatabaseConnection {
 
 ```typescript
 export interface AuthorizationEngine {
-  can(
-    ctx: TrustedOperationContext,
-    permission: string,
-    resource?: unknown,
-  ): AuthorizationDecision;
+  can(ctx: TrustedOperationContext, permission: string, resource?: unknown): AuthorizationDecision;
   requireTrusted(
     ctx: TrustedOperationContext,
     permission: string,
@@ -154,10 +150,7 @@ export interface SyncTransport {
   start(): Promise<EndpointAddr>;
   connectPeer(peerAddr: EndpointAddr): Promise<void>;
   disconnectPeer(nodeId: string): Promise<void>;
-  sendEnvelope(
-    peerNodeId: string,
-    envelope: CanonicalSyncEnvelope,
-  ): Promise<void>;
+  sendEnvelope(peerNodeId: string, envelope: CanonicalSyncEnvelope): Promise<void>;
   onEnvelope(listener: (envelope: CanonicalSyncEnvelope) => void): () => void;
   stop(): Promise<void>;
 }

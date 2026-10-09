@@ -10,10 +10,7 @@ import {
 import type { DatabaseConnection, TransactionClient } from "@platform/database";
 import { AuditService } from "@platform/audit";
 import { AuthorizationEngine, SyncGroupService } from "@platform/authorization";
-import {
-  IDENTITY_ADMIN_PERMISSIONS,
-  type IdentityAdminPermission,
-} from "../permissions.js";
+import { IDENTITY_ADMIN_PERMISSIONS, type IdentityAdminPermission } from "../permissions.js";
 
 export interface CreateUserInput {
   organisationId: string;
@@ -66,12 +63,7 @@ export class IdentityAdminService {
     );
     const roles = Object.freeze(roleRows.map((r) => r.role_id));
 
-    await this.auth.require(
-      { userId, organisationId, roles },
-      permission,
-      undefined,
-      tx,
-    );
+    await this.auth.require({ userId, organisationId, roles }, permission, undefined, tx);
   }
 
   async createUser(
@@ -86,11 +78,7 @@ export class IdentityAdminService {
       });
     }
 
-    const {
-      userId: creatorUserId,
-      deviceId,
-      organisationId,
-    } = extractContextSubject(ctx);
+    const { userId: creatorUserId, deviceId, organisationId } = extractContextSubject(ctx);
 
     if (input.organisationId !== organisationId) {
       throw new AuthorizationError({
@@ -101,11 +89,7 @@ export class IdentityAdminService {
     }
 
     return this.db.transaction(async (tx) => {
-      await this.requirePermission(
-        ctx,
-        IDENTITY_ADMIN_PERMISSIONS.USERS_CREATE,
-        tx,
-      );
+      await this.requirePermission(ctx, IDENTITY_ADMIN_PERMISSIONS.USERS_CREATE, tx);
 
       const userId = generateCorrelationId("usr");
       const now = getUtcIsoTimestamp();
@@ -131,14 +115,7 @@ export class IdentityAdminService {
         const userRoleId = generateCorrelationId("ur");
         await tx.execute(
           "INSERT INTO core_user_roles (id, user_id, role_id, organisation_id, granted_by, granted_at) VALUES (?, ?, ?, ?, ?, ?)",
-          [
-            userRoleId,
-            userId,
-            input.roleId,
-            input.organisationId,
-            creatorUserId,
-            now,
-          ],
+          [userRoleId, userId, input.roleId, input.organisationId, creatorUserId, now],
         );
       }
 
@@ -171,11 +148,7 @@ export class IdentityAdminService {
     } = extractContextSubject(ctx);
 
     await this.db.transaction(async (tx) => {
-      await this.requirePermission(
-        ctx,
-        IDENTITY_ADMIN_PERMISSIONS.DEVICES_APPROVE,
-        tx,
-      );
+      await this.requirePermission(ctx, IDENTITY_ADMIN_PERMISSIONS.DEVICES_APPROVE, tx);
 
       // 1. Approve sync membership
       await this.syncGroups.approveMembership(requestId, ctx, undefined, tx);
@@ -215,20 +188,10 @@ export class IdentityAdminService {
     } = extractContextSubject(ctx);
 
     await this.db.transaction(async (tx) => {
-      await this.requirePermission(
-        ctx,
-        IDENTITY_ADMIN_PERMISSIONS.DEVICES_REVOKE,
-        tx,
-      );
+      await this.requirePermission(ctx, IDENTITY_ADMIN_PERMISSIONS.DEVICES_REVOKE, tx);
 
       // 1. Revoke membership in group
-      await this.syncGroups.revokeMembership(
-        deviceId,
-        groupId,
-        ctx,
-        reason,
-        tx,
-      );
+      await this.syncGroups.revokeMembership(deviceId, groupId, ctx, reason, tx);
 
       // 2. Update device status to REVOKED
       const now = getUtcIsoTimestamp();

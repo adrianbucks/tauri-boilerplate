@@ -67,10 +67,7 @@ describe("InboxService", () => {
   });
 
   it("receives and verifies a valid envelope", async () => {
-    const record = await service.receive(
-      validEnvelope,
-      async (_pk, _bytes, _sig) => true,
-    );
+    const record = await service.receive(validEnvelope, async (_pk, _bytes, _sig) => true);
 
     expect(record.envelopeId).toBe("env_inbox_01");
     expect(record.verificationStatus).toBe("VERIFIED");
@@ -78,10 +75,7 @@ describe("InboxService", () => {
   });
 
   it("marks verification_status as REJECTED if signature verification returns false", async () => {
-    const record = await service.receive(
-      validEnvelope,
-      async (_pk, _bytes, _sig) => false,
-    );
+    const record = await service.receive(validEnvelope, async (_pk, _bytes, _sig) => false);
 
     expect(record.verificationStatus).toBe("REJECTED");
   });

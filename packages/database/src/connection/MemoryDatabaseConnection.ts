@@ -1,7 +1,4 @@
-import initSqlJs, {
-  type Database as SqlJsDatabase,
-  type SqlValue,
-} from "sql.js";
+import initSqlJs, { type Database as SqlJsDatabase, type SqlValue } from "sql.js";
 import { DatabaseError } from "@platform/core";
 import type {
   DatabaseConnection,
@@ -72,10 +69,7 @@ export class MemoryDatabaseConnection implements DatabaseConnection {
     }
   }
 
-  async execute(
-    sql: string,
-    params: unknown[] = [],
-  ): Promise<{ rowsAffected: number }> {
+  async execute(sql: string, params: unknown[] = []): Promise<{ rowsAffected: number }> {
     await this.init();
     const db = this.getDb();
     try {

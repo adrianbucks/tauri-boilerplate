@@ -18,9 +18,7 @@ describe("Minimal Consumer Application (WP-019 / Gate G-12)", () => {
     expect(coreTables.some((t) => t.name === "core_devices")).toBe(true);
     expect(coreTables.some((t) => t.name === "core_organisations")).toBe(true);
     expect(coreTables.some((t) => t.name === "core_sync_outbox")).toBe(true);
-    expect(coreTables.some((t) => t.name === "core_background_tasks")).toBe(
-      true,
-    );
+    expect(coreTables.some((t) => t.name === "core_background_tasks")).toBe(true);
 
     // 2. Verify consumer domain table 'notes' exists
     const notesTable = await db.query<{ name: string }>(
@@ -86,10 +84,9 @@ describe("Minimal Consumer Application (WP-019 / Gate G-12)", () => {
       entity_id: string;
       operation: string;
       entity_type: string;
-    }>(
-      "SELECT entity_id, operation, entity_type FROM core_sync_outbox WHERE entity_id = ?",
-      [createdNote.id],
-    );
+    }>("SELECT entity_id, operation, entity_type FROM core_sync_outbox WHERE entity_id = ?", [
+      createdNote.id,
+    ]);
     expect(outboxRecords).toHaveLength(1);
     expect(outboxRecords[0]?.entity_type).toBe("notes");
     expect(outboxRecords[0]?.operation).toBe("create");
@@ -109,10 +106,9 @@ describe("Minimal Consumer Application (WP-019 / Gate G-12)", () => {
     const tombstones = await db.query<{
       entity_id: string;
       entity_type: string;
-    }>(
-      "SELECT entity_id, entity_type FROM core_sync_tombstones WHERE entity_id = ?",
-      [createdNote.id],
-    );
+    }>("SELECT entity_id, entity_type FROM core_sync_tombstones WHERE entity_id = ?", [
+      createdNote.id,
+    ]);
     expect(tombstones).toHaveLength(1);
     expect(tombstones[0]?.entity_type).toBe("notes");
 

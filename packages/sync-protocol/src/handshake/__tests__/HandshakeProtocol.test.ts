@@ -1,12 +1,6 @@
 import { describe, it, expect } from "vitest";
-import {
-  HandshakeValidator,
-  canonicalizeHandshake,
-} from "../HandshakeProtocol.js";
-import type {
-  HandshakeMessage,
-  HandshakeValidationOptions,
-} from "../HandshakeProtocol.js";
+import { HandshakeValidator, canonicalizeHandshake } from "../HandshakeProtocol.js";
+import type { HandshakeMessage, HandshakeValidationOptions } from "../HandshakeProtocol.js";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -16,9 +10,7 @@ const VALID_NONCE = "a".repeat(32); // 32 lowercase hex chars
 const FAKE_SIG = "b".repeat(128); // 128 lowercase hex chars
 const FAKE_PK = "ed25519_pk_" + "c".repeat(64); // 75 chars
 
-const makeValidMessage = (
-  overrides?: Partial<HandshakeMessage>,
-): HandshakeMessage => ({
+const makeValidMessage = (overrides?: Partial<HandshakeMessage>): HandshakeMessage => ({
   applicationId: "tauri-boilerplate-demo",
   applicationVersion: "0.1.0",
   protocolVersion: 1,
@@ -51,10 +43,7 @@ const makeOptions = (
 
 describe("HandshakeValidator.validate()", () => {
   it("accepts a valid handshake message", () => {
-    const result = HandshakeValidator.validate(
-      makeValidMessage(),
-      makeOptions(),
-    );
+    const result = HandshakeValidator.validate(makeValidMessage(), makeOptions());
     expect(result.valid).toBe(true);
   });
 
@@ -186,11 +175,7 @@ describe("HandshakeValidator.requireValid()", () => {
     const verifyFn = async () => false;
 
     await expect(
-      HandshakeValidator.requireValid(
-        makeValidMessage(),
-        makeOptions({ verifyFn }),
-        "corr_002",
-      ),
+      HandshakeValidator.requireValid(makeValidMessage(), makeOptions({ verifyFn }), "corr_002"),
     ).rejects.toThrow("cryptographic signature is invalid");
   });
 
@@ -253,8 +238,6 @@ describe("canonicalizeHandshake()", () => {
   it("differs when any field value differs", () => {
     const msg1 = makeValidMessage({ nonce: "a".repeat(32) });
     const msg2 = makeValidMessage({ nonce: "f".repeat(32) });
-    expect(canonicalizeHandshake(msg1)).not.toEqual(
-      canonicalizeHandshake(msg2),
-    );
+    expect(canonicalizeHandshake(msg1)).not.toEqual(canonicalizeHandshake(msg2));
   });
 });

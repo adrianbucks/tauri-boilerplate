@@ -23,11 +23,7 @@
  */
 
 import type { Logger } from "@platform/core";
-import {
-  ConsoleLogger,
-  getUtcIsoTimestamp,
-  generateCorrelationId,
-} from "@platform/core";
+import { ConsoleLogger, getUtcIsoTimestamp, generateCorrelationId } from "@platform/core";
 import type { DatabaseConnection } from "@platform/database";
 import type { TaskExecutionContext } from "../types.js";
 import type { TaskQueueService } from "../queue/TaskQueueService.js";
@@ -122,10 +118,7 @@ export class OutboxSyncWorker {
    * Executes one sync batch cycle.
    * Should be registered via `taskWorker.register(OutboxSyncWorker.TASK_TYPE, worker.handle)`.
    */
-  handle = async (
-    payload: OutboxSyncPayload,
-    ctx: TaskExecutionContext,
-  ): Promise<void> => {
+  handle = async (payload: OutboxSyncPayload, ctx: TaskExecutionContext): Promise<void> => {
     const { organisationId, batchLimit = 50 } = payload;
 
     this.logger.info(
@@ -140,9 +133,7 @@ export class OutboxSyncWorker {
       return;
     }
 
-    this.logger.info(
-      `[OutboxSyncWorker] Dispatching ${batch.length} envelope(s).`,
-    );
+    this.logger.info(`[OutboxSyncWorker] Dispatching ${batch.length} envelope(s).`);
 
     // Steps 3–6: Dispatch each envelope, honour abort signal
     let dispatched = 0;
@@ -150,9 +141,7 @@ export class OutboxSyncWorker {
 
     for (const entry of batch) {
       if (ctx.signal.aborted) {
-        this.logger.warn(
-          "[OutboxSyncWorker] AbortSignal fired — stopping dispatch loop early.",
-        );
+        this.logger.warn("[OutboxSyncWorker] AbortSignal fired — stopping dispatch loop early.");
         break;
       }
 
@@ -185,9 +174,7 @@ export class OutboxSyncWorker {
     // If all envelopes failed to dispatch, propagate as an error so the
     // TaskWorker/TaskQueueService retry logic is engaged.
     if (failed > 0 && dispatched === 0) {
-      throw new Error(
-        `[OutboxSyncWorker] All ${failed} envelopes failed to dispatch.`,
-      );
+      throw new Error(`[OutboxSyncWorker] All ${failed} envelopes failed to dispatch.`);
     }
   };
 
@@ -231,9 +218,7 @@ export class OutboxSyncWorker {
       );
     } catch {
       // core_sync_cursors may not exist in all deployment contexts; log and continue
-      this.logger.warn(
-        "[OutboxSyncWorker] Could not persist sync cursor (table may not exist).",
-      );
+      this.logger.warn("[OutboxSyncWorker] Could not persist sync cursor (table may not exist).");
     }
   }
 }

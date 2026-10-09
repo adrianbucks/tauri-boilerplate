@@ -232,10 +232,7 @@ describe("@platform/identity", () => {
       );
 
       const mockGateway = {
-        authenticateUser: async (req: {
-          user_id: string;
-          password: string;
-        }) => {
+        authenticateUser: async (req: { user_id: string; password: string }) => {
           if (req.user_id === "u_native" && req.password === "secret123") {
             return {
               user_id: "u_native",
@@ -282,10 +279,7 @@ describe("@platform/identity", () => {
       };
 
       await expect(
-        sessionService.authenticate(
-          { userId: "u_wrong", password: "bad" },
-          mockGateway,
-        ),
+        sessionService.authenticate({ userId: "u_wrong", password: "bad" }, mockGateway),
       ).rejects.toThrow("Argon2id verification failed");
       expect(sessionService.getCurrentSession()).toBeNull();
     });
