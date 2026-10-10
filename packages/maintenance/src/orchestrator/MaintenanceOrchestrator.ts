@@ -1,5 +1,5 @@
 import type { Logger } from "@platform/core";
-import { ConsoleLogger } from "@platform/core";
+import { ConsoleLogger, ValidationError } from "@platform/core";
 import type { DatabaseConnection } from "@platform/database";
 import type { MaintenanceReport, PruningCandidateStats, PruningResult } from "../types.js";
 import { MaintenanceRegistry } from "../registry/MaintenanceRegistry.js";
@@ -31,15 +31,49 @@ export class MaintenanceOrchestrator {
   private readonly retentionOverrides: Record<string, number>;
   private readonly logger: Logger;
 
+  private static validatePositiveNumber(field: string, value: number, integer = false): void {
+    if (!Number.isFinite(value) || value <= 0 || (integer && !Number.isSafeInteger(value))) {
+      throw new ValidationError({
+        message: `Maintenance ${field} must be a positive${integer ? " safe integer" : " finite number"}; received ${value}`,
+        userMessage: "The maintenance configuration is invalid.",
+        correlationId: `maintenance_${field}`,
+      });
+    }
+  }
+
+  private static cutoffForRetention(retentionDays: number): Date {
+    this.validatePositiveNumber("retention days", retentionDays);
+    const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
+    if (!Number.isFinite(cutoff.getTime())) {
+      throw new ValidationError({
+        message: `Maintenance retention days exceed the supported date range: ${retentionDays}`,
+        userMessage: "The maintenance retention period is invalid.",
+        correlationId: "maintenance_retention_days",
+      });
+    }
+    return cutoff;
+  }
+
   constructor(options: MaintenanceOrchestratorOptions) {
     this.connection = options.connection;
     this.registry = options.registry ?? new MaintenanceRegistry({ includeCoreDefaults: true });
     this.defaultBatchSize = options.defaultBatchSize ?? 500;
     this.retentionOverrides = { ...(options.retentionOverrides ?? {}) };
     this.logger = options.logger ?? new ConsoleLogger("info");
+    MaintenanceOrchestrator.validatePositiveNumber("batch size", this.defaultBatchSize, true);
+    for (const [handlerId, retentionDays] of Object.entries(this.retentionOverrides)) {
+      MaintenanceOrchestrator.validatePositiveNumber(
+        `retention override for ${handlerId}`,
+        retentionDays,
+      );
+    }
   }
 
   setRetentionOverride(handlerId: string, retentionDays: number): void {
+    MaintenanceOrchestrator.validatePositiveNumber(
+      `retention override for ${handlerId}`,
+      retentionDays,
+    );
     this.retentionOverrides[handlerId] = retentionDays;
   }
 
@@ -53,26 +87,37 @@ export class MaintenanceOrchestrator {
 
     for (const handler of handlers) {
       const retentionDays = this.getRetentionDays(handler.id, handler.defaultRetentionDays);
-      const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
+      let cutoffDate = "";
       try {
+        const cutoff = MaintenanceOrchestrator.cutoffForRetention(retentionDays);
+        cutoffDate = cutoff.toISOString();
         const count = await handler.countEligible(this.connection, cutoff);
+        if (!Number.isSafeInteger(count) || count < 0) {
+          throw new ValidationError({
+            message: `Maintenance handler '${handler.id}' returned invalid eligible row count ${count}`,
+            userMessage: "A maintenance handler returned an invalid inspection result.",
+            correlationId: `maintenance_count_${handler.id}`,
+          });
+        }
         stats.push({
           handlerId: handler.id,
           displayName: handler.displayName,
           description: handler.description,
           retentionDays,
-          cutoffDate: cutoff.toISOString(),
+          cutoffDate,
           eligibleRowCount: count,
         });
       } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
         this.logger.error(`[MaintenanceOrchestrator] Error inspecting handler ${handler.id}:`, err);
         stats.push({
           handlerId: handler.id,
           displayName: handler.displayName,
           description: handler.description,
           retentionDays,
-          cutoffDate: cutoff.toISOString(),
+          cutoffDate,
           eligibleRowCount: 0,
+          error: errorMessage,
         });
       }
     }
@@ -88,8 +133,9 @@ export class MaintenanceOrchestrator {
 
     const retentionDays =
       options?.retentionDays ?? this.getRetentionDays(handler.id, handler.defaultRetentionDays);
-    const cutoffDate = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
     const batchSize = options?.batchSize ?? this.defaultBatchSize;
+    MaintenanceOrchestrator.validatePositiveNumber("batch size", batchSize, true);
+    const cutoffDate = MaintenanceOrchestrator.cutoffForRetention(retentionDays);
 
     return await handler.prune({
       connection: this.connection,
@@ -100,10 +146,22 @@ export class MaintenanceOrchestrator {
   }
 
   async pruneAll(options?: PruneAllOptions): Promise<MaintenanceReport> {
+    const batchSize = options?.batchSize ?? this.defaultBatchSize;
+    MaintenanceOrchestrator.validatePositiveNumber("batch size", batchSize, true);
     const startTime = performance.now();
     const timestamp = new Date().toISOString();
     const results: PruningResult[] = [];
     const handlers = this.registry.getAllHandlers();
+    // Validate every handler's effective retention before deleting anything;
+    // a bad later policy must not leave the earlier handlers partially pruned.
+    const plans = handlers.map((handler) => {
+      const retentionDays = this.getRetentionDays(handler.id, handler.defaultRetentionDays);
+      return {
+        handler,
+        retentionDays,
+        cutoffDate: MaintenanceOrchestrator.cutoffForRetention(retentionDays),
+      };
+    });
 
     this.logger.info(
       `[MaintenanceOrchestrator] Starting storage maintenance across ${handlers.length} handler(s).`,
@@ -111,7 +169,7 @@ export class MaintenanceOrchestrator {
 
     let aborted = false;
 
-    for (const handler of handlers) {
+    for (const { handler, cutoffDate } of plans) {
       if (options?.signal?.aborted) {
         aborted = true;
         this.logger.warn(
@@ -126,10 +184,6 @@ export class MaintenanceOrchestrator {
         });
         break;
       }
-
-      const retentionDays = this.getRetentionDays(handler.id, handler.defaultRetentionDays);
-      const cutoffDate = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
-      const batchSize = options?.batchSize ?? this.defaultBatchSize;
 
       try {
         const result = await handler.prune({
@@ -174,9 +228,7 @@ export class MaintenanceOrchestrator {
     }
 
     const durationMs = Math.round(performance.now() - startTime);
-    const success = results
-      .filter((r) => r.error !== "Pruning aborted by signal")
-      .every((r) => !r.error);
+    const success = !wasAborted && results.every((result) => !result.error);
 
     return {
       timestamp,

@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { PanelLeftClose, PanelLeft, Activity, ShieldCheck, User } from "lucide-react";
+import { PanelLeftClose, PanelLeft, Activity, ShieldCheck, User, LogOut } from "lucide-react";
 import { ThemeToggle } from "../theme/ThemeProvider.js";
 import { Badge } from "../components/badge.js";
 import { Button } from "../components/button.js";
@@ -38,6 +38,7 @@ export interface AppShellProps {
   navGroups: AppShellNavGroup[];
   currentPath?: string;
   onNavigate?: (path: string) => void;
+  onLogout?: (() => void | Promise<void>) | undefined;
   syncState?: AppSyncState | undefined;
   userDisplayName?: string;
   organisationName?: string;
@@ -50,12 +51,28 @@ export const AppShell: React.FC<AppShellProps> = ({
   navGroups,
   currentPath = "/",
   onNavigate,
+  onLogout,
   syncState = "IDLE",
   userDisplayName = "Local User",
   organisationName = "Primary Organisation",
   children,
 }) => {
   const [collapsed, setCollapsed] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
+  const [logoutError, setLogoutError] = useState<string | null>(null);
+
+  const handleLogout = async () => {
+    if (!onLogout || loggingOut) return;
+    setLoggingOut(true);
+    setLogoutError(null);
+    try {
+      await onLogout();
+    } catch (cause) {
+      setLogoutError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setLoggingOut(false);
+    }
+  };
 
   const getSyncBadge = () => {
     switch (syncState) {
@@ -102,6 +119,9 @@ export const AppShell: React.FC<AppShellProps> = ({
             <Button
               variant="ghost"
               size="icon"
+              type="button"
+              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              aria-expanded={!collapsed}
               onClick={() => setCollapsed(!collapsed)}
               title={collapsed ? "Expand Sidebar" : "Collapse Sidebar"}
               className="h-8 w-8 text-muted-foreground hover:text-foreground"
@@ -115,7 +135,7 @@ export const AppShell: React.FC<AppShellProps> = ({
           </div>
 
           {/* Nav Groups */}
-          <nav className="space-y-4 p-2">
+          <nav aria-label="Main navigation" className="space-y-4 p-2">
             {navGroups.map((group) => (
               <div key={group.label} className="space-y-1">
                 {!collapsed && (
@@ -128,9 +148,13 @@ export const AppShell: React.FC<AppShellProps> = ({
                   return (
                     <button
                       key={item.id}
+                      type="button"
+                      aria-label={item.label}
+                      aria-current={isSelected ? "page" : undefined}
+                      disabled={!onNavigate}
                       onClick={() => onNavigate && onNavigate(item.path)}
                       className={cn(
-                        "flex w-full items-center justify-between rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors",
+                        "flex w-full items-center justify-between rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50",
                         isSelected
                           ? "bg-primary text-primary-foreground shadow-sm"
                           : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
@@ -160,6 +184,11 @@ export const AppShell: React.FC<AppShellProps> = ({
 
         {/* Footer */}
         <div className="border-t border-border p-3 space-y-2 bg-card">
+          {logoutError && (
+            <p role="alert" className="text-xs text-destructive">
+              Sign out failed: {logoutError}
+            </p>
+          )}
           {!collapsed && (
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1.5">
@@ -180,7 +209,23 @@ export const AppShell: React.FC<AppShellProps> = ({
                 </span>
               </div>
             )}
-            <ThemeToggle />
+            <div className="flex items-center gap-1">
+              {onLogout && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  type="button"
+                  aria-label="Sign out"
+                  title="Sign out"
+                  disabled={loggingOut}
+                  isLoading={loggingOut}
+                  onClick={() => void handleLogout()}
+                >
+                  {!loggingOut && <LogOut className="h-4 w-4" />}
+                </Button>
+              )}
+              <ThemeToggle />
+            </div>
           </div>
         </div>
       </aside>

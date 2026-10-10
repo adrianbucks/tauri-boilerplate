@@ -1,5 +1,5 @@
 use std::cmp::Ordering;
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering as AtomicOrdering};
+use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -11,8 +11,12 @@ pub struct HlcTimestamp {
 
 pub struct HybridLogicalClock {
     node_id: String,
-    latest_time: AtomicU64,
-    counter: AtomicU32,
+    state: Mutex<ClockState>,
+}
+
+struct ClockState {
+    physical_time: u64,
+    counter: u32,
 }
 
 impl HybridLogicalClock {
@@ -24,8 +28,10 @@ impl HybridLogicalClock {
 
         Self {
             node_id: node_id.into(),
-            latest_time: AtomicU64::new(now),
-            counter: AtomicU32::new(0),
+            state: Mutex::new(ClockState {
+                physical_time: now,
+                counter: 0,
+            }),
         }
     }
 
@@ -35,15 +41,17 @@ impl HybridLogicalClock {
             .unwrap_or_default()
             .as_millis() as u64;
 
-        let latest = self.latest_time.load(AtomicOrdering::SeqCst);
-        let (p, c) = if physical > latest {
-            self.latest_time.store(physical, AtomicOrdering::SeqCst);
-            self.counter.store(0, AtomicOrdering::SeqCst);
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let (p, c) = if physical > state.physical_time {
             (physical, 0)
         } else {
-            let c = self.counter.fetch_add(1, AtomicOrdering::SeqCst) + 1;
-            (latest, c)
+            increment(state.physical_time, state.counter)
         };
+        state.physical_time = p;
+        state.counter = c;
 
         format!("{:012x}_{:04x}_{}", p, c, self.node_id)
     }
@@ -60,27 +68,24 @@ impl HybridLogicalClock {
             .unwrap_or_default()
             .as_millis() as u64;
 
-        let latest = self.latest_time.load(AtomicOrdering::SeqCst);
-
-        let (p, c) = if physical > latest && physical > remote.physical_time {
-            self.latest_time.store(physical, AtomicOrdering::SeqCst);
-            self.counter.store(0, AtomicOrdering::SeqCst);
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let (p, c) = if physical > state.physical_time && physical > remote.physical_time {
             (physical, 0)
-        } else if latest == remote.physical_time {
-            let new_c =
-                std::cmp::max(self.counter.load(AtomicOrdering::SeqCst), remote.counter) + 1;
-            self.counter.store(new_c, AtomicOrdering::SeqCst);
-            (latest, new_c)
-        } else if remote.physical_time > latest {
-            self.latest_time
-                .store(remote.physical_time, AtomicOrdering::SeqCst);
-            let new_c = remote.counter + 1;
-            self.counter.store(new_c, AtomicOrdering::SeqCst);
-            (remote.physical_time, new_c)
+        } else if state.physical_time == remote.physical_time {
+            increment(
+                state.physical_time,
+                std::cmp::max(state.counter, remote.counter),
+            )
+        } else if state.physical_time > remote.physical_time {
+            increment(state.physical_time, state.counter)
         } else {
-            let new_c = self.counter.fetch_add(1, AtomicOrdering::SeqCst) + 1;
-            (latest, new_c)
+            increment(remote.physical_time, remote.counter)
         };
+        state.physical_time = p;
+        state.counter = c;
 
         format!("{:012x}_{:04x}_{}", p, c, self.node_id)
     }
@@ -121,5 +126,51 @@ impl HybridLogicalClock {
             },
             other => other,
         }
+    }
+}
+
+fn increment(physical_time: u64, counter: u32) -> (u64, u32) {
+    match counter.checked_add(1) {
+        Some(next_counter) => (physical_time, next_counter),
+        None => (physical_time.saturating_add(1), 0),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+    use std::sync::{Arc, Mutex};
+
+    #[test]
+    fn concurrent_now_calls_never_emit_duplicate_timestamps() {
+        let clock = Arc::new(HybridLogicalClock::new("parallel-node"));
+        let timestamps = Arc::new(Mutex::new(Vec::new()));
+
+        std::thread::scope(|scope| {
+            for _ in 0..8 {
+                let clock = Arc::clone(&clock);
+                let timestamps = Arc::clone(&timestamps);
+                scope.spawn(move || {
+                    for _ in 0..500 {
+                        timestamps
+                            .lock()
+                            .unwrap_or_else(|poisoned| poisoned.into_inner())
+                            .push(clock.now());
+                    }
+                });
+            }
+        });
+
+        let timestamps = timestamps
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let unique: HashSet<_> = timestamps.iter().collect();
+        assert_eq!(unique.len(), timestamps.len());
+    }
+
+    #[test]
+    fn counter_overflow_advances_physical_time() {
+        assert_eq!(increment(42, u32::MAX), (43, 0));
     }
 }

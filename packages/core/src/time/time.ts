@@ -11,6 +11,15 @@ export function getUtcIsoTimestamp(date = new Date()): string {
  */
 export function isValidUtcIsoTimestamp(timestamp: string): boolean {
   if (typeof timestamp !== "string") return false;
+
+  const match = /^(\d{4}-\d{2}-\d{2})T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,9})?Z$/.exec(
+    timestamp,
+  );
+  if (!match) return false;
+
   const date = new Date(timestamp);
-  return !isNaN(date.getTime()) && timestamp.endsWith("Z");
+  return (
+    Number.isFinite(date.getTime()) &&
+    date.toISOString().slice(0, 10) === match[1]
+  );
 }

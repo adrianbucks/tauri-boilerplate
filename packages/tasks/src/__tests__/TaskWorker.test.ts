@@ -34,6 +34,7 @@ async function applySchema(db: MemoryDatabaseConnection): Promise<void> {
       retry_delay_ms      INTEGER NOT NULL DEFAULT 1000,
       backoff_multiplier  REAL NOT NULL DEFAULT 2.0,
       max_retry_delay_ms  INTEGER NOT NULL DEFAULT 60000,
+      retry_jitter        REAL NOT NULL DEFAULT 0.25 CHECK (retry_jitter >= 0 AND retry_jitter <= 1),
       scheduled_at        TEXT NOT NULL,
       started_at          TEXT,
       completed_at        TEXT,
@@ -117,31 +118,35 @@ describe("TaskWorker", () => {
   }, 15_000);
 
   // -------------------------------------------------------------------------
-  // Unregistered handler → CANCELLED
+  // Empty handler registry must not claim or discard work
   // -------------------------------------------------------------------------
 
-  it("cancels tasks for which no handler is registered", async () => {
-    // Enqueue a task type for which NO handler is registered
+  it("leaves tasks pending until a handler has been registered", async () => {
     const task = await queue.enqueue(makeDefinition({ taskType: "unknown.type" }));
-
-    // Register a dummy handler so the worker claims tasks at all (it filters by registered types)
-    // — we need the worker to be willing to claim "unknown.type", so register a handler for it
-    // but immediately remove it to simulate the no-handler path.
-    // Actually: if no handlers are registered, claimNextBatch uses undefined (all types).
-    // So we don't register any handler — the worker will claim the task and then cancel it.
     worker.start();
 
     try {
-      await waitFor(async () => {
-        const t = await queue.findById(task.id);
-        return t?.state === "CANCELLED";
-      });
+      await new Promise((resolve) => setTimeout(resolve, 150));
     } finally {
       await worker.stop();
     }
 
-    const updated = await queue.findById(task.id);
-    expect(updated?.lastError).toContain("No handler registered");
+    expect((await queue.findById(task.id))?.state).toBe("PENDING");
+  }, 15_000);
+
+  it("leaves unsupported task types pending while processing registered types", async () => {
+    const unsupported = await queue.enqueue(makeDefinition({ taskType: "unknown.type" }));
+    const supported = await queue.enqueue(makeDefinition({ taskType: "test.work" }));
+    worker.register("test.work", async () => undefined);
+    worker.start();
+
+    try {
+      await waitFor(async () => (await queue.findById(supported.id))?.state === "COMPLETED");
+    } finally {
+      await worker.stop();
+    }
+
+    expect((await queue.findById(unsupported.id))?.state).toBe("PENDING");
   }, 15_000);
 
   // -------------------------------------------------------------------------
@@ -297,6 +302,42 @@ describe("TaskWorker", () => {
     expect(completed).toBe(true);
   }, 15_000);
 
+  it("waits for a poll already claiming work before resolving stop()", async () => {
+    let signalClaimStarted!: () => void;
+    let releaseClaim!: () => void;
+    const claimStarted = new Promise<void>((resolve) => {
+      signalClaimStarted = resolve;
+    });
+    const claimGate = new Promise<void>((resolve) => {
+      releaseClaim = resolve;
+    });
+
+    const originalQuery = db.query.bind(db);
+    db.query = async <T>(sql: string, params?: unknown[]): Promise<T[]> => {
+      if (sql.includes("UPDATE core_background_tasks") && sql.includes("RETURNING *")) {
+        signalClaimStarted();
+        await claimGate;
+      }
+      return originalQuery<T>(sql, params);
+    };
+
+    let handlerFinished = false;
+    worker.register("test.work", async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      handlerFinished = true;
+    });
+    const task = await queue.enqueue(makeDefinition());
+    worker.start();
+    await claimStarted;
+
+    const stopping = worker.stop();
+    releaseClaim();
+    await stopping;
+
+    expect(handlerFinished).toBe(true);
+    expect((await queue.findById(task.id))?.state).toBe("COMPLETED");
+  }, 15_000);
+
   // -------------------------------------------------------------------------
   // Concurrency limit
   // -------------------------------------------------------------------------
@@ -343,4 +384,61 @@ describe("TaskWorker", () => {
     worker.start(); // should not throw or double-poll
     await worker.stop();
   }, 5_000);
+
+  it("rejects invalid worker options before construction or reconfiguration", () => {
+    expect(() => new TaskWorker(db, { concurrency: 0 })).toThrow(
+      "TaskWorker option concurrency must be a positive safe integer",
+    );
+    expect(() => worker.reconfigure({ pollIntervalMs: -1 })).toThrow(
+      "TaskWorker option pollIntervalMs must be a positive safe integer",
+    );
+    expect(() => worker.reconfigure({ gracefulShutdownTimeoutMs: 1.5 })).toThrow(
+      "TaskWorker option gracefulShutdownTimeoutMs must be a positive safe integer",
+    );
+  });
+
+  it("dispatches claimed tasks even when the poll observer throws", async () => {
+    const observedWorker = new TaskWorker(db, {
+      pollIntervalMs: 25,
+      onPollComplete: () => {
+        throw new Error("observer failed");
+      },
+    });
+    observedWorker.register("test.work", async () => undefined);
+    const task = await queue.enqueue(makeDefinition());
+    observedWorker.start();
+
+    try {
+      await waitFor(async () => (await queue.findById(task.id))?.state === "COMPLETED");
+    } finally {
+      await observedWorker.stop();
+    }
+  }, 15_000);
+
+  it("contains errors thrown by the non-retryable observer", async () => {
+    const observedWorker = new TaskWorker(db, {
+      pollIntervalMs: 25,
+      onNonRetryableError: () => {
+        throw new Error("observer failed");
+      },
+    });
+    observedWorker.register("test.work", async (payload: { fail?: boolean }) => {
+      if (payload.fail) throw new Error("permanent failure");
+    });
+    const failedTask = await queue.enqueue(
+      makeDefinition({ payload: { fail: true }, retryPolicy: { maxAttempts: 1 } }),
+    );
+    const successfulTask = await queue.enqueue(makeDefinition({ payload: { fail: false } }));
+    observedWorker.start();
+
+    try {
+      await waitFor(async () => {
+        const failed = await queue.findById(failedTask.id);
+        const successful = await queue.findById(successfulTask.id);
+        return failed?.state === "FAILED" && successful?.state === "COMPLETED";
+      });
+    } finally {
+      await observedWorker.stop();
+    }
+  }, 15_000);
 });

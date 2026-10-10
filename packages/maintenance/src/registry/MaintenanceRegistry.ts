@@ -32,8 +32,44 @@ export class MaintenanceRegistry {
   }
 
   registerPolicy(policy: DeclarativePruningPolicy): void {
-    const pruner = new DeclarativeTablePruner(policy);
-    this.registerHandler(pruner);
+    this.registerPolicies([policy]);
+  }
+
+  /** Validate a complete set before exposing any of its handlers. */
+  preparePolicies(policies: readonly DeclarativePruningPolicy[]): PruningHandler[] {
+    const prepared = policies.map((policy) => new DeclarativeTablePruner(policy));
+    const seen = new Set<string>();
+    for (const handler of prepared) {
+      if (seen.has(handler.id) || this.handlers.has(handler.id)) {
+        throw new ValidationError({
+          message: `Pruning handler with id '${handler.id}' is already registered or duplicated.`,
+          userMessage: "Duplicate pruning handler registration",
+          correlationId: `prune_handler_dup_${handler.id}`,
+        });
+      }
+      seen.add(handler.id);
+    }
+    return prepared;
+  }
+
+  /** Commit previously validated handlers as one synchronous registry update. */
+  registerPreparedPolicies(handlers: readonly PruningHandler[]): void {
+    const seen = new Set<string>();
+    for (const handler of handlers) {
+      if (seen.has(handler.id) || this.handlers.has(handler.id)) {
+        throw new ValidationError({
+          message: `Pruning handler with id '${handler.id}' is already registered or duplicated.`,
+          userMessage: "Duplicate pruning handler registration",
+          correlationId: `prune_handler_dup_${handler.id}`,
+        });
+      }
+      seen.add(handler.id);
+    }
+    for (const handler of handlers) this.handlers.set(handler.id, handler);
+  }
+
+  registerPolicies(policies: readonly DeclarativePruningPolicy[]): void {
+    this.registerPreparedPolicies(this.preparePolicies(policies));
   }
 
   getHandler(id: string): PruningHandler | undefined {

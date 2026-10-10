@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { MemoryDatabaseConnection } from "@platform/database";
-import { createOperationContext, ValidationError } from "@platform/core";
+import { AuthorizationError, createOperationContext, ValidationError } from "@platform/core";
 import {
   HandshakeValidator,
   NamespaceGenerator,
@@ -13,12 +13,78 @@ import {
   InboxService,
   TombstoneService,
   IrohSyncTransport,
+  SyncManager,
   type TauriInvokeFn,
+  ConflictEngine,
 } from "@platform/sync";
 import { SyncGroupService } from "@platform/authorization";
 import { DeviceIdentityService } from "@platform/identity";
 
 describe("Security Regression Suite — Sync & Pairing Authorization", () => {
+  it("rejects malformed timestamps before they can influence LWW conflict resolution", () => {
+    const envelope = (envelopeId: string, logicalTimestamp: string): SyncEnvelope => ({
+      envelopeId,
+      signedAt: "2026-10-10T00:00:00.000Z",
+      signerPublicKey: `ed25519_pk_${"a".repeat(64)}`,
+      signature: "b".repeat(128),
+      operation: {
+        operationId: envelopeId,
+        applicationId: "app",
+        organisationId: "org",
+        syncGroupId: "group",
+        featureId: "feature",
+        entityType: "record",
+        entityId: "record_1",
+        operation: "update",
+        payload: {},
+        authorId: "user",
+        deviceId: "device",
+        logicalTimestamp,
+        schemaVersion: 1,
+        protocolVersion: 1,
+      },
+    });
+
+    expect(() =>
+      new ConflictEngine().resolve(
+        { strategy: "lww" },
+        envelope("local", "2026-10-10T00:00:00.000Z:0001:device_local"),
+        envelope("remote", "not-a-valid-timestamp"),
+      ),
+    ).toThrow("Invalid HLC timestamp");
+  });
+
+  it("rejects an unsigned envelope ID override before it can occupy an inbox idempotency key", async () => {
+    const envelope: SyncEnvelope = {
+      envelopeId: "forged-envelope-id",
+      signedAt: "2026-10-10T00:00:00.000Z",
+      signerPublicKey: `ed25519_pk_${"a".repeat(64)}`,
+      signature: "b".repeat(128),
+      operation: {
+        operationId: "signed-operation-id",
+        applicationId: "app",
+        organisationId: "org_acme",
+        syncGroupId: "grp_coventry",
+        featureId: "feature",
+        entityType: "record",
+        entityId: "record_1",
+        operation: "update",
+        payload: {},
+        authorId: "user_admin",
+        deviceId: "dev_admin",
+        logicalTimestamp: "2026-10-10T00:00:00.000Z:0001:dev_admin",
+        schemaVersion: 1,
+        protocolVersion: 1,
+      },
+    };
+
+    await expect(inboxService.receive(envelope, async () => true)).rejects.toThrow(
+      "Envelope ID must match operation ID",
+    );
+    const rows = await db.query<{ count: number }>("SELECT COUNT(*) AS count FROM core_sync_inbox");
+    expect(rows[0]?.count).toBe(0);
+  });
+
   let db: MemoryDatabaseConnection;
   let pairingService: PairingService;
   let syncGroups: SyncGroupService;
@@ -31,6 +97,23 @@ describe("Security Regression Suite — Sync & Pairing Authorization", () => {
     deviceId: "dev_admin",
     organisationId: "org_acme",
     userId: "user_admin",
+  });
+
+  it("does not authorize a peer from caller-provided organisation metadata", async () => {
+    const manager = new SyncManager({ db, deviceId: "dev_local", organisationId: "org_acme" });
+    const observed: string[] = [];
+    manager.onStateChange((state) => observed.push(state));
+
+    await manager.connect({
+      peerId: "peer_unverified",
+      deviceId: "dev_peer",
+      organisationId: "org_acme",
+      supportedSyncGroups: ["group_acme"],
+    });
+
+    expect(observed).not.toContain("AUTHORISED");
+    expect(manager.getPeerState("peer_unverified")).toBe("ERROR");
+    expect(manager.getDiagnostics()).toEqual([]);
   });
 
   const baseValidationOpts = {
@@ -74,7 +157,33 @@ describe("Security Regression Suite — Sync & Pairing Authorization", () => {
         application_id TEXT NOT NULL,
         status TEXT NOT NULL,
         registered_at TEXT NOT NULL,
-        last_seen_at TEXT
+        last_seen_at TEXT,
+        is_local INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE TABLE core_permissions (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE,
+        description TEXT
+      );
+      CREATE TABLE core_roles (
+        id TEXT PRIMARY KEY,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        organisation_id TEXT NOT NULL,
+        name TEXT NOT NULL
+      );
+      CREATE TABLE core_role_permissions (
+        id TEXT PRIMARY KEY,
+        role_id TEXT NOT NULL,
+        permission_id TEXT NOT NULL,
+        scope_constraints_json TEXT
+      );
+      CREATE TABLE core_user_roles (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        role_id TEXT NOT NULL,
+        organisation_id TEXT NOT NULL,
+        granted_at TEXT NOT NULL
       );
       CREATE TABLE core_sync_groups (
         id TEXT PRIMARY KEY,
@@ -196,6 +305,13 @@ describe("Security Regression Suite — Sync & Pairing Authorization", () => {
       VALUES 
         ('grp_coventry', '2026-08-30T10:00:00Z', '2026-08-30T10:00:00Z', 'org_acme', 'Coventry Group'),
         ('grp_birmingham', '2026-08-30T10:00:00Z', '2026-08-30T10:00:00Z', 'org_acme', 'Birmingham Group');
+      INSERT INTO core_permissions (id, name) VALUES ('perm_sync_manage', 'sync.manage');
+      INSERT INTO core_roles (id, created_at, updated_at, organisation_id, name)
+      VALUES ('role_admin', 'now', 'now', 'org_acme', 'Admin');
+      INSERT INTO core_role_permissions (id, role_id, permission_id)
+      VALUES ('role_perm_sync_manage', 'role_admin', 'perm_sync_manage');
+      INSERT INTO core_user_roles (id, user_id, role_id, organisation_id, granted_at)
+      VALUES ('user_role_admin', 'user_admin', 'role_admin', 'org_acme', 'now');
     `);
 
     pairingService = new PairingService(db);
@@ -219,6 +335,60 @@ describe("Security Regression Suite — Sync & Pairing Authorization", () => {
     const res = HandshakeValidator.validate(handshake, baseValidationOpts);
     expect(res.valid).toBe(false);
     expect(res.code).toBe("ORG_ID_MISMATCH");
+  });
+
+  it("rejects pairing when the selected sync group belongs to another organisation", async () => {
+    await db.execute(
+      "INSERT INTO core_sync_groups (id, created_at, updated_at, organisation_id, name) VALUES ('grp_other_org', 'now', 'now', 'org_other', 'Other organisation');",
+    );
+
+    await expect(
+      pairingService.requestPairing(
+        {
+          handshake: createValidHandshake({ deviceId: "dev_cross_org" }),
+          syncGroupId: "grp_other_org",
+        },
+        baseValidationOpts,
+        ctx,
+      ),
+    ).rejects.toThrow(AuthorizationError);
+
+    const devices = await db.query<{ count: number }>(
+      "SELECT COUNT(*) AS count FROM core_devices WHERE device_id = ?",
+      ["dev_cross_org"],
+    );
+    const requests = await db.query<{ count: number }>(
+      "SELECT COUNT(*) AS count FROM core_membership_requests WHERE device_id = ?",
+      ["dev_cross_org"],
+    );
+    expect(devices[0]?.count).toBe(0);
+    expect(requests[0]?.count).toBe(0);
+  });
+
+  it("binds peer membership to the authenticated context, never an unsigned user ID", async () => {
+    const input = {
+      handshake: createValidHandshake({
+        deviceId: "dev_user_binding",
+        nonce: "4".repeat(32),
+      }),
+      syncGroupId: "grp_coventry",
+      // Simulate a stale or hostile caller attempting to inject an identity that
+      // is not part of the signed handshake. This property is no longer in the API.
+      userId: "user_victim",
+    } as never;
+
+    const result = await pairingService.requestPairing(input, baseValidationOpts, ctx);
+    const [request] = await db.query<{ user_id: string | null }>(
+      "SELECT user_id FROM core_membership_requests WHERE id = ?",
+      [result.requestId],
+    );
+    const [device] = await db.query<{ user_id: string | null }>(
+      "SELECT user_id FROM core_devices WHERE device_id = ?",
+      ["dev_user_binding"],
+    );
+
+    expect(request?.user_id).toBe("user_admin");
+    expect(device?.user_id).toBe("user_admin");
   });
 
   it("Handshake Security: Rejects handshake with replayed nonce", async () => {
@@ -251,6 +421,129 @@ describe("Security Regression Suite — Sync & Pairing Authorization", () => {
 
     const canSync = await pairingService.canSync("dev_pending_1", "grp_coventry");
     expect(canSync).toBe(false);
+  });
+
+  it("rejects pending, suspended, revoked, and unregistered devices even with active membership", async () => {
+    await identity.registerDevice({
+      deviceId: "dev_status_gate",
+      publicKey: "pk_status_gate",
+      platform: "windows",
+      applicationId: "tauri-boilerplate-demo",
+    });
+    await db.execute(
+      `INSERT INTO core_sync_group_members
+        (id, group_id, device_id, user_id, status, joined_at)
+       VALUES ('member_status_gate', 'grp_coventry', 'dev_status_gate', 'user_admin', 'ACTIVE', 'now')`,
+    );
+
+    for (const status of ["PENDING_APPROVAL", "SUSPENDED", "REVOKED", "UNREGISTERED"] as const) {
+      await identity.updateDeviceStatus("dev_status_gate", status);
+      expect(await pairingService.canSync("dev_status_gate", "grp_coventry")).toBe(false);
+    }
+
+    for (const status of ["APPROVED", "ACTIVE"] as const) {
+      await identity.updateDeviceStatus("dev_status_gate", status);
+      expect(await pairingService.canSync("dev_status_gate", "grp_coventry")).toBe(true);
+    }
+  });
+
+  it("requires sync.manage before approving a pairing request", async () => {
+    await db.execute(`
+      INSERT INTO core_membership_requests
+        (id, device_id, group_id, user_id, requested_at, status)
+      VALUES ('req_pending', 'dev_pending', 'grp_coventry', 'user_requester', 'now', 'PENDING');
+    `);
+    await db.execute(`
+      INSERT INTO core_sync_group_members
+        (id, group_id, device_id, user_id, status, joined_at)
+      VALUES ('member_active', 'grp_coventry', 'dev_pending', 'user_requester', 'ACTIVE', 'now');
+    `);
+
+    const unauthorizedContext = createOperationContext({
+      deviceId: "dev_guest",
+      organisationId: "org_acme",
+      userId: "user_guest",
+    });
+
+    await expect(pairingService.approvePairing("req_pending", unauthorizedContext)).rejects.toThrow(
+      AuthorizationError,
+    );
+    await expect(
+      syncGroups.rejectMembership("req_pending", unauthorizedContext, "Not authorized"),
+    ).rejects.toThrow(AuthorizationError);
+    await expect(
+      syncGroups.revokeMembership(
+        "dev_pending",
+        "grp_coventry",
+        unauthorizedContext,
+        "Not authorized",
+      ),
+    ).rejects.toThrow(AuthorizationError);
+
+    const [request] = await db.query<{ status: string }>(
+      "SELECT status FROM core_membership_requests WHERE id = ?",
+      ["req_pending"],
+    );
+    const decisions = await db.query<{ count: number }>(
+      "SELECT COUNT(*) AS count FROM core_membership_decisions WHERE request_id = ?",
+      ["req_pending"],
+    );
+    expect(request?.status).toBe("PENDING");
+    expect(decisions?.[0]?.count).toBe(0);
+    const [membership] = await db.query<{ status: string }>(
+      "SELECT status FROM core_sync_group_members WHERE id = ?",
+      ["member_active"],
+    );
+    const revocations = await db.query<{ count: number }>(
+      "SELECT COUNT(*) AS count FROM core_revocations WHERE device_id = ?",
+      ["dev_pending"],
+    );
+    expect(membership?.status).toBe("ACTIVE");
+    expect(revocations?.[0]?.count).toBe(0);
+  });
+
+  it("prevents an authorised user from deciding membership in another organisation", async () => {
+    await db.execute(
+      "INSERT INTO core_sync_groups (id, created_at, updated_at, organisation_id, name) VALUES ('grp_other_org', 'now', 'now', 'org_other', 'Other organisation');",
+    );
+    await db.execute(
+      "INSERT INTO core_membership_requests (id, device_id, group_id, user_id, requested_at, status) VALUES ('req_other_org', 'dev_other_org', 'grp_other_org', 'user_other', 'now', 'PENDING');",
+    );
+    await db.execute(
+      "INSERT INTO core_sync_group_members (id, group_id, device_id, user_id, status, joined_at) VALUES ('member_other_org', 'grp_other_org', 'dev_other_org', 'user_other', 'ACTIVE', 'now');",
+    );
+
+    await expect(syncGroups.approveMembership("req_other_org", ctx)).rejects.toThrow(
+      AuthorizationError,
+    );
+    await expect(
+      syncGroups.rejectMembership("req_other_org", ctx, "Cross-tenant rejection"),
+    ).rejects.toThrow(AuthorizationError);
+    await expect(
+      syncGroups.revokeMembership("dev_other_org", "grp_other_org", ctx, "Cross-tenant revocation"),
+    ).rejects.toThrow(AuthorizationError);
+
+    const [request] = await db.query<{ status: string }>(
+      "SELECT status FROM core_membership_requests WHERE id = ?",
+      ["req_other_org"],
+    );
+    const [member] = await db.query<{ status: string }>(
+      "SELECT status FROM core_sync_group_members WHERE id = ?",
+      ["member_other_org"],
+    );
+    const decisions = await db.query<{ count: number }>(
+      "SELECT COUNT(*) AS count FROM core_membership_decisions WHERE request_id = ?",
+      ["req_other_org"],
+    );
+    const revocations = await db.query<{ count: number }>(
+      "SELECT COUNT(*) AS count FROM core_revocations WHERE group_id = ?",
+      ["grp_other_org"],
+    );
+
+    expect(request?.status).toBe("PENDING");
+    expect(member?.status).toBe("ACTIVE");
+    expect(decisions?.[0]?.count).toBe(0);
+    expect(revocations?.[0]?.count).toBe(0);
   });
 
   it("Layer 6: Enforces strict sync group boundaries (Coventry vs Birmingham isolation)", async () => {
@@ -310,7 +603,7 @@ describe("Security Regression Suite — Sync & Pairing Authorization", () => {
     await syncGroups.revokeMembership(
       "dev_laptop_temp",
       "grp_coventry",
-      ctx.userId ?? "system",
+      ctx,
       "Device reported lost",
     );
     await identity.updateDeviceStatus("dev_laptop_temp", "REVOKED");
@@ -423,7 +716,7 @@ describe("Security Regression Suite — Sync & Pairing Authorization", () => {
       signerPublicKey: "ed25519_pk_" + "f".repeat(64),
       signature: "0".repeat(128),
       operation: {
-        operationId: "op_tampered_01",
+        operationId: "env_tampered_01",
         applicationId: "tauri-boilerplate-demo",
         organisationId: "org_acme",
         syncGroupId: "grp_coventry",

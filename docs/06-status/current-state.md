@@ -1,15 +1,15 @@
 # Current Implementation State & Verification Evidence
 
-**Snapshot Date**: 2026-10-09  
-**Methodology**: Static inspection of the workspace plus verified test suite execution across TypeScript and Rust workspace packages. No component or behavior is marked verified without concrete test evidence.
+**Documented snapshot date**: 2026-10-09
+**Review status**: Claims in this document have not yet been independently revalidated against the current source tree and fresh verification runs. Treat statuses, counts, and evidence references below as historical/documented claims pending the staged audit in [`codebase-review-plan.md`](../07-in-development/codebase-review-plan.md).
 
 ---
 
 ## 1. Overall Platform Status
 
-**Production-Ready 1.0 Foundation — All Acceptance Gates Passed (G-01 through G-014)**
+**Previously documented claim: production-ready 1.0 foundation — pending validation.** The acceptance-gate and work-package registers are inconsistent, and this review has not yet confirmed that all listed implementation and test evidence is current.
 
-The repository contains a fully verified, production-grade local-first platform foundation. All 22 Work Packages (WP-001 through WP-022) and 14 acceptance gates (G-01 through G-014) are resolved and passing:
+The previous snapshot asserted that all 22 Work Packages (WP-001 through WP-022) and 14 acceptance gates (G-01 through G-014) were resolved. These assertions and the capability list below remain unverified until the review checks their implementation and evidence:
 
 - File-backed durable SQLite persistence with WAL mode and foreign keys (`crates/native-core`).
 - Platform-owned schema migrations executed in topological order (`@platform/platform`).

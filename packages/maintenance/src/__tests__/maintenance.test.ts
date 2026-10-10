@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { MemoryDatabaseConnection } from "@platform/database";
 import {
   MaintenanceRegistry,
@@ -185,6 +185,18 @@ describe("@platform/maintenance unit test suite", () => {
       expect(
         () =>
           new DeclarativeTablePruner({
+            id: "bad.filter_predicate",
+            displayName: "Bad Filter Predicate",
+            tableName: "feature_sensor_readings",
+            timestampColumn: "recorded_at",
+            defaultRetentionDays: 7,
+            filterCondition: "status = 'ARCHIVED' OR 1 = 1",
+          }),
+      ).toThrow("single column comparison");
+
+      expect(
+        () =>
+          new DeclarativeTablePruner({
             id: "bad.filter",
             displayName: "Bad Filter",
             tableName: "feature_sensor_readings",
@@ -193,6 +205,40 @@ describe("@platform/maintenance unit test suite", () => {
             filterCondition: "status = 'A'; DROP TABLE feature_sensor_readings;--",
           }),
       ).toThrow();
+
+      expect(
+        () =>
+          new DeclarativeTablePruner({
+            id: "invalid.retention",
+            displayName: "Invalid Retention",
+            tableName: "feature_sensor_readings",
+            timestampColumn: "recorded_at",
+            defaultRetentionDays: Number.POSITIVE_INFINITY,
+          }),
+      ).toThrow("positive finite number");
+    });
+
+    it("snapshots its policy so post-validation caller mutation cannot change SQL", async () => {
+      const oldDate = new Date("2026-01-01T00:00:00Z").toISOString();
+      await db.execute(
+        "INSERT INTO feature_sensor_readings (id, recorded_at, reading_value, status) VALUES ('safe', ?, 1, 'ARCHIVED')",
+        [oldDate],
+      );
+
+      const policy = {
+        id: "feature.sensor_readings",
+        displayName: "Sensor Readings Pruner",
+        tableName: "feature_sensor_readings",
+        timestampColumn: "recorded_at",
+        defaultRetentionDays: 30,
+        filterCondition: "status = 'ARCHIVED'",
+      };
+      const pruner = new DeclarativeTablePruner(policy);
+      policy.tableName = "missing_table; DROP TABLE feature_sensor_readings";
+      policy.timestampColumn = "unsafe column";
+      policy.filterCondition = "1 = 1";
+
+      await expect(pruner.countEligible(db, new Date("2026-06-01T00:00:00Z"))).resolves.toBe(1);
     });
   });
 
@@ -430,8 +476,173 @@ describe("@platform/maintenance unit test suite", () => {
 
       const report = await orchestrator.pruneAll({ signal: controller.signal });
       expect(report.aborted).toBe(true);
+      expect(report.success).toBe(false);
       expect(report.vacuumExecuted).toBe(false);
       expect(report.results.some((r) => r.error === "Pruning aborted by signal")).toBe(true);
+    });
+
+    it("rejects unbounded or invalid batch sizes before invoking pruners", async () => {
+      const registry = new MaintenanceRegistry({ includeCoreDefaults: false });
+      const prune = vi.fn(async () => ({
+        handlerId: "test.pruner",
+        displayName: "Pruner",
+        rowsPruned: 0,
+        durationMs: 0,
+      }));
+      registry.registerHandler({
+        id: "test.pruner",
+        displayName: "Pruner",
+        description: "Test pruner",
+        defaultRetentionDays: 1,
+        countEligible: async () => 0,
+        prune,
+      });
+      const orchestrator = new MaintenanceOrchestrator({ connection: db, registry });
+
+      await expect(orchestrator.pruneAll({ batchSize: -1 })).rejects.toThrow(
+        "Maintenance batch size must be a positive safe integer",
+      );
+      await expect(orchestrator.pruneAll({ batchSize: 0 })).rejects.toThrow(
+        "Maintenance batch size must be a positive safe integer",
+      );
+      await expect(orchestrator.pruneHandler("test.pruner", { retentionDays: -1 })).rejects.toThrow(
+        "Maintenance retention days must be a positive finite number",
+      );
+      expect(prune).not.toHaveBeenCalled();
+    });
+
+    it("enforces bounded batches when core handlers are called directly", async () => {
+      const registry = new MaintenanceRegistry({ includeCoreDefaults: true });
+      const context = {
+        connection: db,
+        cutoffDate: new Date(),
+        batchSize: -1,
+      };
+
+      for (const handler of registry.getAllHandlers()) {
+        await expect(handler.prune(context)).rejects.toThrow(
+          "Pruning batch size must be a positive safe integer",
+        );
+      }
+    });
+
+    it("validates every retention policy before pruning any handler", async () => {
+      const registry = new MaintenanceRegistry({ includeCoreDefaults: false });
+      const prunedIds: string[] = [];
+      for (const [id, retentionDays] of [
+        ["first", 1],
+        ["second", Number.NaN],
+      ] as const) {
+        registry.registerHandler({
+          id,
+          displayName: id,
+          description: id,
+          defaultRetentionDays: retentionDays,
+          countEligible: async () => 0,
+          prune: async () => {
+            prunedIds.push(id);
+            return { handlerId: id, displayName: id, rowsPruned: 0, durationMs: 0 };
+          },
+        });
+      }
+      const orchestrator = new MaintenanceOrchestrator({ connection: db, registry });
+
+      await expect(orchestrator.pruneAll()).rejects.toThrow("Maintenance retention days");
+      expect(prunedIds).toEqual([]);
+    });
+
+    it("reports candidate inspection failures instead of presenting them as zero", async () => {
+      const registry = new MaintenanceRegistry({ includeCoreDefaults: false });
+      registry.registerHandler({
+        id: "test.inspection_failure",
+        displayName: "Unavailable Count",
+        description: "Count query failure",
+        defaultRetentionDays: 30,
+        countEligible: async () => {
+          throw new Error("database unavailable");
+        },
+        prune: async () => ({
+          handlerId: "test.inspection_failure",
+          displayName: "Unavailable Count",
+          rowsPruned: 0,
+          durationMs: 0,
+        }),
+      });
+      const orchestrator = new MaintenanceOrchestrator({ connection: db, registry });
+
+      await expect(orchestrator.inspectAll()).resolves.toMatchObject([
+        { eligibleRowCount: 0, error: "database unavailable" },
+      ]);
+    });
+
+    it.each([-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])(
+      "reports invalid candidate counts (%s) as inspection errors",
+      async (count) => {
+        const registry = new MaintenanceRegistry({ includeCoreDefaults: false });
+        registry.registerHandler({
+          id: "test.invalid_count",
+          displayName: "Invalid Count",
+          description: "Invalid candidate count",
+          defaultRetentionDays: 30,
+          countEligible: async () => count,
+          prune: async () => ({
+            handlerId: "test.invalid_count",
+            displayName: "Invalid Count",
+            rowsPruned: 0,
+            durationMs: 0,
+          }),
+        });
+        const orchestrator = new MaintenanceOrchestrator({ connection: db, registry });
+
+        await expect(orchestrator.inspectAll()).resolves.toMatchObject([
+          {
+            handlerId: "test.invalid_count",
+            eligibleRowCount: 0,
+            error: expect.stringContaining("invalid eligible row count"),
+          },
+        ]);
+      },
+    );
+
+    it("isolates invalid handler retention metadata during inspection", async () => {
+      const registry = new MaintenanceRegistry({ includeCoreDefaults: false });
+      registry.registerHandler({
+        id: "test.invalid_retention",
+        displayName: "Invalid Retention",
+        description: "Invalid custom handler metadata",
+        defaultRetentionDays: Number.NaN,
+        countEligible: async () => 1,
+        prune: async () => ({
+          handlerId: "test.invalid_retention",
+          displayName: "Invalid Retention",
+          rowsPruned: 0,
+          durationMs: 0,
+        }),
+      });
+      registry.registerHandler({
+        id: "test.valid_retention",
+        displayName: "Valid Retention",
+        description: "Valid handler still inspected",
+        defaultRetentionDays: 30,
+        countEligible: async () => 2,
+        prune: async () => ({
+          handlerId: "test.valid_retention",
+          displayName: "Valid Retention",
+          rowsPruned: 0,
+          durationMs: 0,
+        }),
+      });
+      const orchestrator = new MaintenanceOrchestrator({ connection: db, registry });
+
+      await expect(orchestrator.inspectAll()).resolves.toMatchObject([
+        {
+          handlerId: "test.invalid_retention",
+          eligibleRowCount: 0,
+          cutoffDate: "",
+          error: expect.any(String),
+        },
+        { handlerId: "test.valid_retention", eligibleRowCount: 2, cutoffDate: expect.any(String) },
+      ]);
     });
 
     it("executes VACUUM when aborted mid-run if rows were pruned (B-06)", async () => {
@@ -479,6 +690,7 @@ describe("@platform/maintenance unit test suite", () => {
 
       const report = await orchestrator.pruneAll({ signal: controller.signal });
       expect(report.aborted).toBe(true);
+      expect(report.success).toBe(false);
       expect(report.totalRowsPruned).toBe(1);
       // Even though aborted, rows were pruned so VACUUM must execute!
       expect(report.vacuumExecuted).toBe(true);

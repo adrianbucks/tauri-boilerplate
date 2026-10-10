@@ -185,28 +185,19 @@ export function DiagnosticsPage() {
         console.warn("Failed to query sync endpoint:", err);
       }
 
-      // 5. Database Row Counts via native query
+      // 5. Database row counts via a fixed, read-only native diagnostics API
       try {
-        const queries = [
-          "SELECT COUNT(*) as cnt FROM core_sync_outbox WHERE status = 'pending'",
-          "SELECT COUNT(*) as cnt FROM core_sync_inbox",
-          "SELECT COUNT(*) as cnt FROM core_audit_events",
-          "SELECT COUNT(*) as cnt FROM widgets WHERE deleted_at IS NULL",
-        ];
-
-        const [outboxRes, inboxRes, auditRes, widgetRes] = await Promise.all(
-          queries.map((sql) =>
-            invoke<Array<{ cnt: number }>>("db_query", {
-              request: { sql },
-            }).catch(() => [{ cnt: 0 }]),
-          ),
-        );
-
+        const counts = await invoke<{
+          outbox_pending: number;
+          inbox_total: number;
+          audit_events: number;
+          widgets_total: number;
+        }>("get_diagnostics_counts");
         setTableCounts({
-          outboxPending: outboxRes?.[0]?.cnt ?? 0,
-          inboxTotal: inboxRes?.[0]?.cnt ?? 0,
-          auditEvents: auditRes?.[0]?.cnt ?? 0,
-          widgetsTotal: widgetRes?.[0]?.cnt ?? 0,
+          outboxPending: counts.outbox_pending,
+          inboxTotal: counts.inbox_total,
+          auditEvents: counts.audit_events,
+          widgetsTotal: counts.widgets_total,
         });
       } catch (err) {
         console.warn("Failed to query table counts:", err);
@@ -795,8 +786,16 @@ export function DiagnosticsPage() {
             </div>
             <div className="flex items-center gap-2 shrink-0">
               <Badge variant="outline" className="font-mono">
-                {maintenanceStats.reduce((sum, s) => sum + s.eligibleRowCount, 0)} Eligible Rows
+                {maintenanceStats.reduce((sum, s) => sum + s.eligibleRowCount, 0)}{" "}
+                {maintenanceStats.some((stat) => stat.error)
+                  ? "Known Eligible Rows"
+                  : "Eligible Rows"}
               </Badge>
+              {maintenanceStats.some((stat) => stat.error) && (
+                <Badge variant="destructive" className="font-mono">
+                  {maintenanceStats.filter((stat) => stat.error).length} Inspection Errors
+                </Badge>
+              )}
               <Button
                 size="sm"
                 variant="default"
@@ -837,6 +836,11 @@ export function DiagnosticsPage() {
                         <div className="font-mono text-[11px] text-muted-foreground">
                           {stat.handlerId}
                         </div>
+                        {stat.error && (
+                          <div className="text-[11px] text-destructive" role="status">
+                            Inspection failed: {stat.error}
+                          </div>
+                        )}
                       </td>
                       <td className="py-2.5 px-3 text-xs text-muted-foreground max-w-xs truncate">
                         {stat.description}
@@ -845,14 +849,25 @@ export function DiagnosticsPage() {
                         {stat.retentionDays} {stat.retentionDays === 1 ? "day" : "days"}
                       </td>
                       <td className="py-2.5 px-3 text-xs font-mono text-muted-foreground">
-                        {new Date(stat.cutoffDate).toLocaleDateString()}
+                        {Number.isFinite(Date.parse(stat.cutoffDate))
+                          ? new Date(stat.cutoffDate).toLocaleDateString()
+                          : "Unavailable"}
                       </td>
                       <td className="py-2.5 px-3 text-right">
                         <Badge
-                          variant={stat.eligibleRowCount > 0 ? "warning" : "secondary"}
+                          variant={
+                            stat.error
+                              ? "destructive"
+                              : stat.eligibleRowCount > 0
+                                ? "warning"
+                                : "secondary"
+                          }
                           className="font-mono text-xs"
+                          title={stat.error}
                         >
-                          {stat.eligibleRowCount} {stat.eligibleRowCount === 1 ? "row" : "rows"}
+                          {stat.error
+                            ? "Unavailable"
+                            : `${stat.eligibleRowCount} ${stat.eligibleRowCount === 1 ? "row" : "rows"}`}
                         </Badge>
                       </td>
                     </tr>

@@ -1,6 +1,6 @@
 # Implementation Work Packages Register
 
-This document tracks the progress, implementation locations, verification evidence, and open scope across all 20 architectural work packages (WP-001 through WP-020).
+This document tracks progress, implementation locations, verification evidence, and open scope across the listed work packages. Its completion states and evidence references are documented claims under reconciliation; the register itself includes WP-021 and WP-022 despite this older introduction. See the [review plan](../07-in-development/codebase-review-plan.md).
 
 ---
 

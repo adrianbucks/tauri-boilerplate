@@ -101,6 +101,14 @@ fn sign_message(
     request: SignMessageRequest,
     key_provider: tauri::State<'_, DeviceKeyProvider>,
 ) -> Result<String, PlatformError> {
+    DeviceKeyProvider::validate_message_hex_length(request.message_hex.len()).map_err(|error| {
+        PlatformError::new(
+            "message_too_large",
+            error.to_string(),
+            "Signing message exceeds the supported size",
+            "sign_message_err",
+        )
+    })?;
     let message_bytes = hex::decode(&request.message_hex).map_err(|e| {
         PlatformError::new(
             "invalid_hex",
@@ -109,11 +117,26 @@ fn sign_message(
             "sign_message_err",
         )
     })?;
-    Ok(key_provider.sign_hex(&message_bytes))
+    key_provider.sign_hex(&message_bytes).map_err(|error| {
+        PlatformError::new(
+            "signing_error",
+            error.to_string(),
+            "Signing message could not be processed",
+            "sign_message_err",
+        )
+    })
 }
 
 #[tauri::command]
 fn verify_message(request: VerifyMessageRequest) -> Result<bool, PlatformError> {
+    DeviceKeyProvider::validate_message_hex_length(request.message_hex.len()).map_err(|error| {
+        PlatformError::new(
+            "message_too_large",
+            error.to_string(),
+            "Verification message exceeds the supported size",
+            "verify_message_err",
+        )
+    })?;
     let message_bytes = hex::decode(&request.message_hex).map_err(|e| {
         PlatformError::new(
             "invalid_hex",

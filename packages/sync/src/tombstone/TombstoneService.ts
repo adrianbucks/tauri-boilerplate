@@ -53,9 +53,10 @@ export class TombstoneService {
     syncGroupId: string,
     featureId: string,
     tx: TransactionClient,
+    deletedAt?: string,
   ): Promise<TombstoneRecord> {
     const id = generateCorrelationId("tomb");
-    const now = getUtcIsoTimestamp();
+    const now = deletedAt ?? getUtcIsoTimestamp();
 
     await tx.execute(
       `INSERT INTO core_sync_tombstones (

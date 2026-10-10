@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS core_background_tasks (
   retry_delay_ms      INTEGER NOT NULL DEFAULT 1000,
   backoff_multiplier  REAL NOT NULL DEFAULT 2.0,
   max_retry_delay_ms  INTEGER NOT NULL DEFAULT 60000,
+  retry_jitter        REAL NOT NULL DEFAULT 0.25 CHECK (retry_jitter >= 0 AND retry_jitter <= 1),
   scheduled_at        TEXT NOT NULL,
   started_at          TEXT,
   completed_at        TEXT,

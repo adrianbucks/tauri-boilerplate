@@ -74,7 +74,7 @@ impl BackgroundLifecycleState {
         }
 
         let new_handle =
-            crate::scheduler::start(self.db_path.clone(), self.config.clone(), emit_fn);
+            crate::scheduler::start(self.db_path.clone(), self.config.clone(), emit_fn)?;
         *lock = Some(new_handle);
         Ok(())
     }

@@ -123,13 +123,14 @@ describe("authentication trust boundary", () => {
   });
 
   it("prevents obtaining a TrustedOperationContext without verified authentication (CS-003, CS-004)", async () => {
+    expect("createSession" in sessionService).toBe(false);
     await expect(sessionService.getTrustedOperationContext()).rejects.toThrow(AuthenticationError);
   });
 
   it("rejects authentication and does not create session on invalid credentials", async () => {
     const rejectingGateway: NativeAuthenticator = {
       authenticateUser: async () => {
-        throw new Error("Authentication failed: invalid credentials");
+        throw new Error("Native authentication rejected password wrong_password");
       },
     };
 
@@ -138,7 +139,11 @@ describe("authentication trust boundary", () => {
         { userId: "u_legit", password: "wrong_password" },
         rejectingGateway,
       ),
-    ).rejects.toThrow(AuthenticationError);
+    ).rejects.toMatchObject({
+      name: "AuthenticationError",
+      message: "Native authentication failed",
+      userMessage: "Invalid credentials or account locked",
+    });
 
     expect(sessionService.getCurrentSession()).toBeNull();
     await expect(sessionService.getTrustedOperationContext()).rejects.toThrow(AuthenticationError);
@@ -148,9 +153,10 @@ describe("authentication trust boundary", () => {
     const legitimateGateway: NativeAuthenticator = {
       authenticateUser: async ({ user_id, password }) => {
         if (user_id === "u_legit" && password === "correct_password") {
+          const device = await deviceService.getLocalDevice();
           return {
             user_id: "u_legit",
-            device_id: "dev_crypto_ed25519",
+            device_id: device!.deviceId,
             organisation_id: "org_corp",
             permissions: ["widget:create"],
           };
@@ -166,9 +172,14 @@ describe("authentication trust boundary", () => {
     );
 
     expect(session.userId).toBe("u_legit");
-    expect(session.deviceId).toBe("dev_crypto_ed25519");
+    expect(session.deviceId).toBe((await deviceService.getLocalDevice())?.deviceId);
+    expect(Object.isFrozen(session)).toBe(true);
+    expect(Object.isFrozen(session.roles)).toBe(true);
+    expect(Reflect.set(session, "userId", "u_attacker")).toBe(false);
+    expect(sessionService.getCurrentSession()?.userId).toBe("u_legit");
 
     const trustedContext = await sessionService.getTrustedOperationContext();
+    expect(Object.isFrozen(trustedContext.principal.roles)).toBe(true);
 
     // Verify AuthorizationEngine.requireTrusted succeeds for granted permissions
     await expect(
@@ -180,8 +191,25 @@ describe("authentication trust boundary", () => {
       AuthorizationError,
     );
 
-    // Verify logout terminates the session
+    // A session replacement while device validation is pending must not validate stale state.
+    const originalGetDeviceById = deviceService.getDeviceById.bind(deviceService);
+    let resolveDevice!: (
+      value: Awaited<ReturnType<DeviceIdentityService["getDeviceById"]>>,
+    ) => void;
+    deviceService.getDeviceById = async () =>
+      new Promise((resolve) => {
+        resolveDevice = resolve;
+      });
+    const pendingContext = sessionService.getTrustedOperationContext();
+    const validationResult = expect(pendingContext).rejects.toMatchObject({
+      name: "AuthenticationError",
+      correlationId: "sess_changed",
+    });
+
+    // Verify logout terminates the session, including any in-flight validation.
     await sessionService.logout(legitimateGateway);
+    resolveDevice(await originalGetDeviceById(session.deviceId));
+    await validationResult;
     expect(sessionService.getCurrentSession()).toBeNull();
     await expect(sessionService.getTrustedOperationContext()).rejects.toThrow(AuthenticationError);
   });

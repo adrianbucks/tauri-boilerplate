@@ -25,7 +25,15 @@ export interface TransactionClient {
    * **Always perform reads _before_ entering the transaction.**
    */
   query<T>(sql: string, params?: unknown[]): Promise<T[]>;
-  execute(sql: string, params?: unknown[]): Promise<{ rowsAffected: number }>;
+  /**
+   * Queue a write for atomic execution. Drivers that defer execution until the
+   * callback completes cannot know the affected-row count at this point.
+   * Transaction clients are scoped to their callback and reject operations
+   * after it completes.
+   */
+  execute(sql: string, params?: unknown[]): Promise<{ rowsAffected?: number }>;
+  /** Run nested work with savepoint semantics inside the active transaction. */
+  savepoint<T>(fn: (tx: TransactionClient) => Promise<T>): Promise<T>;
 }
 
 export interface DatabaseConnection {

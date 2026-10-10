@@ -1,6 +1,6 @@
 # Acceptance Gates & Verification Register
 
-A subsystem or release is considered production-ready only when its corresponding acceptance gates have passed with concrete test evidence.
+A subsystem or release is considered production-ready only when its corresponding acceptance gates have passed with concrete test evidence. The PASS labels and evidence references in the matrix below are documented claims currently under reconciliation; see the [review plan](../07-in-development/codebase-review-plan.md) before treating them as verified.
 
 ---
 

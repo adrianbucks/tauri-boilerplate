@@ -12,7 +12,17 @@ import type {
 
 export interface RegisterFeatureOptions {
   manifest: FeatureManifest;
-  routes?: unknown | undefined;
+}
+
+function freezeRecursively<T>(value: T, seen = new WeakSet<object>()): T {
+  if (value !== null && typeof value === "object" && !seen.has(value)) {
+    seen.add(value);
+    for (const child of Object.values(value as Record<string, unknown>)) {
+      freezeRecursively(child, seen);
+    }
+    Object.freeze(value);
+  }
+  return value;
 }
 
 export class FeatureRegistry {
@@ -31,7 +41,11 @@ export class FeatureRegistry {
       });
     }
 
-    this.registeredFeatures.set(manifest.id, manifest);
+    // Keep the validated registration independent of caller-owned objects.
+    // Manifests are declarative data; snapshotting prevents later mutation
+    // from bypassing validation or invalidating the cached dependency graph.
+    const snapshot = freezeRecursively(structuredClone(manifest));
+    this.registeredFeatures.set(snapshot.id, snapshot);
     this.resolvedGraph = null; // Invalidate cached graph
   }
 
@@ -45,7 +59,7 @@ export class FeatureRegistry {
 
   getAllFeatures(): FeatureManifest[] {
     this.ensureResolved();
-    return this.resolvedGraph!.orderedManifests;
+    return [...this.resolvedGraph!.orderedManifests];
   }
 
   getAllPermissions(): PermissionDefinition[] {
@@ -58,7 +72,7 @@ export class FeatureRegistry {
 
   getAllMigrations(): { featureId: string; migration: MigrationDefinition }[] {
     this.ensureResolved();
-    return this.resolvedGraph!.orderedMigrations;
+    return this.resolvedGraph!.orderedMigrations.map((entry) => ({ ...entry }));
   }
 
   getAllSyncPolicies(): SyncPolicyDefinition[] {

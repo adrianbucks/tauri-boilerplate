@@ -24,6 +24,7 @@ interface PlatformContextValue {
   transport: IrohSyncTransport | null;
   authenticate: (request: { user_id: string; password: string }) => Promise<void>;
   logout: () => Promise<void>;
+  retryInitialization: () => Promise<void>;
   syncState: SyncState;
   isReady: boolean;
   error: string | null;
@@ -37,6 +38,7 @@ export const PlatformContext = React.createContext<PlatformContextValue>({
   transport: null,
   authenticate: async () => undefined,
   logout: async () => undefined,
+  retryInitialization: async () => undefined,
   syncState: "DISCONNECTED",
   isReady: false,
   error: null,
@@ -57,8 +59,14 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
   const unlistenRef = useRef<(() => void) | null>(null);
   const unlistenTickRef = useRef<(() => void) | null>(null);
   const syncUnsubscribeRef = useRef<(() => void) | null>(null);
+  const transportRef = useRef<IrohSyncTransport | null>(null);
+  const initializationStartedRef = useRef(false);
 
   const init = useCallback(async () => {
+    if (initializationStartedRef.current) return;
+    initializationStartedRef.current = true;
+    setError(null);
+
     try {
       // Use native database connection that bridges to Rust DurableDatabase
       const db = new NativeDatabaseConnection(invoke);
@@ -84,13 +92,17 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
 
       let existingSession: NativeSessionView | null = null;
       try {
-        existingSession = await nativeGateway.getCurrentSession();
-        if (existingSession) {
-          setNativeSession(existingSession);
-          await p.sessions.establishFromNativeSession(existingSession);
+        const restoredSession = await nativeGateway.getCurrentSession();
+        if (restoredSession) {
+          await p.sessions.restoreNativeSession(nativeGateway);
+          existingSession = restoredSession;
+          setNativeSession(restoredSession);
         }
       } catch {
-        // No active native session
+        // Keep the UI unauthenticated when native and platform session state disagree.
+        existingSession = null;
+        setNativeSession(null);
+        await nativeGateway.logoutUser().catch(() => undefined);
       }
 
       // Initialize native iroh transport and configure sync with native Ed25519 signing
@@ -99,6 +111,7 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
         listen: <T,>(event: string, handler: (e: { payload: T }) => void) =>
           listen<T>(event, (e) => handler({ payload: e.payload })),
       });
+      transportRef.current = syncTransport;
       setTransport(syncTransport);
       syncTransport.init().catch(() => {});
 
@@ -161,34 +174,65 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
       setPlatform(p);
       setIsReady(true);
     } catch (err) {
+      unlistenRef.current?.();
+      unlistenRef.current = null;
+      unlistenTickRef.current?.();
+      unlistenTickRef.current = null;
+      syncUnsubscribeRef.current?.();
+      syncUnsubscribeRef.current = null;
+      const failedTransport = transportRef.current;
+      transportRef.current = null;
+      if (failedTransport) {
+        await failedTransport.dispose().catch(() => undefined);
+      }
+      setPlatform(null);
+      setImportEngine(null);
+      setTransport(null);
+      setIsReady(false);
+      initializationStartedRef.current = false;
       setError(err instanceof Error ? err.message : String(err));
     }
   }, [nativeGateway]);
 
+  const retryInitialization = useCallback(async () => {
+    await init();
+  }, [init]);
+
   const authenticate = useCallback(
     async (request: { user_id: string; password: string }) => {
       const session = await nativeGateway.authenticateUser(request);
-      setNativeSession(session);
-      if (platform) {
-        await platform.sessions.establishFromNativeSession(session);
-        try {
-          const identity = await nativeGateway.getDeviceIdentity();
-          platform.configureSync({
-            deviceId: identity.device_id,
-            organisationId: session.organisation_id,
-            signerPublicKey: identity.public_key,
-            signFn: createNativeSignFn(nativeGateway),
-            transport: platform.sync.getTransport(),
-          });
-          syncUnsubscribeRef.current?.();
-          syncUnsubscribeRef.current = platform.sync.onStateChange((state) => {
-            setSyncState(state);
-          });
-          setSyncState(platform.sync.getState());
-        } catch {
-          // Non-fatal fallback
-        }
+      if (!platform) {
+        await nativeGateway.logoutUser();
+        throw new Error("Platform is not ready to restore the authenticated session");
       }
+
+      try {
+        await platform.sessions.restoreNativeSession(nativeGateway);
+      } catch (error) {
+        await nativeGateway.logoutUser().catch(() => undefined);
+        throw error;
+      }
+
+      try {
+        const identity = await nativeGateway.getDeviceIdentity();
+        platform.configureSync({
+          deviceId: identity.device_id,
+          organisationId: session.organisation_id,
+          signerPublicKey: identity.public_key,
+          signFn: createNativeSignFn(nativeGateway),
+          transport: platform.sync.getTransport(),
+        });
+        syncUnsubscribeRef.current?.();
+        syncUnsubscribeRef.current = platform.sync.onStateChange((state) => {
+          setSyncState(state);
+        });
+        setSyncState(platform.sync.getState());
+      } catch {
+        // Device identity is provisioned during native startup; session restoration can proceed
+        // while sync remains configured with the startup fallback identity.
+      }
+
+      setNativeSession(session);
     },
     [nativeGateway, platform],
   );
@@ -212,6 +256,13 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
       unlistenRef.current?.();
       unlistenTickRef.current?.();
       syncUnsubscribeRef.current?.();
+      const activeTransport = transportRef.current;
+      transportRef.current = null;
+      if (activeTransport) {
+        void activeTransport.dispose().catch(() => {
+          // The native process is already shutting down or the endpoint is unavailable.
+        });
+      }
     };
   }, [init]);
 
@@ -225,6 +276,7 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
         transport,
         authenticate,
         logout,
+        retryInitialization,
         syncState,
         isReady,
         error,

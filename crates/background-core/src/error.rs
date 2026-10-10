@@ -14,6 +14,9 @@ pub enum BackgroundError {
 
     #[error("tokio join error: {0}")]
     Join(String),
+
+    #[error("invalid scheduler configuration: {0}")]
+    InvalidConfig(String),
 }
 
 impl From<BackgroundError> for native_core::PlatformError {
@@ -23,6 +26,7 @@ impl From<BackgroundError> for native_core::PlatformError {
             BackgroundError::NotRunning => ("bg_not_running", err.to_string()),
             BackgroundError::Database(_) => ("bg_database_error", err.to_string()),
             BackgroundError::Join(_) => ("bg_join_error", err.to_string()),
+            BackgroundError::InvalidConfig(_) => ("bg_invalid_config", err.to_string()),
         };
         native_core::PlatformError::new(
             code,

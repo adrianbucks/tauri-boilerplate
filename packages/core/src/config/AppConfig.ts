@@ -18,7 +18,12 @@ export interface AppConfig {
   };
 }
 
-export function createDefaultConfig(overrides?: Partial<AppConfig>): AppConfig {
+export type AppConfigOverrides = Omit<Partial<AppConfig>, "storage" | "sync"> & {
+  readonly storage?: Partial<AppConfig["storage"]>;
+  readonly sync?: Partial<AppConfig["sync"]>;
+};
+
+export function createDefaultConfig(overrides?: AppConfigOverrides): AppConfig {
   return {
     applicationId: "tauri-boilerplate-demo",
     applicationName: "Tauri Boilerplate Demo",
@@ -26,6 +31,7 @@ export function createDefaultConfig(overrides?: Partial<AppConfig>): AppConfig {
     protocolVersion: 1,
     environment: "development",
     logLevel: "info",
+    ...(overrides ?? {}),
     storage: {
       dbName: "local_platform.db",
       enableWal: true,
@@ -37,6 +43,5 @@ export function createDefaultConfig(overrides?: Partial<AppConfig>): AppConfig {
       maxRetryAttempts: 5,
       ...(overrides?.sync ?? {}),
     },
-    ...(overrides ?? {}),
   };
 }

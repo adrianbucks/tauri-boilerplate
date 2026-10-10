@@ -1,11 +1,59 @@
 import * as XLSX from "xlsx";
+import { ValidationError } from "@platform/core";
 import type { ExportDefinition } from "../types.js";
 
 export class ExportEngine {
+  private static validateDefinition<T>(definition: ExportDefinition<T>): void {
+    if (definition.columns.length === 0) {
+      throw new ValidationError({
+        message: "Export definition must contain at least one column",
+        userMessage: "The export configuration is invalid",
+        correlationId: "exp_empty_columns",
+      });
+    }
+
+    const headers = new Set<string>();
+    for (const column of definition.columns) {
+      if (!column.header.trim()) {
+        throw new ValidationError({
+          message: "Export column headers must not be empty",
+          userMessage: "The export configuration is invalid",
+          correlationId: "exp_empty_header",
+        });
+      }
+      const safeHeader = this.sanitizeSpreadsheetString(column.header);
+      if (headers.has(safeHeader)) {
+        throw new ValidationError({
+          message: `Duplicate export column header '${column.header}'`,
+          userMessage: "The export configuration contains duplicate columns",
+          correlationId: "exp_duplicate_header",
+        });
+      }
+      headers.add(safeHeader);
+    }
+  }
+
+  private static validateSheetName(sheetName: string): void {
+    if (
+      !sheetName.trim() ||
+      sheetName.length > 31 ||
+      /[\\/?*\[\]:]/.test(sheetName) ||
+      sheetName.startsWith("'") ||
+      sheetName.endsWith("'")
+    ) {
+      throw new ValidationError({
+        message: `Invalid XLSX worksheet name '${sheetName}'`,
+        userMessage: "The export worksheet name is invalid",
+        correlationId: "exp_sheet_name",
+      });
+    }
+  }
+
   /**
    * Generates a CSV string representation of records based on ExportDefinition.
    */
   static toCsv<T>(records: T[], definition: ExportDefinition<T>): string {
+    this.validateDefinition(definition);
     const headerRow = definition.columns
       .map((c) => this.escapeCsv(this.sanitizeSpreadsheetString(c.header)))
       .join(",");
@@ -31,6 +79,10 @@ export class ExportEngine {
    * Generates an XLSX binary buffer representation of records based on ExportDefinition.
    */
   static toXlsx<T>(records: T[], definition: ExportDefinition<T>): Uint8Array {
+    this.validateDefinition(definition);
+    const sheetName = definition.sheetName ?? "Export";
+    this.validateSheetName(sheetName);
+
     const rawData = records.map((record) => {
       const rowObj: Record<string, unknown> = {};
       definition.columns.forEach((col) => {
@@ -43,7 +95,6 @@ export class ExportEngine {
 
     const worksheet = XLSX.utils.json_to_sheet(rawData);
     const workbook = XLSX.utils.book_new();
-    const sheetName = definition.sheetName ?? "Export";
 
     XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
     const buffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
@@ -63,6 +114,6 @@ export class ExportEngine {
   }
 
   private static sanitizeSpreadsheetString(value: string): string {
-    return /^[=+\-@]/.test(value) ? `'${value}` : value;
+    return /^[\s\uFEFF]*[=+\-@]/.test(value) ? `'${value}` : value;
   }
 }

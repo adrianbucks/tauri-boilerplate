@@ -1,4 +1,3 @@
-import { getUtcIsoTimestamp } from "@platform/core";
 import type { DatabaseConnection, TransactionClient } from "@platform/database";
 import type { SyncOperation } from "@platform/sync-protocol";
 import { SyncEnvelopeBuilder, type SignFn } from "@platform/sync-protocol";
@@ -109,44 +108,18 @@ export class SyncManager {
       this.peerStates.set(peer.peerId, sm);
     }
 
-    const transitions: SyncState[] = [
-      "DISCOVERED",
-      "IDENTIFIED",
-      "CONNECTING",
-      "CONNECTED",
-      "AUTHENTICATING",
-    ];
-
-    for (const st of transitions) {
-      sm.transition(st);
-      this.setState(st);
-    }
-
-    // 7-layer auth verification: must match organisation
+    // Tenant metadata is a useful early rejection check, but is not admission proof.
     if (peer.organisationId !== this.organisationId) {
       sm.transition("ERROR", "Organisation mismatch");
       this.setState("ERROR");
       return;
     }
 
-    sm.transition("AUTHORISED");
-    this.setState("AUTHORISED");
-    sm.transition("IDLE");
-    this.setState("IDLE");
-
-    this.diagnosticsMap.set(peer.peerId, {
-      peerId: peer.peerId,
-      deviceId: peer.deviceId,
-      connectionMode: "direct",
-      relayUsed: null,
-      lastConnected: getUtcIsoTimestamp(),
-      lastSuccessfulSync: null,
-      pendingOperations: 0,
-      failedOperations: 0,
-      conflicts: 0,
-      state: "IDLE",
-      protocolVersion: 1,
-    });
+    // This method does not establish a transport connection, and caller-provided
+    // peer metadata is not proof of the seven admission gates. Until a trusted
+    // verifier is supplied, fail closed instead of claiming a connected/authorized peer.
+    sm.transition("ERROR", "Peer admission verifier is not configured");
+    this.setState("ERROR");
   }
 
   async disconnect(peerId: string): Promise<void> {

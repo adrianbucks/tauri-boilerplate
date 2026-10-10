@@ -70,35 +70,9 @@ Each feature encapsulates:
 
 ## 4. Application Composition & Bootstrap
 
-In your application's entrypoint (`apps/my-app/src/main.tsx`):
+Create a `Platform` with the application's configured `DatabaseConnection`, register each feature manifest before startup, and call `platform.init()` to apply platform and feature migrations. The current API is `Platform.registerFeature({ manifest })`; there is no global feature registry or `createAppPlatform` factory.
 
-```typescript
-import { createAppPlatform } from '@platform/bootstrap';
-import { featureRegistry } from '@platform/feature-system';
-import { InventoryFeatureManifest } from '@features/inventory';
-import { SalesFeatureManifest } from '@features/sales';
-
-// 1. Register domain features
-featureRegistry.register(InventoryFeatureManifest);
-featureRegistry.register(SalesFeatureManifest);
-
-// 2. Initialize platform database and apply pending migrations
-const platform = await createAppPlatform({
-  appId: 'com.mycompany.inventoryapp',
-  logLevel: 'info',
-});
-
-// 3. Mount React application with AppShell
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <AppShell
-    appName="Enterprise Inventory"
-    version="1.0.0"
-    navGroups={featureRegistry.getAggregatedNavigation()}
-  >
-    <AppRouter />
-  </AppShell>
-);
-```
+The application owns route definitions and page rendering. A manifest may contribute flat navigation metadata through `platform.features.getAllNavigationItems()`, which the application can adapt to its shell's navigation model. Registering a manifest does not register route components.
 
 ---
 

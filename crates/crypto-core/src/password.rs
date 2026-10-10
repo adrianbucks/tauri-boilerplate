@@ -7,6 +7,9 @@ const MEMORY_COST_KIB: u32 = 19_456;
 const TIME_COST: u32 = 2;
 const PARALLELISM: u32 = 1;
 const MAX_PASSWORD_BYTES: usize = 1_024;
+const MAX_STORED_VERIFIER_BYTES: usize = 512;
+const EXPECTED_PARAMS: &str = "m=19456,t=2,p=1";
+const EXPECTED_OUTPUT_BYTES: usize = 32;
 
 #[derive(Debug, Error)]
 pub enum PasswordHashError {
@@ -46,8 +49,19 @@ impl PasswordVerifier {
 
     pub fn verify(&self, password: &str, stored_verifier: &str) -> Result<bool, PasswordHashError> {
         validate_password(password)?;
+        if stored_verifier.len() > MAX_STORED_VERIFIER_BYTES {
+            return Err(PasswordHashError::MalformedVerifier);
+        }
         let parsed =
             PasswordHash::new(stored_verifier).map_err(|_| PasswordHashError::MalformedVerifier)?;
+        if parsed.algorithm.as_str() != "argon2id"
+            || parsed.version != Some(19)
+            || parsed.params.to_string() != EXPECTED_PARAMS
+            || parsed.salt.is_none()
+            || parsed.hash.as_ref().map(|hash| hash.len()) != Some(EXPECTED_OUTPUT_BYTES)
+        {
+            return Err(PasswordHashError::MalformedVerifier);
+        }
         Ok(self
             .argon2
             .verify_password(password.as_bytes(), &parsed)
@@ -107,5 +121,21 @@ mod tests {
             verifier.verify("password", "not-a-phc-record"),
             Err(PasswordHashError::MalformedVerifier)
         ));
+    }
+
+    #[test]
+    fn rejects_untrusted_verification_costs_before_argon2_work() {
+        let verifier = PasswordVerifier::new().expect("parameters should be valid");
+        let valid = verifier.hash("a password").unwrap();
+        let excessive_memory = valid.replace("m=19456", "m=4294967295");
+        let excessive_iterations = valid.replace("t=2", "t=4294967295");
+        let oversized = "x".repeat(MAX_STORED_VERIFIER_BYTES + 1);
+
+        for stored in [excessive_memory, excessive_iterations, oversized] {
+            assert!(matches!(
+                verifier.verify("a password", &stored),
+                Err(PasswordHashError::MalformedVerifier)
+            ));
+        }
     }
 }

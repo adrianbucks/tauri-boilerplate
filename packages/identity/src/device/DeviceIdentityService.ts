@@ -6,6 +6,7 @@ import {
 } from "@platform/core";
 import type { DatabaseConnection, TransactionClient } from "@platform/database";
 import type { DeviceIdentity, DevicePlatform, DeviceStatus } from "../types.js";
+import { DeviceIdentityRepository } from "./DeviceIdentityRepository.js";
 
 export interface RegisterDeviceOptions {
   publicKey: string;
@@ -16,46 +17,43 @@ export interface RegisterDeviceOptions {
 }
 
 export class DeviceIdentityService {
-  private readonly db: DatabaseConnection;
+  private readonly repository: DeviceIdentityRepository;
 
   constructor(db: DatabaseConnection) {
-    this.db = db;
+    this.repository = new DeviceIdentityRepository(db);
   }
 
   async getLocalDevice(tx?: TransactionClient): Promise<DeviceIdentity | null> {
-    const executor = tx ?? this.db;
-    const rows = await executor.query<{
-      id: string;
-      device_id: string;
-      public_key: string;
-      platform: DevicePlatform;
-      application_id: string;
-      status: DeviceStatus;
-      registered_at: string;
-      last_seen_at: string | null;
-    }>("SELECT * FROM core_devices LIMIT 1");
+    return this.repository.findLocal(tx);
+  }
 
-    const row = rows[0];
-    if (!row) return null;
-
-    return {
-      deviceId: row.device_id,
-      publicKey: row.public_key,
-      platform: row.platform,
-      applicationId: row.application_id,
-      status: row.status,
-      registeredAt: row.registered_at,
-      lastSeenAt: row.last_seen_at,
-    };
+  async getDeviceById(deviceId: string, tx?: TransactionClient): Promise<DeviceIdentity | null> {
+    return this.repository.findByDeviceId(deviceId, tx);
   }
 
   async registerDevice(
     options: RegisterDeviceOptions,
     tx?: TransactionClient,
   ): Promise<DeviceIdentity> {
-    const executor = tx ?? this.db;
-    const existing = await this.getLocalDevice(tx);
+    const requestedDeviceId = options.deviceId;
+    const existing = requestedDeviceId
+      ? await this.repository.findByDeviceId(requestedDeviceId, tx)
+      : await this.repository.findLocal(tx);
     if (existing) {
+      if (existing.publicKey !== options.publicKey) {
+        throw new AuthenticationError({
+          message: `Device '${existing.deviceId}' is already registered with a different public key`,
+          userMessage: "This device identity conflicts with an existing registration",
+          correlationId: "dev_identity_conflict",
+        });
+      }
+      if (options.userId && existing.userId && options.userId !== existing.userId) {
+        throw new AuthenticationError({
+          message: `Device '${existing.deviceId}' is already bound to another user`,
+          userMessage: "This device is registered to a different user",
+          correlationId: "dev_user_conflict",
+        });
+      }
       return existing;
     }
 
@@ -68,29 +66,27 @@ export class DeviceIdentityService {
     }
 
     const id = generateCorrelationId("dev_rec");
-    const deviceId = options.deviceId ?? generateCorrelationId("dev");
+    const deviceId = requestedDeviceId ?? generateCorrelationId("dev");
     const now = getUtcIsoTimestamp();
     const status: DeviceStatus = "UNREGISTERED";
 
-    const sql = `
-      INSERT INTO core_devices (
-        id, created_at, updated_at, user_id, device_id, public_key, platform, application_id, status, registered_at, last_seen_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `;
-
-    await executor.execute(sql, [
-      id,
-      now,
-      now,
-      options.userId ?? null,
-      deviceId,
-      options.publicKey,
-      options.platform,
-      options.applicationId,
-      status,
-      now,
-      now,
-    ]);
+    await this.repository.insert(
+      {
+        id,
+        createdAt: now,
+        updatedAt: now,
+        userId: options.userId ?? null,
+        deviceId,
+        publicKey: options.publicKey,
+        platform: options.platform,
+        applicationId: options.applicationId,
+        status,
+        registeredAt: now,
+        lastSeenAt: now,
+        isLocal: requestedDeviceId === undefined,
+      },
+      tx,
+    );
 
     return {
       deviceId,
@@ -108,11 +104,8 @@ export class DeviceIdentityService {
     newStatus: DeviceStatus,
     tx?: TransactionClient,
   ): Promise<void> {
-    const executor = tx ?? this.db;
     const now = getUtcIsoTimestamp();
-    const sql =
-      "UPDATE core_devices SET status = ?, updated_at = ?, last_seen_at = ? WHERE device_id = ?";
-    const res = await executor.execute(sql, [newStatus, now, now, deviceId]);
+    const res = await this.repository.updateStatus(deviceId, newStatus, now, tx);
     if (res.rowsAffected === 0) {
       throw new AuthenticationError({
         message: `Device '${deviceId}' not found`,

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { SyncEnvelopeBuilder } from "../SyncEnvelopeBuilder.js";
+import { MAX_SYNC_ENVELOPE_SIZE_BYTES, SyncEnvelopeBuilder } from "../SyncEnvelopeBuilder.js";
 import type { SyncOperation } from "../../types.js";
 
 // ---------------------------------------------------------------------------
@@ -143,6 +143,33 @@ describe("SyncEnvelopeBuilder", () => {
       const verifyFn = async () => true;
       const isValid = await SyncEnvelopeBuilder.verify(envelope, verifyFn);
       expect(isValid).toBe(false);
+    });
+
+    it("rejects an envelope ID that is not bound to the signed operation ID", async () => {
+      const op = makeOperation();
+      const envelope = await SyncEnvelopeBuilder.build(op, FAKE_PK, async () => FAKE_SIG);
+      const verifyFn = async () => true;
+
+      expect(
+        await SyncEnvelopeBuilder.verify({ ...envelope, envelopeId: "different_id" }, verifyFn),
+      ).toBe(false);
+    });
+
+    it("rejects an envelope larger than the native transport frame limit", () => {
+      const operation = makeOperation({
+        payload: { value: "x".repeat(MAX_SYNC_ENVELOPE_SIZE_BYTES) },
+      });
+      const envelope = {
+        envelopeId: operation.operationId,
+        signedAt: "2026-09-06T12:00:00.000Z",
+        signerPublicKey: FAKE_PK,
+        signature: FAKE_SIG,
+        operation,
+      };
+
+      expect(() => SyncEnvelopeBuilder.validateEnvelope(envelope)).toThrow(
+        "Sync envelope exceeds the",
+      );
     });
 
     it("verifyFn receives the canonical bytes matching those used at sign time", async () => {

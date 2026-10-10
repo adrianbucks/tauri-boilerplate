@@ -79,6 +79,29 @@ describe("ConflictEngine", () => {
     expect(res2.resolvedEnvelope?.envelopeId).toBe("env_local");
   });
 
+  it("resolves production ISO logical timestamps by their actual time", () => {
+    const engine = new ConflictEngine();
+    const local = {
+      ...baseLocalEnvelope,
+      operation: {
+        ...baseLocalEnvelope.operation,
+        logicalTimestamp: "2026-09-06T12:00:00.000Z:0001:dev_local",
+      },
+    };
+    const remote = {
+      ...baseRemoteEnvelope,
+      operation: {
+        ...baseRemoteEnvelope.operation,
+        logicalTimestamp: "2026-09-06T12:00:01.000Z:0000:dev_remote",
+      },
+    };
+
+    const result = engine.resolve({ strategy: "lww" }, local, remote);
+
+    expect(result.winner).toBe("remote");
+    expect(result.resolvedEnvelope?.envelopeId).toBe("env_remote");
+  });
+
   it("resolves append-only by accepting remote into log", () => {
     const engine = new ConflictEngine();
     const res = engine.resolve({ strategy: "append-only" }, baseLocalEnvelope, baseRemoteEnvelope);

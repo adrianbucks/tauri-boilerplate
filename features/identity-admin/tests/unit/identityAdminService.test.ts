@@ -76,6 +76,11 @@ describe("@features/identity-admin", () => {
         revoked_by TEXT,
         revocation_reason TEXT
       );
+      CREATE TABLE core_sync_groups (
+        id TEXT PRIMARY KEY,
+        organisation_id TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'ACTIVE'
+      );
       CREATE TABLE core_membership_requests (
         id TEXT PRIMARY KEY,
         device_id TEXT NOT NULL,
@@ -112,6 +117,10 @@ describe("@features/identity-admin", () => {
       );
     `);
 
+    await db.execute(
+      "INSERT INTO core_sync_groups (id, organisation_id) VALUES ('grp_1', 'org_acme')",
+    );
+
     // Seed admin role & permissions for user_superadmin in org_acme
     await db.execute(
       `INSERT INTO core_roles (id, created_at, updated_at, organisation_id, name)
@@ -120,6 +129,7 @@ describe("@features/identity-admin", () => {
     for (const perm of [
       IDENTITY_ADMIN_PERMISSIONS.USERS_CREATE,
       IDENTITY_ADMIN_PERMISSIONS.USERS_READ,
+      IDENTITY_ADMIN_PERMISSIONS.ROLES_MANAGE,
       IDENTITY_ADMIN_PERMISSIONS.DEVICES_APPROVE,
       IDENTITY_ADMIN_PERMISSIONS.DEVICES_REVOKE,
       "sync.manage",
@@ -162,6 +172,28 @@ describe("@features/identity-admin", () => {
     expect(auditRows[0]?.event_type).toBe("USER_CREATED");
   });
 
+  it("normalizes blank email values and rejects malformed runtime inputs", async () => {
+    const userId = await service.createUser(
+      { organisationId: "org_acme", displayName: "No Email", email: "  " },
+      ctx,
+    );
+    const user = await db.query<{ email: string | null }>(
+      "SELECT email FROM core_users WHERE id = ?",
+      [userId],
+    );
+    expect(user[0]?.email).toBeNull();
+
+    await expect(
+      service.createUser({ organisationId: "org_acme", displayName: 42 as unknown as string }, ctx),
+    ).rejects.toThrow("Display name is required");
+    await expect(
+      service.createUser(
+        { organisationId: "org_acme", displayName: "Invalid email", email: 42 as never },
+        ctx,
+      ),
+    ).rejects.toThrow("Email must be a string");
+  });
+
   it("approves device pairing request and records audit event", async () => {
     await db.execute(
       "INSERT INTO core_devices (id, device_id, status) VALUES ('d1', 'dev_tablet_1', 'PENDING_APPROVAL');",
@@ -171,6 +203,9 @@ describe("@features/identity-admin", () => {
     );
 
     await service.approveDevice("dev_tablet_1", "req_1", ctx);
+    await expect(service.approveDevice("dev_tablet_1", "req_1", ctx)).rejects.toThrow(
+      "not pending",
+    );
 
     const dev = await db.query<{ status: string }>(
       "SELECT status FROM core_devices WHERE device_id = ?",
@@ -182,6 +217,46 @@ describe("@features/identity-admin", () => {
       "SELECT event_type FROM core_audit_events WHERE event_type = 'DEVICE_APPROVED'",
     );
     expect(auditRows).toHaveLength(1);
+  });
+
+  it("rejects approval when the supplied device does not match the request", async () => {
+    await db.execute(
+      "INSERT INTO core_devices (id, device_id, status) VALUES ('d1', 'dev_request', 'PENDING_APPROVAL'), ('d2', 'dev_other', 'PENDING_APPROVAL')",
+    );
+    await db.execute(
+      "INSERT INTO core_membership_requests (id, device_id, group_id, requested_at, status) VALUES ('req_mismatch', 'dev_request', 'grp_1', 'now', 'PENDING')",
+    );
+
+    await expect(service.approveDevice("dev_other", "req_mismatch", ctx)).rejects.toThrow(
+      "different device",
+    );
+
+    const request = await db.query<{ status: string }>(
+      "SELECT status FROM core_membership_requests WHERE id = ?",
+      ["req_mismatch"],
+    );
+    const device = await db.query<{ status: string }>(
+      "SELECT status FROM core_devices WHERE device_id = ?",
+      ["dev_other"],
+    );
+    expect(request[0]?.status).toBe("PENDING");
+    expect(device[0]?.status).toBe("PENDING_APPROVAL");
+  });
+
+  it("rejects membership approval when the device has no registered identity", async () => {
+    await db.execute(
+      "INSERT INTO core_membership_requests (id, device_id, group_id, requested_at, status) VALUES ('req_missing_device', 'dev_missing', 'grp_1', 'now', 'PENDING')",
+    );
+
+    await expect(service.approveDevice("dev_missing", "req_missing_device", ctx)).rejects.toThrow(
+      "ineligible for approval",
+    );
+
+    const request = await db.query<{ status: string }>(
+      "SELECT status FROM core_membership_requests WHERE id = ?",
+      ["req_missing_device"],
+    );
+    expect(request[0]?.status).toBe("PENDING");
   });
 
   it("revokes a device from a sync group and records audit event", async () => {
@@ -204,6 +279,34 @@ describe("@features/identity-admin", () => {
       "SELECT event_type FROM core_audit_events WHERE event_type = 'DEVICE_REVOKED'",
     );
     expect(auditRows).toHaveLength(1);
+  });
+
+  it("does not revoke the global device status when it is not a member of the group", async () => {
+    await db.execute(
+      "INSERT INTO core_devices (id, device_id, status, updated_at) VALUES ('d3', 'dev_unrelated', 'ACTIVE', 'now')",
+    );
+
+    await expect(
+      service.revokeDevice("dev_unrelated", "grp_1", "Requested revocation", ctx),
+    ).rejects.toThrow("not an active member");
+
+    const device = await db.query<{ status: string }>(
+      "SELECT status FROM core_devices WHERE device_id = ?",
+      ["dev_unrelated"],
+    );
+    expect(device[0]?.status).toBe("ACTIVE");
+  });
+
+  it("rejects revocation when the device identity does not exist", async () => {
+    await expect(
+      service.revokeDevice("dev_missing", "grp_1", "Requested revocation", ctx),
+    ).rejects.toThrow("does not exist");
+
+    const revocations = await db.query<{ id: string }>(
+      "SELECT id FROM core_revocations WHERE device_id = ?",
+      ["dev_missing"],
+    );
+    expect(revocations).toHaveLength(0);
   });
 
   it("creates a user with a role assignment", async () => {
@@ -229,6 +332,25 @@ describe("@features/identity-admin", () => {
     );
     expect(roleRow).toHaveLength(1);
     expect(roleRow[0]?.role_id).toBe("role_op");
+  });
+
+  it("rejects assigning a role from another organisation", async () => {
+    await db.execute(
+      "INSERT INTO core_roles (id, created_at, updated_at, organisation_id, name) VALUES ('role_other', 'now', 'now', 'org_other', 'Other role')",
+    );
+
+    await expect(
+      service.createUser(
+        { organisationId: "org_acme", displayName: "No Role Leak", roleId: "role_other" },
+        ctx,
+      ),
+    ).rejects.toThrow("does not exist in organisation");
+
+    const users = await db.query<{ id: string }>(
+      "SELECT id FROM core_users WHERE display_name = ?",
+      ["No Role Leak"],
+    );
+    expect(users).toHaveLength(0);
   });
 
   it("rejects cross-tenant user creation", async () => {

@@ -1,5 +1,6 @@
 import { AuthorizationError, type TrustedOperationContext } from "@platform/core";
 import type { DatabaseConnection, TransactionClient } from "@platform/database";
+import { AuthorizationRepository } from "../repositories/AuthorizationRepository.js";
 import { ScopeEvaluator } from "./ScopeEvaluator.js";
 import type {
   Subject,
@@ -11,49 +12,42 @@ import type {
 } from "../types.js";
 
 export class AuthorizationEngine {
-  private readonly db: DatabaseConnection;
+  private readonly repository: AuthorizationRepository;
 
   constructor(db: DatabaseConnection) {
-    this.db = db;
+    this.repository = new AuthorizationRepository(db);
   }
 
   async getEffectivePermissions(
     subject: Subject,
     tx?: TransactionClient,
   ): Promise<EffectivePermissions> {
-    const executor = tx ?? this.db;
+    const rows = await this.repository.findEffectivePermissions(
+      subject.userId,
+      subject.organisationId,
+      tx,
+    );
 
-    const sql = `
-      SELECT p.name AS permission_name, rp.scope_constraints_json
-      FROM core_user_roles ur
-      JOIN core_roles r
-        ON r.id = ur.role_id
-       AND r.organisation_id = ur.organisation_id
-      JOIN core_role_permissions rp ON rp.role_id = r.id
-      JOIN core_permissions p ON rp.permission_id = p.id
-      WHERE ur.user_id = ?
-        AND ur.organisation_id = ?
-    `;
-
-    const rows = await executor.query<{
-      permission_name: string;
-      scope_constraints_json: string | null;
-    }>(sql, [subject.userId, subject.organisationId]);
-
-    const permissions: GrantedPermission[] = rows.map((r) => {
-      let scopeConstraints: ResourceScope | undefined = undefined;
-      if (r.scope_constraints_json) {
+    const permissions: GrantedPermission[] = [];
+    for (const row of rows) {
+      let scopeConstraints: ResourceScope | undefined;
+      if (row.scope_constraints_json !== null) {
         try {
-          scopeConstraints = JSON.parse(r.scope_constraints_json);
+          const parsed: unknown = JSON.parse(row.scope_constraints_json);
+          if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+            continue;
+          }
+          scopeConstraints = parsed as ResourceScope;
         } catch {
-          // Ignore parse errors
+          // Malformed persisted constraints must not turn into a broad grant.
+          continue;
         }
       }
-      return {
-        permissionName: r.permission_name,
+      permissions.push({
+        permissionName: row.permission_name,
         scopeConstraints,
-      };
-    });
+      });
+    }
 
     return {
       permissions,
@@ -119,6 +113,17 @@ export class AuthorizationEngine {
         technicalDetails: `Subject: ${subject.userId}, Perm: ${permission}, Code: ${decision.code}`,
       });
     }
+  }
+
+  async requireForSubject(
+    userId: string,
+    organisationId: string,
+    permission: PermissionName,
+    resource?: ResourceScope,
+    tx?: TransactionClient,
+  ): Promise<void> {
+    const roles = await this.repository.findRoleIds(userId, organisationId, tx);
+    await this.require({ userId, organisationId, roles }, permission, resource, tx);
   }
 
   async requireTrusted(

@@ -128,6 +128,15 @@ describe("@features/organisations", () => {
     ).rejects.toThrow("already exists");
   });
 
+  it("normalizes a blank domain to null", async () => {
+    const organisation = await service.createOrganisation(
+      { name: "Domainless Org", domain: "  " },
+      ctx,
+    );
+
+    expect(organisation.domain).toBeNull();
+  });
+
   it("updates organisation name and settings", async () => {
     const org = await service.createOrganisation({ name: "Beta Corp", domain: "beta.com" }, ctx);
     await grantOrgPermissions(db, ctx.userId!, org.id);
@@ -146,6 +155,26 @@ describe("@features/organisations", () => {
 
     expect(updated.name).toBe("Beta Holdings Ltd");
     expect(updated.domain).toBe("beta.com");
+  });
+
+  it("rejects empty or blank updates without changing organisation data", async () => {
+    const org = await service.createOrganisation({ name: "Stable Org" }, ctx);
+    await grantOrgPermissions(db, ctx.userId!, org.id);
+    const organisationCtx = createOperationContext({
+      deviceId: ctx.deviceId,
+      organisationId: org.id,
+      userId: ctx.userId,
+    });
+
+    await expect(service.updateOrganisation(org.id, {}, organisationCtx)).rejects.toThrow(
+      "at least one field",
+    );
+    await expect(
+      service.updateOrganisation(org.id, { name: "  " }, organisationCtx),
+    ).rejects.toThrow("cannot be empty");
+    await expect(service.getOrganisationById(org.id, organisationCtx)).resolves.toEqual(
+      expect.objectContaining({ name: "Stable Org" }),
+    );
   });
 
   it("scopes organisation reads and updates to the operation context", async () => {

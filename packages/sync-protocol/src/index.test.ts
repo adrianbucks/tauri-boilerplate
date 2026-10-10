@@ -27,6 +27,19 @@ describe("@platform/sync-protocol", () => {
     expect(HybridLogicalClock.compare(remoteTime, updatedTime)).toBeLessThan(0);
   });
 
+  it("compares timestamps from the existing ISO outbox formats and rejects malformed values", () => {
+    const earlier = "2026-09-06T12:00:00.000Z:0001:dev_node_1";
+    const later = "2026-09-06T12:00:01.000Z:0000:dev_node_2";
+    const pipeSeparated = "2026-09-06T12:00:01.000Z|0|dev_node_2";
+
+    expect(HybridLogicalClock.compare(earlier, later)).toBeLessThan(0);
+    expect(HybridLogicalClock.compare(later, pipeSeparated)).toBe(0);
+    expect(() => HybridLogicalClock.parse("not-a-timestamp")).toThrow("Invalid HLC timestamp");
+    expect(() => HybridLogicalClock.parse("2026-02-30T12:00:00.000Z:1:device")).toThrow(
+      "Invalid HLC timestamp",
+    );
+  });
+
   it("generates canonical deterministic namespaces", () => {
     const ns = NamespaceGenerator.generate({
       applicationId: "app_main",
@@ -63,6 +76,16 @@ describe("@platform/sync-protocol", () => {
       strategy: "additive",
     });
     expect(registry.getPolicy("other")).toEqual({ strategy: "lww" });
+  });
+
+  it("rejects duplicate entity policies instead of silently replacing behavior", () => {
+    const registry = new ConflictRegistry();
+    registry.registerEntityPolicy("locations", { strategy: "append-only" });
+
+    expect(() => registry.registerEntityPolicy("locations", { strategy: "immutable" })).toThrow(
+      "already registered",
+    );
+    expect(registry.getPolicy("locations").strategy).toBe("append-only");
   });
 
   describe("HandshakeValidator", () => {

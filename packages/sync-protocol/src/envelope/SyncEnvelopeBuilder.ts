@@ -1,5 +1,8 @@
 import { generateCorrelationId, getUtcIsoTimestamp } from "@platform/core";
-import type { SyncEnvelope, SyncOperation } from "../types.js";
+import { HybridLogicalClock } from "../hlc/HybridLogicalClock.js";
+import type { OperationType, SyncEnvelope, SyncOperation } from "../types.js";
+
+export const MAX_SYNC_ENVELOPE_SIZE_BYTES = 10 * 1024 * 1024;
 
 /**
  * Callback signature for native Ed25519 signing.
@@ -34,8 +37,46 @@ export class SyncEnvelopeBuilder {
    * Keys are sorted alphabetically at every nesting level.
    */
   static canonicalize(operation: SyncOperation): Uint8Array {
+    validateOperation(operation);
     const canonical = JSON.stringify(sortedKeys(operation));
     return new TextEncoder().encode(canonical);
+  }
+
+  /** Validates an untrusted runtime value before treating it as an envelope. */
+  static validateEnvelope(envelope: unknown): asserts envelope is SyncEnvelope {
+    if (!isRecord(envelope)) {
+      throw new Error("Invalid sync envelope");
+    }
+    validateOperation(envelope.operation);
+    if (envelope.envelopeId !== envelope.operation.operationId) {
+      throw new Error("Envelope ID must match operation ID");
+    }
+    if (
+      typeof envelope.signedAt !== "string" ||
+      !Number.isFinite(Date.parse(envelope.signedAt)) ||
+      new Date(envelope.signedAt).toISOString() !== envelope.signedAt
+    ) {
+      throw new Error("Invalid envelope signing timestamp");
+    }
+    validatePublicKeyFormat(envelope.signerPublicKey);
+    if (typeof envelope.signature !== "string" || !isValidSignatureHex(envelope.signature)) {
+      throw new Error("Invalid envelope signature format");
+    }
+
+    let serializedEnvelope: string | undefined;
+    try {
+      serializedEnvelope = JSON.stringify(envelope);
+    } catch {
+      throw new Error("Sync envelope is not serializable");
+    }
+    if (typeof serializedEnvelope !== "string") {
+      throw new Error("Sync envelope is not serializable");
+    }
+    if (new TextEncoder().encode(serializedEnvelope).byteLength > MAX_SYNC_ENVELOPE_SIZE_BYTES) {
+      throw new Error(
+        `Sync envelope exceeds the ${MAX_SYNC_ENVELOPE_SIZE_BYTES}-byte transport limit`,
+      );
+    }
   }
 
   /**
@@ -51,18 +92,30 @@ export class SyncEnvelopeBuilder {
     signerPublicKey: string,
     signFn: SignFn,
   ): Promise<SyncEnvelope> {
+    // Keep the operation stable across the asynchronous native signing call.
+    // Otherwise a caller could mutate its object after canonicalization and
+    // cause the returned envelope to contain data the signature does not cover.
+    const operationSnapshot = structuredClone(operation);
+    validateOperation(operationSnapshot);
     validatePublicKeyFormat(signerPublicKey);
-    const canonicalBytes = SyncEnvelopeBuilder.canonicalize(operation);
+    const canonicalBytes = SyncEnvelopeBuilder.canonicalize(operationSnapshot);
+    if (canonicalBytes.byteLength > MAX_SYNC_ENVELOPE_SIZE_BYTES) {
+      throw new Error(
+        `Sync operation exceeds the ${MAX_SYNC_ENVELOPE_SIZE_BYTES}-byte transport limit`,
+      );
+    }
     const signature = await signFn(canonicalBytes);
     validateSignatureFormat(signature);
 
-    return {
-      envelopeId: operation.operationId,
+    const envelope: SyncEnvelope = {
+      envelopeId: operationSnapshot.operationId,
       signedAt: getUtcIsoTimestamp(),
       signerPublicKey,
       signature,
-      operation,
+      operation: operationSnapshot,
     };
+    SyncEnvelopeBuilder.validateEnvelope(envelope);
+    return envelope;
   }
 
   /**
@@ -71,8 +124,9 @@ export class SyncEnvelopeBuilder {
    * @returns `true` if the signature is valid; `false` if verification fails.
    */
   static async verify(envelope: SyncEnvelope, verifyFn: VerifyFn): Promise<boolean> {
-    validatePublicKeyFormat(envelope.signerPublicKey);
-    if (!isValidSignatureHex(envelope.signature)) {
+    try {
+      SyncEnvelopeBuilder.validateEnvelope(envelope);
+    } catch {
       return false;
     }
     const canonicalBytes = SyncEnvelopeBuilder.canonicalize(envelope.operation);
@@ -101,21 +155,77 @@ function sortedKeys(value: unknown): unknown {
   }
   if (value !== null && typeof value === "object") {
     const obj = value as Record<string, unknown>;
-    return Object.keys(obj)
-      .sort()
-      .reduce<Record<string, unknown>>((acc, k) => {
-        acc[k] = sortedKeys(obj[k]);
-        return acc;
-      }, {});
+    const sorted: Record<string, unknown> = {};
+    for (const key of Object.keys(obj).sort()) {
+      // Assignment to `__proto__` changes an ordinary object's prototype
+      // instead of preserving that own property. Canonical bytes must include
+      // every own key so signatures bind the complete payload.
+      Object.defineProperty(sorted, key, {
+        configurable: true,
+        enumerable: true,
+        value: sortedKeys(obj[key]),
+        writable: true,
+      });
+    }
+    return sorted;
   }
   return value;
 }
 
-function validatePublicKeyFormat(publicKey: string): void {
-  if (!publicKey.startsWith("ed25519_pk_") || publicKey.length !== 75) {
+function validatePublicKeyFormat(publicKey: unknown): asserts publicKey is string {
+  if (typeof publicKey !== "string" || !/^ed25519_pk_[0-9a-f]{64}$/.test(publicKey)) {
     throw new Error(
       `Invalid signer public key format. Expected 'ed25519_pk_<64-hex-chars>', got: '${publicKey}'`,
     );
+  }
+}
+
+const OPERATION_TYPES = new Set<OperationType>(["create", "update", "delete"]);
+const REQUIRED_OPERATION_FIELDS = [
+  "operationId",
+  "applicationId",
+  "organisationId",
+  "syncGroupId",
+  "featureId",
+  "entityType",
+  "entityId",
+  "authorId",
+  "deviceId",
+  "logicalTimestamp",
+] as const;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function validateOperation(operation: unknown): asserts operation is SyncOperation {
+  if (!isRecord(operation)) {
+    throw new Error("Invalid sync operation");
+  }
+  for (const field of REQUIRED_OPERATION_FIELDS) {
+    const value = operation[field];
+    if (typeof value !== "string" || value.trim().length === 0 || value.length > 1_024) {
+      throw new Error(`Invalid sync operation field: ${field}`);
+    }
+  }
+  if (!OPERATION_TYPES.has(operation.operation as OperationType)) {
+    throw new Error("Invalid sync operation type");
+  }
+  if (
+    !Number.isSafeInteger(operation.schemaVersion) ||
+    (operation.schemaVersion as number) < 1 ||
+    !Number.isSafeInteger(operation.protocolVersion) ||
+    (operation.protocolVersion as number) < 1
+  ) {
+    throw new Error("Invalid sync operation version");
+  }
+  if (!Object.hasOwn(operation, "payload") || operation.payload === undefined) {
+    throw new Error("Sync operation payload is required");
+  }
+  HybridLogicalClock.parse(operation.logicalTimestamp as string);
+  const serialized = JSON.stringify(sortedKeys(operation));
+  if (typeof serialized !== "string") {
+    throw new Error("Sync operation is not serializable");
   }
 }
 

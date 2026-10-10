@@ -41,13 +41,22 @@ test result: ok. 5 passed; 0 failed
 
 ```typescript
 // packages/database/src/connection/DatabaseConnection.ts
+export interface TransactionClient {
+  query<T>(sql: string, params?: unknown[]): Promise<T[]>;
+  execute(sql: string, params?: unknown[]): Promise<{ rowsAffected?: number }>;
+  savepoint<T>(fn: (tx: TransactionClient) => Promise<T>): Promise<T>;
+}
+
 export interface DatabaseConnection {
   query<T>(sql: string, params?: unknown[]): Promise<T[]>;
-  execute(sql: string, params?: unknown[]): Promise<void>;
-  transaction<T>(fn: (tx: Transaction) => Promise<T>): Promise<T>;
-  healthCheck(): Promise<HealthResult>;
+  execute(sql: string, params?: unknown[]): Promise<{ rowsAffected: number }>;
+  transaction<T>(fn: (tx: TransactionClient) => Promise<T>): Promise<T>;
+  healthCheck(): Promise<DatabaseHealth>;
+  close(): Promise<void>;
 }
 ```
+
+Transaction clients are valid only while their callback is running. Native transaction callbacks collect writes and dispatch them atomically after the callback; intermediate reads are unsupported on that driver. Intentional nested work must use `tx.savepoint(...)`, which rolls back only the nested scope on failure. Independent top-level transactions on the memory adapter are serialized so they cannot be mistaken for nested scopes. A queued native write does not expose a meaningful affected-row count before native execution, so its `rowsAffected` result is optional.
 
 ### Production path (NativeDatabaseConnection)
 
@@ -282,17 +291,31 @@ These are verified at startup by a `get_database_health` Tauri command.
 ```sql
 CREATE TABLE core_sync_outbox (
     id              TEXT PRIMARY KEY,
-    envelope_id     TEXT NOT NULL UNIQUE,
-    namespace       TEXT NOT NULL,
-    payload         TEXT NOT NULL,  -- signed SyncEnvelope JSON
     created_at      TEXT NOT NULL,
-    attempts        INTEGER NOT NULL DEFAULT 0,
+    envelope_id     TEXT NOT NULL UNIQUE,
+    envelope_json   TEXT, -- complete signed SyncEnvelope; nullable only for legacy rows
+    organisation_id TEXT NOT NULL,
+    sync_group_id   TEXT NOT NULL,
+    feature_id      TEXT NOT NULL,
+    entity_type     TEXT NOT NULL,
+    entity_id       TEXT NOT NULL,
+    operation       TEXT NOT NULL,
+    payload_json    TEXT NOT NULL, -- operation payload, not the transport envelope
+    author_id       TEXT NOT NULL,
+    device_id       TEXT NOT NULL,
+    logical_timestamp TEXT NOT NULL,
+    schema_version  INTEGER NOT NULL,
+    protocol_version INTEGER NOT NULL,
+    signer_public_key TEXT NOT NULL,
+    signature       TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'PENDING',
+    attempt_count   INTEGER NOT NULL DEFAULT 0,
     last_attempt_at TEXT,
-    status          TEXT NOT NULL DEFAULT 'pending'  -- pending | sent | failed
+    sent_at         TEXT
 );
 ```
 
-Operations are atomically enqueued alongside business mutations. `OutboxSyncWorker` polls in batches and transmits via `IrohSyncTransport`.
+Operations are atomically enqueued alongside business mutations. `OutboxSyncWorker` polls in batches and transmits the complete `envelope_json` via `IrohSyncTransport`. Migration 7 adds this column. Existing rows have no recoverable complete envelope and remain blocked until repaired; the worker fails visibly rather than transmitting only `payload_json`.
 
 ### Inbox (`core_sync_inbox`)
 
@@ -365,6 +388,7 @@ export const domainManifest: FeatureManifest = {
 ```
 
 When registered with `platform.registerFeature()`, policies are automatically registered into `platform.maintenanceRegistry`.
+`filterCondition` is intentionally limited to one safe column comparison with a literal value (for example, `status = 'ARCHIVED'`); boolean clauses, SQL statements, and arbitrary expressions are rejected at manifest registration and again by the pruner.
 
 ### Background Execution & Diagnostics
 

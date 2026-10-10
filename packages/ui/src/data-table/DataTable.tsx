@@ -38,6 +38,10 @@ export function DataTable<TData>({
   onRowClick,
   searchPlaceholder = "Filter records...",
 }: DataTableProps<TData>) {
+  if (!Number.isSafeInteger(pageSize) || pageSize < 1) {
+    throw new RangeError("DataTable pageSize must be a positive safe integer");
+  }
+
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [globalFilter, setGlobalFilter] = React.useState("");
 
@@ -70,6 +74,7 @@ export function DataTable<TData>({
             value={globalFilter ?? ""}
             onChange={(e) => setGlobalFilter(e.target.value)}
             placeholder={searchPlaceholder}
+            aria-label={searchPlaceholder}
             className="pl-8"
           />
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -88,21 +93,39 @@ export function DataTable<TData>({
                 {headerGroup.headers.map((header) => (
                   <TableHead
                     key={header.id}
-                    onClick={header.column.getToggleSortingHandler()}
-                    className={header.column.getCanSort() ? "cursor-pointer select-none" : ""}
+                    scope="col"
+                    aria-sort={
+                      header.column.getCanSort()
+                        ? header.column.getIsSorted() === "asc"
+                          ? "ascending"
+                          : header.column.getIsSorted() === "desc"
+                            ? "descending"
+                            : "none"
+                        : undefined
+                    }
                   >
                     <div className="flex items-center gap-1.5 font-semibold">
-                      {flexRender(header.column.columnDef.header, header.getContext())}
-                      {header.column.getCanSort() && (
-                        <span>
+                      {header.column.getCanSort() ? (
+                        <button
+                          type="button"
+                          onClick={header.column.getToggleSortingHandler()}
+                          aria-label={`Sort by ${header.column.id}`}
+                          className="inline-flex items-center gap-1.5 text-left font-[inherit] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                          {flexRender(header.column.columnDef.header, header.getContext())}
                           {header.column.getIsSorted() === "asc" ? (
-                            <ArrowUp className="h-3.5 w-3.5 text-primary" />
+                            <ArrowUp aria-hidden="true" className="h-3.5 w-3.5 text-primary" />
                           ) : header.column.getIsSorted() === "desc" ? (
-                            <ArrowDown className="h-3.5 w-3.5 text-primary" />
+                            <ArrowDown aria-hidden="true" className="h-3.5 w-3.5 text-primary" />
                           ) : (
-                            <ArrowUpDown className="h-3.5 w-3.5 text-muted-foreground opacity-50" />
+                            <ArrowUpDown
+                              aria-hidden="true"
+                              className="h-3.5 w-3.5 text-muted-foreground opacity-50"
+                            />
                           )}
-                        </span>
+                        </button>
+                      ) : (
+                        flexRender(header.column.columnDef.header, header.getContext())
                       )}
                     </div>
                   </TableHead>
@@ -124,7 +147,36 @@ export function DataTable<TData>({
               table.getRowModel().rows.map((row) => (
                 <TableRow
                   key={row.id}
-                  onClick={() => onRowClick && onRowClick(row.original)}
+                  tabIndex={onRowClick ? 0 : undefined}
+                  aria-description={
+                    onRowClick ? "Press Enter or Space to open this row" : undefined
+                  }
+                  onClick={(event) => {
+                    const target = event.target;
+                    if (
+                      onRowClick &&
+                      !(
+                        target instanceof Element &&
+                        target.closest("a, button, input, select, textarea, [role='button']")
+                      )
+                    ) {
+                      onRowClick(row.original);
+                    }
+                  }}
+                  onKeyDown={(event) => {
+                    const target = event.target;
+                    if (
+                      !onRowClick ||
+                      (target instanceof Element &&
+                        target.closest("a, button, input, select, textarea, [role='button']"))
+                    ) {
+                      return;
+                    }
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      onRowClick(row.original);
+                    }
+                  }}
                   className={onRowClick ? "cursor-pointer" : ""}
                 >
                   {row.getVisibleCells().map((cell) => (

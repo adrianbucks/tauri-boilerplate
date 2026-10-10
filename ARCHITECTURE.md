@@ -1,8 +1,8 @@
 # Platform Architecture Summary
 
-For the complete documentation suite, see [`docs/README.md`](./docs/README.md). For what is implemented today, see [`docs/verification/status.md`](./docs/verification/status.md).
+For the complete documentation suite, see [`docs/README.md`](./docs/README.md). Implementation status is tracked in [`docs/06-status/current-state.md`](./docs/06-status/current-state.md) and is being reconciled against code and verification evidence; see the [staged review plan](./docs/07-in-development/codebase-review-plan.md).
 
-The diagrams below are the **target architecture and coding standard**. They are not a claim that durable SQLite, cryptographic identity, iroh transport, or seven-layer admission already run in production.
+The diagrams below are the **target architecture and coding standard**, not proof that every capability is implemented or production-ready.
 
 ---
 

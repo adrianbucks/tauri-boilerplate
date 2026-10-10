@@ -65,6 +65,11 @@ describe("@platform/authorization", () => {
         revoked_by TEXT,
         revocation_reason TEXT
       );
+      CREATE TABLE core_devices (
+        id TEXT PRIMARY KEY,
+        device_id TEXT NOT NULL UNIQUE,
+        status TEXT NOT NULL
+      );
       CREATE TABLE core_membership_requests (
         id TEXT PRIMARY KEY,
         device_id TEXT NOT NULL,
@@ -111,6 +116,45 @@ describe("@platform/authorization", () => {
   });
 
   describe("AuthorizationEngine", () => {
+    it("fails closed for malformed or non-object permission scope constraints", async () => {
+      const invalidConstraints = ["not-json", "", "null", "[]", '"value"', "42", "false"];
+
+      for (const [index, constraints] of invalidConstraints.entries()) {
+        const roleId = `invalid_scope_role_${index}`;
+        const permissionId = `invalid_scope_permission_${index}`;
+        const permissionName = `invalid.scope.${index}`;
+
+        await db.execute("INSERT INTO core_permissions (id, name) VALUES (?, ?)", [
+          permissionId,
+          permissionName,
+        ]);
+        await db.execute(
+          "INSERT INTO core_roles (id, created_at, updated_at, organisation_id, name) VALUES (?, 'now', 'now', 'org_1', ?)",
+          [roleId, roleId],
+        );
+        await db.execute(
+          "INSERT INTO core_role_permissions (id, role_id, permission_id, scope_constraints_json) VALUES (?, ?, ?, ?)",
+          [`rp_${index}`, roleId, permissionId, constraints],
+        );
+        await db.execute(
+          "INSERT INTO core_user_roles (id, user_id, role_id, organisation_id, granted_at) VALUES (?, 'user_invalid_scope', ?, 'org_1', 'now')",
+          [`ur_${index}`, roleId],
+        );
+
+        const decision = await authEngine.can(
+          {
+            userId: "user_invalid_scope",
+            organisationId: "org_1",
+            roles: [roleId],
+          },
+          permissionName,
+          { warehouseId: "COV" },
+        );
+
+        expect(decision).toMatchObject({ granted: false, code: "PERMISSION_NOT_GRANTED" });
+      }
+    });
+
     it("grants permission when subject holds role with matching permission and scope", async () => {
       // Seed permissions & roles
       await db.execute("INSERT INTO core_permissions (id, name) VALUES ('p1', 'inventory.read');");
@@ -198,6 +242,23 @@ describe("@platform/authorization", () => {
         ),
       ).rejects.toThrow("Authorization failed");
     });
+
+    it("resolves subject roles through organisation-owned role bindings", async () => {
+      await db.execute("INSERT INTO core_permissions (id, name) VALUES ('p_other', 'other.read')");
+      await db.execute(
+        "INSERT INTO core_roles (id, created_at, updated_at, organisation_id, name) VALUES ('r_other_org', 'now', 'now', 'org_other', 'Other Organisation Role')",
+      );
+      await db.execute(
+        "INSERT INTO core_role_permissions (id, role_id, permission_id) VALUES ('rp_other', 'r_other_org', 'p_other')",
+      );
+      await db.execute(
+        "INSERT INTO core_user_roles (id, user_id, role_id, organisation_id, granted_at) VALUES ('ur_wrong_org', 'u1', 'r_other_org', 'org_1', 'now')",
+      );
+
+      await expect(authEngine.requireForSubject("u1", "org_1", "other.read")).rejects.toThrow(
+        "Authorization failed",
+      );
+    });
   });
 
   describe("SyncGroupService", () => {
@@ -215,6 +276,9 @@ describe("@platform/authorization", () => {
     });
 
     it("manages sync group lifecycle: request -> approve -> canSync -> revoke", async () => {
+      await db.execute(
+        "INSERT INTO core_devices (id, device_id, status) VALUES ('device_tablet', 'dev_tablet', 'APPROVED')",
+      );
       const ctx = createOperationContext({
         userId: "user_admin",
         deviceId: "dev_1",
@@ -238,6 +302,22 @@ describe("@platform/authorization", () => {
 
       // Now can sync
       expect(await syncGroupService.canSync("dev_tablet", group.id)).toBe(true);
+      const memberContext = createOperationContext({
+        userId: "user_op",
+        deviceId: "dev_tablet",
+        organisationId: "org_1",
+      });
+      await expect(
+        syncGroupService.requireActiveMembership(memberContext, group.id),
+      ).resolves.toBeUndefined();
+      const mismatchedUserContext = createOperationContext({
+        userId: "user_other",
+        deviceId: "dev_tablet",
+        organisationId: "org_1",
+      });
+      await expect(
+        syncGroupService.requireActiveMembership(mismatchedUserContext, group.id),
+      ).rejects.toThrow("not an approved member");
 
       // Revoke membership with authorized ctx
       await syncGroupService.revokeMembership("dev_tablet", group.id, ctx, "Device lost");

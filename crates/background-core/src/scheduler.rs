@@ -53,8 +53,8 @@ pub struct SyncTickPayload {
 // ---------------------------------------------------------------------------
 
 /// An opaque handle to a running `OutboxScheduler`.
-/// Dropping the handle does **not** stop the background task; call `stop()`
-/// explicitly for graceful shutdown.
+/// Dropping the handle closes its cancellation channel, causing the background
+/// task to exit. Call `stop()` when graceful completion must be awaited.
 pub struct OutboxSchedulerHandle {
     cancel_tx: watch::Sender<bool>,
     join: tokio::task::JoinHandle<()>,
@@ -124,7 +124,12 @@ pub fn start(
     db_path: PathBuf,
     config: OutboxSchedulerConfig,
     emit_fn: EmitFn,
-) -> OutboxSchedulerHandle {
+) -> Result<OutboxSchedulerHandle, BackgroundError> {
+    if config.interval.is_zero() {
+        return Err(BackgroundError::InvalidConfig(
+            "polling interval must be greater than zero".to_string(),
+        ));
+    }
     let (cancel_tx, mut cancel_rx) = watch::channel(false);
 
     let join = tokio::spawn(async move {
@@ -134,8 +139,8 @@ pub fn start(
 
         loop {
             tokio::select! {
-                _ = cancel_rx.changed() => {
-                    if *cancel_rx.borrow() {
+                changed = cancel_rx.changed() => {
+                    if changed.is_err() || *cancel_rx.borrow() {
                         break;
                     }
                 }
@@ -146,7 +151,7 @@ pub fn start(
         }
     });
 
-    OutboxSchedulerHandle { cancel_tx, join }
+    Ok(OutboxSchedulerHandle { cancel_tx, join })
 }
 
 // ---------------------------------------------------------------------------
@@ -187,8 +192,7 @@ async fn run_tick(db_path: &Path, emit_fn: &EmitFn) {
     }
 }
 
-/// Returns the current UTC time as an ISO-8601 string using `std::time::SystemTime`,
-/// avoiding a new `chrono` dependency.
+/// Returns the current UTC time as a valid ISO-8601 Gregorian timestamp.
 fn utc_iso_now() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     let total_secs = SystemTime::now()
@@ -199,13 +203,29 @@ fn utc_iso_now() -> String {
     let s = total_secs % 60;
     let m = (total_secs / 60) % 60;
     let h = (total_secs / 3600) % 24;
-    let days = total_secs / 86400;
-    // Gregorian calendar approximation — sufficient for a diagnostics timestamp.
-    let year = 1970_u64 + days / 365;
-    let doy = days % 365;
-    let month = doy / 30 + 1;
-    let day = doy % 30 + 1;
+    let days = (total_secs / 86400).min(i64::MAX as u64) as i64;
+    let (year, month, day) = civil_from_days(days);
     format!("{year:04}-{month:02}-{day:02}T{h:02}:{m:02}:{s:02}Z")
+}
+
+/// Converts days since 1970-01-01 to a Gregorian civil date.
+fn civil_from_days(days_since_epoch: i64) -> (i64, i64, i64) {
+    let shifted_days = days_since_epoch + 719_468;
+    let era = if shifted_days >= 0 {
+        shifted_days
+    } else {
+        shifted_days - 146_096
+    } / 146_097;
+    let day_of_era = shifted_days - era * 146_097;
+    let year_of_era =
+        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let mut year = year_of_era + era * 400;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let month_part = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * month_part + 2) / 5 + 1;
+    let month = month_part + if month_part < 10 { 3 } else { -9 };
+    year += i64::from(month <= 2);
+    (year, month, day)
 }
 
 // ---------------------------------------------------------------------------
@@ -220,6 +240,26 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     static TEST_DB_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    #[test]
+    fn civil_date_conversion_handles_epoch_leap_day_and_year_boundary() {
+        assert_eq!(civil_from_days(0), (1970, 1, 1));
+        assert_eq!(civil_from_days(19_782), (2024, 2, 29));
+        assert_eq!(civil_from_days(19_783), (2024, 3, 1));
+        assert_eq!(civil_from_days(20_088), (2024, 12, 31));
+    }
+
+    #[test]
+    fn scheduler_rejects_zero_interval_before_spawning() {
+        let result = start(
+            PathBuf::new(),
+            OutboxSchedulerConfig {
+                interval: Duration::ZERO,
+            },
+            Box::new(|_| {}),
+        );
+        assert!(matches!(result, Err(BackgroundError::InvalidConfig(_))));
+    }
 
     fn temp_db() -> (DurableDatabase, PathBuf) {
         let count = TEST_DB_COUNTER.fetch_add(1, Ordering::SeqCst);
@@ -268,7 +308,7 @@ mod tests {
         let config = OutboxSchedulerConfig {
             interval: Duration::from_millis(20),
         };
-        let handle = start(path.clone(), config, emit_fn);
+        let handle = start(path.clone(), config, emit_fn).expect("valid scheduler config");
 
         tokio::time::sleep(Duration::from_millis(120)).await;
         handle.stop().await.expect("clean stop");
@@ -294,7 +334,7 @@ mod tests {
             interval: Duration::from_millis(50),
         };
         let emit_fn: EmitFn = Box::new(|_| {});
-        let handle = start(path.clone(), config, emit_fn);
+        let handle = start(path.clone(), config, emit_fn).expect("valid scheduler config");
 
         assert!(
             handle.is_running(),
@@ -327,7 +367,7 @@ mod tests {
         let config = OutboxSchedulerConfig {
             interval: Duration::from_millis(20),
         };
-        let handle = start(path.clone(), config, emit_fn);
+        let handle = start(path.clone(), config, emit_fn).expect("valid scheduler config");
 
         tokio::time::sleep(Duration::from_millis(120)).await;
         handle.stop().await.expect("clean stop");

@@ -1,4 +1,4 @@
-import { ValidationError, type OperationContext } from "@platform/core";
+import { AuthorizationError, ValidationError, type OperationContext } from "@platform/core";
 import type { DatabaseConnection } from "@platform/database";
 import { DeviceIdentityService } from "@platform/identity";
 import { SyncGroupService } from "@platform/authorization";
@@ -13,7 +13,6 @@ import {
 export interface PairingRequestInput {
   handshake: HandshakeMessage;
   syncGroupId: string;
-  userId?: string | undefined;
   /** Optional cryptographic verify callback. Must be provided in production. */
   verifyFn?: HandshakeVerifyFn | undefined;
 }
@@ -60,6 +59,34 @@ export class PairingService {
       ctx.correlationId,
     );
 
+    if (ctx.organisationId !== input.handshake.organisationId) {
+      throw new AuthorizationError({
+        message: "Pairing handshake organisation does not match the local operation context",
+        userMessage: "This device cannot pair across organisations",
+        correlationId: ctx.correlationId,
+      });
+    }
+
+    const groups = await this.db.query<{ organisation_id: string; status: string }>(
+      "SELECT organisation_id, status FROM core_sync_groups WHERE id = ? LIMIT 1",
+      [input.syncGroupId],
+    );
+    const group = groups[0];
+    if (!group || group.status !== "ACTIVE") {
+      throw new ValidationError({
+        message: `Sync group '${input.syncGroupId}' is missing or inactive`,
+        userMessage: "The selected sync group is unavailable",
+        correlationId: ctx.correlationId,
+      });
+    }
+    if (group.organisation_id !== input.handshake.organisationId) {
+      throw new AuthorizationError({
+        message: `Pairing group '${input.syncGroupId}' belongs to a different organisation`,
+        userMessage: "This device cannot pair across organisations",
+        correlationId: ctx.correlationId,
+      });
+    }
+
     return this.db.transaction(async (tx) => {
       // 2. Ensure peer device record is registered using real handshake identity.
       //    signerPublicKey is the peer's authentic ed25519_pk_<hex> string.
@@ -70,7 +97,9 @@ export class PairingService {
           publicKey: input.handshake.signerPublicKey,
           platform: input.handshake.platform,
           applicationId: input.handshake.applicationId,
-          userId: input.userId ?? null,
+          // Bind the membership to the authenticated local principal. A peer-supplied
+          // user ID is not covered by the signed handshake and must never be trusted.
+          userId: ctx.userId ?? null,
         },
         tx,
       );
@@ -79,7 +108,7 @@ export class PairingService {
       const requestId = await this.syncGroups.requestMembership(
         input.syncGroupId,
         input.handshake.deviceId,
-        input.userId ?? null,
+        ctx.userId ?? null,
         tx,
       );
 
@@ -124,7 +153,7 @@ export class PairingService {
         });
       }
 
-      await this.syncGroups.approveMembership(requestId, ctx.userId ?? "system", undefined, tx);
+      await this.syncGroups.approveMembership(requestId, ctx, undefined, tx);
 
       // Mark device as APPROVED
       await this.identity.updateDeviceStatus(req.device_id, "APPROVED", tx);
@@ -155,20 +184,16 @@ export class PairingService {
   }
 
   /**
-   * Evaluates whether a peer device is fully authorized to exchange data in a sync group.
-   * Enforces all 7 pre-sync authorization layers.
+   * Checks the persisted device and group-membership eligibility needed for sync.
+   * This is one admission check, not the complete seven-layer transport authorization.
    */
   async canSync(deviceId: string, syncGroupId: string): Promise<boolean> {
-    // 1. Device must exist and not be REVOKED or UNREGISTERED
-    const device = await this.db.query<{ status: string }>(
-      "SELECT status FROM core_devices WHERE device_id = ? LIMIT 1",
-      [deviceId],
-    );
-    if (!device[0] || device[0].status === "REVOKED" || device[0].status === "UNREGISTERED") {
+    const device = await this.identity.getDeviceById(deviceId);
+    if (!device || (device.status !== "APPROVED" && device.status !== "ACTIVE")) {
       return false;
     }
 
-    // 2. Device must have ACTIVE/APPROVED membership in the sync group
+    // A valid device status alone is insufficient; it must also belong to the group.
     return this.syncGroups.canSync(deviceId, syncGroupId);
   }
 }

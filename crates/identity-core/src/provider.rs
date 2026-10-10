@@ -1,10 +1,17 @@
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use rand_core::{OsRng, RngCore};
-use std::fs;
+use std::fs::{self, File, OpenOptions};
+use std::io::{ErrorKind, Read, Write};
 use std::path::Path;
+#[cfg(unix)]
+use std::path::PathBuf;
 use thiserror::Error;
+use zeroize::Zeroizing;
 
 use crate::DeviceIdentity;
+
+/// Maximum message size accepted by native signing and verification.
+pub const MAX_SIGNED_MESSAGE_BYTES: usize = 10 * 1024 * 1024;
 
 #[derive(Debug, Error)]
 pub enum DeviceKeyError {
@@ -28,13 +35,22 @@ pub struct DeviceKeyProvider {
 }
 
 impl DeviceKeyProvider {
+    /// Rejects oversized hex IPC inputs before an adapter decodes them.
+    pub fn validate_message_hex_length(encoded_length: usize) -> Result<(), DeviceKeyError> {
+        if encoded_length > MAX_SIGNED_MESSAGE_BYTES.saturating_mul(2) {
+            return Err(DeviceKeyError::Crypto(
+                "Signed message exceeds the maximum supported size".to_string(),
+            ));
+        }
+        Ok(())
+    }
     /// Generates an in-memory ephemeral device key provider (used for testing or transient sessions).
     pub fn generate_ephemeral(
         application_id: &str,
         platform_name: &str,
     ) -> Result<Self, DeviceKeyError> {
-        let mut seed = [0u8; 32];
-        OsRng.fill_bytes(&mut seed);
+        let mut seed = Zeroizing::new([0u8; 32]);
+        OsRng.fill_bytes(&mut *seed);
         Self::from_seed(&seed, application_id, platform_name)
     }
 
@@ -48,35 +64,29 @@ impl DeviceKeyProvider {
             return Self::generate_ephemeral(application_id, platform_name);
         };
 
-        if path.exists() {
-            let seed = fs::read(path)?;
-            if seed.len() != 32 {
-                return Err(DeviceKeyError::Crypto(format!(
-                    "Invalid device key file length: expected 32 bytes, got {}",
-                    seed.len()
-                )));
-            }
-            let mut seed_arr = [0u8; 32];
-            seed_arr.copy_from_slice(&seed);
-            Self::from_seed(&seed_arr, application_id, platform_name)
-        } else {
-            if let Some(parent) = path.parent() {
-                fs::create_dir_all(parent)?;
-            }
-            let mut seed = [0u8; 32];
-            OsRng.fill_bytes(&mut seed);
+        if let Some(parent) = path
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+        {
+            fs::create_dir_all(parent)?;
+        }
 
-            // Write seed with restricted access
-            fs::write(path, seed)?;
+        if let Some(seed) = read_existing_seed(path)? {
+            return Self::from_seed(&seed, application_id, platform_name);
+        }
 
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let perms = std::fs::Permissions::from_mode(0o600);
-                let _ = std::fs::set_permissions(path, perms);
-            }
+        let mut seed = Zeroizing::new([0u8; 32]);
+        OsRng.fill_bytes(&mut *seed);
 
+        if write_seed_exclusive(path, &seed)? {
             Self::from_seed(&seed, application_id, platform_name)
+        } else {
+            // Another process created the identity first. Load that stable key
+            // instead of replacing it or returning a key that was not persisted.
+            let persisted_seed = read_existing_seed(path)?.ok_or_else(|| {
+                DeviceKeyError::Crypto("Device key disappeared during creation".to_string())
+            })?;
+            Self::from_seed(&persisted_seed, application_id, platform_name)
         }
     }
 
@@ -123,16 +133,21 @@ impl DeviceKeyProvider {
         &self.identity.public_key
     }
 
-    /// Signs an arbitrary message using the native Ed25519 private key.
-    /// Returns 64-byte raw signature.
-    pub fn sign(&self, message: &[u8]) -> Vec<u8> {
+    /// Signs a bounded message using the native Ed25519 private key.
+    /// Returns a 64-byte raw signature.
+    pub fn sign(&self, message: &[u8]) -> Result<Vec<u8>, DeviceKeyError> {
+        if message.len() > MAX_SIGNED_MESSAGE_BYTES {
+            return Err(DeviceKeyError::Crypto(
+                "Signed message exceeds the maximum supported size".to_string(),
+            ));
+        }
         let signature: Signature = self.signing_key.sign(message);
-        signature.to_bytes().to_vec()
+        Ok(signature.to_bytes().to_vec())
     }
 
-    /// Signs an arbitrary message and returns hex-encoded 64-byte signature.
-    pub fn sign_hex(&self, message: &[u8]) -> String {
-        hex::encode(self.sign(message))
+    /// Signs a bounded message and returns its hex-encoded 64-byte signature.
+    pub fn sign_hex(&self, message: &[u8]) -> Result<String, DeviceKeyError> {
+        self.sign(message).map(hex::encode)
     }
 
     /// Verifies a signature against an Ed25519 public key.
@@ -142,9 +157,20 @@ impl DeviceKeyProvider {
         message: &[u8],
         signature_bytes: &[u8],
     ) -> Result<bool, DeviceKeyError> {
+        if message.len() > MAX_SIGNED_MESSAGE_BYTES {
+            return Err(DeviceKeyError::Crypto(
+                "Signed message exceeds the maximum supported size".to_string(),
+            ));
+        }
         let clean_hex = public_key_str
             .strip_prefix("ed25519_pk_")
             .unwrap_or(public_key_str);
+        if clean_hex.len() != 64 {
+            return Err(DeviceKeyError::InvalidPublicKey(format!(
+                "Expected 64 hex characters for Ed25519 public key, got {}",
+                clean_hex.len()
+            )));
+        }
         let pub_bytes = hex::decode(clean_hex).map_err(|e| {
             DeviceKeyError::InvalidPublicKey(format!("Failed to decode hex public key: {e}"))
         })?;
@@ -183,6 +209,22 @@ impl DeviceKeyProvider {
         message: &[u8],
         signature_hex: &str,
     ) -> Result<bool, DeviceKeyError> {
+        Self::validate_message_hex_length(message.len().saturating_mul(2))?;
+        let clean_hex = public_key_str
+            .strip_prefix("ed25519_pk_")
+            .unwrap_or(public_key_str);
+        if clean_hex.len() != 64 {
+            return Err(DeviceKeyError::InvalidPublicKey(format!(
+                "Expected 64 hex characters for Ed25519 public key, got {}",
+                clean_hex.len()
+            )));
+        }
+        if signature_hex.len() != 128 {
+            return Err(DeviceKeyError::InvalidSignature(format!(
+                "Expected 128 hex characters for Ed25519 signature, got {}",
+                signature_hex.len()
+            )));
+        }
         let sig_bytes = hex::decode(signature_hex).map_err(|e| {
             DeviceKeyError::InvalidSignature(format!("Failed to decode hex signature: {e}"))
         })?;
@@ -190,9 +232,176 @@ impl DeviceKeyProvider {
     }
 }
 
+fn read_existing_seed(path: &Path) -> Result<Option<Zeroizing<[u8; 32]>>, DeviceKeyError> {
+    let mut incomplete_reads = 0;
+    let path_metadata = loop {
+        match fs::symlink_metadata(path) {
+            Ok(metadata) => {
+                if metadata.file_type().is_symlink() || !metadata.is_file() {
+                    return Err(DeviceKeyError::Crypto(
+                        "Device key path must be a regular file, not a symlink or special file"
+                            .to_string(),
+                    ));
+                }
+                if metadata.len() == 32 {
+                    break metadata;
+                }
+                if metadata.len() > 32 {
+                    return Err(invalid_seed_length(metadata.len()));
+                }
+                incomplete_reads += 1;
+                if incomplete_reads >= 50 {
+                    return Err(invalid_seed_length(metadata.len()));
+                }
+                std::thread::sleep(std::time::Duration::from_millis(2));
+            }
+            Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(error.into()),
+        }
+    };
+
+    let key_file = File::open(path)?;
+    let opened_metadata = key_file.metadata()?;
+    if !opened_metadata.is_file() || opened_metadata.len() != path_metadata.len() {
+        return Err(DeviceKeyError::Crypto(
+            "Device key path must be a regular file, not a symlink or special file".to_string(),
+        ));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if opened_metadata.dev() != path_metadata.dev()
+            || opened_metadata.ino() != path_metadata.ino()
+        {
+            return Err(DeviceKeyError::Crypto(
+                "Device key path changed while it was being opened".to_string(),
+            ));
+        }
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        key_file.set_permissions(fs::Permissions::from_mode(0o600))?;
+    }
+
+    let mut bytes = Zeroizing::new(Vec::with_capacity(33));
+    key_file.take(33).read_to_end(&mut bytes)?;
+    if bytes.len() != 32 {
+        return Err(invalid_seed_length(bytes.len() as u64));
+    }
+    let mut seed = [0u8; 32];
+    seed.copy_from_slice(&bytes);
+
+    Ok(Some(Zeroizing::new(seed)))
+}
+
+fn invalid_seed_length(length: u64) -> DeviceKeyError {
+    DeviceKeyError::Crypto(format!(
+        "Invalid device key file length: expected 32 bytes, got {length}"
+    ))
+}
+
+fn write_seed_exclusive(path: &Path, seed: &[u8; 32]) -> Result<bool, DeviceKeyError> {
+    #[cfg(unix)]
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty());
+    #[cfg(unix)]
+    let file_name = path.file_name().ok_or_else(|| {
+        DeviceKeyError::Crypto("Device key path must include a file name".to_string())
+    })?;
+
+    #[cfg(unix)]
+    for _ in 0..10 {
+        let mut nonce = [0u8; 12];
+        OsRng.fill_bytes(&mut nonce);
+        let mut temp_name = file_name.to_os_string();
+        temp_name.push(format!(".{}.tmp", hex::encode(nonce)));
+        let temp_path: PathBuf =
+            parent.map_or_else(|| PathBuf::from(&temp_name), |dir| dir.join(&temp_name));
+
+        let mut options = OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+
+        let mut temp_file = match options.open(&temp_path) {
+            Ok(file) => file,
+            Err(error) if error.kind() == ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error.into()),
+        };
+
+        let write_result = temp_file
+            .write_all(seed)
+            .and_then(|()| temp_file.sync_all());
+        drop(temp_file);
+        if let Err(error) = write_result {
+            let _ = fs::remove_file(&temp_path);
+            return Err(error.into());
+        }
+
+        let link_result = fs::hard_link(&temp_path, path);
+        let _ = fs::remove_file(&temp_path);
+        match link_result {
+            Ok(()) => return Ok(true),
+            Err(error) if error.kind() == ErrorKind::AlreadyExists => return Ok(false),
+            Err(error) => return Err(error.into()),
+        }
+    }
+
+    #[cfg(unix)]
+    {
+        return Err(DeviceKeyError::Crypto(
+            "Could not allocate a unique temporary device key file".to_string(),
+        ));
+    }
+
+    #[cfg(not(unix))]
+    {
+        let mut options = OpenOptions::new();
+        options.write(true).create_new(true);
+        let mut file = match options.open(path) {
+            Ok(file) => file,
+            Err(error) if error.kind() == ErrorKind::AlreadyExists => return Ok(false),
+            Err(error) => return Err(error.into()),
+        };
+        if let Err(error) = file.write_all(seed).and_then(|()| file.sync_all()) {
+            drop(file);
+            let _ = fs::remove_file(path);
+            return Err(error.into());
+        }
+        Ok(true)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn message_hex_length_is_bounded_before_decoding() {
+        assert!(
+            DeviceKeyProvider::validate_message_hex_length(MAX_SIGNED_MESSAGE_BYTES * 2).is_ok()
+        );
+        assert!(
+            DeviceKeyProvider::validate_message_hex_length(MAX_SIGNED_MESSAGE_BYTES * 2 + 1)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn signing_rejects_messages_above_the_provider_limit() {
+        let provider =
+            DeviceKeyProvider::generate_ephemeral("com.platform.test", "windows").unwrap();
+        let message = vec![0; MAX_SIGNED_MESSAGE_BYTES + 1];
+
+        assert!(provider.sign(&message).is_err());
+        assert!(provider.sign_hex(&message).is_err());
+    }
 
     #[test]
     fn test_genuine_ed25519_key_generation_and_signing() {
@@ -205,7 +414,7 @@ mod tests {
         assert_eq!(provider.public_key().len(), 11 + 64);
 
         let message = b"canonical test operation payload for sync replication";
-        let signature = provider.sign(message);
+        let signature = provider.sign(message).unwrap();
         assert_eq!(signature.len(), 64);
 
         // Positive verification
@@ -228,7 +437,7 @@ mod tests {
             DeviceKeyProvider::generate_ephemeral("com.platform.test", "windows").unwrap();
 
         let message = b"authenticate device handshake";
-        let signature_a = provider_a.sign(message);
+        let signature_a = provider_a.sign(message).unwrap();
 
         // Verification with provider_b's public key must fail
         let is_valid =
@@ -263,10 +472,62 @@ mod tests {
 
         // 3. Signature created after reload verifies against initial public key
         let message = b"cross-restart verification check";
-        let signature = provider_reloaded.sign(message);
+        let signature = provider_reloaded.sign(message).unwrap();
         assert!(DeviceKeyProvider::verify(&public_key_first, message, &signature).unwrap());
 
         // Cleanup
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn concurrent_creators_use_the_same_persisted_identity() {
+        let unique_id = hex::encode(rand_core::OsRng.next_u64().to_le_bytes());
+        let dir = std::env::temp_dir().join(format!("id_race_{unique_id}"));
+        let key_file = dir.join("device_identity.key");
+        let workers: Vec<_> = (0..8)
+            .map(|_| {
+                let key_file = key_file.clone();
+                std::thread::spawn(move || {
+                    DeviceKeyProvider::load_or_create(
+                        Some(&key_file),
+                        "com.platform.test",
+                        "windows",
+                    )
+                    .unwrap()
+                    .public_key()
+                    .to_string()
+                })
+            })
+            .collect();
+
+        let public_keys: Vec<_> = workers
+            .into_iter()
+            .map(|worker| worker.join().unwrap())
+            .collect();
+        assert!(public_keys.iter().all(|key| key == &public_keys[0]));
+        assert_eq!(fs::read(&key_file).unwrap().len(), 32);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn existing_key_permissions_are_restricted_on_load() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let unique_id = hex::encode(rand_core::OsRng.next_u64().to_le_bytes());
+        let dir = std::env::temp_dir().join(format!("id_mode_{unique_id}"));
+        fs::create_dir_all(&dir).unwrap();
+        let key_file = dir.join("device_identity.key");
+        DeviceKeyProvider::load_or_create(Some(&key_file), "com.platform.test", "linux").unwrap();
+        fs::set_permissions(&key_file, fs::Permissions::from_mode(0o644)).unwrap();
+
+        DeviceKeyProvider::load_or_create(Some(&key_file), "com.platform.test", "linux").unwrap();
+
+        assert_eq!(
+            fs::metadata(&key_file).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 }

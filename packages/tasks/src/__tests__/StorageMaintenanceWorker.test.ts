@@ -26,6 +26,7 @@ async function applySchema(db: MemoryDatabaseConnection): Promise<void> {
       retry_delay_ms      INTEGER NOT NULL DEFAULT 1000,
       backoff_multiplier  REAL NOT NULL DEFAULT 2.0,
       max_retry_delay_ms  INTEGER NOT NULL DEFAULT 60000,
+      retry_jitter        REAL NOT NULL DEFAULT 0.25 CHECK (retry_jitter >= 0 AND retry_jitter <= 1),
       scheduled_at        TEXT NOT NULL,
       started_at          TEXT,
       completed_at        TEXT,
@@ -121,6 +122,24 @@ describe("StorageMaintenanceWorker", () => {
     await expect(worker.handle({ skipVacuum: false }, makeCtx())).rejects.toThrow(
       "Maintenance failed: test.fail: Database locked",
     );
+  });
+
+  it("does not report an aborted maintenance run as completed", async () => {
+    const mockReport: MaintenanceReport = {
+      timestamp: new Date().toISOString(),
+      durationMs: 5,
+      totalRowsPruned: 0,
+      results: [],
+      vacuumExecuted: false,
+      success: false,
+      aborted: true,
+    };
+    const mockOrchestrator = {
+      pruneAll: vi.fn().mockResolvedValue(mockReport),
+    } as unknown as MaintenanceOrchestrator;
+    const worker = new StorageMaintenanceWorker({ orchestrator: mockOrchestrator, taskQueue });
+
+    await expect(worker.handle({}, makeCtx())).rejects.toThrow("interrupted before completion");
   });
 
   it("enqueues deduplicated maintenance tasks into task queue", async () => {

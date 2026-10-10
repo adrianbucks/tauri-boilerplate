@@ -1,5 +1,6 @@
 import {
   ValidationError,
+  AuthorizationError,
   getUtcIsoTimestamp,
   generateCorrelationId,
   extractContextSubject,
@@ -7,35 +8,57 @@ import {
   type TrustedOperationContext,
 } from "@platform/core";
 import type { DatabaseConnection, TransactionClient } from "@platform/database";
-import { AuthorizationEngine } from "@platform/authorization";
+import { AuthorizationEngine, SyncGroupService } from "@platform/authorization";
 import { SyncManager, OutboxService, TombstoneService } from "@platform/sync";
-import type { SyncEnvelope } from "@platform/sync-protocol";
+import { SyncEnvelopeBuilder, type SignFn, type SyncOperation } from "@platform/sync-protocol";
 import { NotesRepository } from "./NotesRepository.js";
 import { NOTES_PERMISSIONS } from "./NotesManifest.js";
 import type { NoteRecord, CreateNoteInput, UpdateNoteInput } from "./NotesTypes.js";
 
 export interface NotesServiceOptions {
   db: DatabaseConnection;
+  signer: NotesSyncSigner;
   auth?: AuthorizationEngine | undefined;
+  syncGroups?: SyncGroupService | undefined;
   sync?: SyncManager | undefined;
   outbox?: OutboxService | undefined;
   tombstones?: TombstoneService | undefined;
+}
+
+export interface NotesSyncSigner {
+  /** Canonical Ed25519 public key for the device identity. */
+  readonly publicKey: string;
+  /** Must delegate signing to the native key provider; private key bytes stay outside TypeScript. */
+  readonly sign: SignFn;
 }
 
 export class NotesService {
   private readonly db: DatabaseConnection;
   private readonly repo: NotesRepository;
   private readonly auth: AuthorizationEngine;
+  private readonly syncGroups: SyncGroupService;
   private readonly outbox: OutboxService;
   private readonly tombstones: TombstoneService;
+  private readonly signer: NotesSyncSigner;
 
   constructor(options: NotesServiceOptions) {
     this.db = options.db;
+    this.signer = options.signer;
     this.repo = new NotesRepository(options.db);
     this.auth = options.auth ?? new AuthorizationEngine(options.db);
+    this.syncGroups = options.syncGroups ?? new SyncGroupService(options.db, this.auth);
     this.outbox =
       options.outbox ?? options.sync?.getOutboxService() ?? new OutboxService(options.db);
     this.tombstones = options.tombstones ?? new TombstoneService(options.db);
+  }
+
+  private async enqueueOperation(operation: SyncOperation, tx: TransactionClient): Promise<void> {
+    const envelope = await SyncEnvelopeBuilder.build(
+      operation,
+      this.signer.publicKey,
+      this.signer.sign,
+    );
+    await this.outbox.enqueue(envelope, tx);
   }
 
   private async requirePermission(
@@ -49,27 +72,19 @@ export class NotesService {
     }
     const subject = extractContextSubject(ctx);
     if (!subject.userId) {
-      throw new Error("Unauthenticated subject cannot perform operation");
+      throw new AuthorizationError({
+        message: `Unauthenticated subject cannot perform operation '${permission}'`,
+        userMessage: "You are not authorized to perform this operation",
+        correlationId: ctx.correlationId,
+      });
     }
-    const executor = tx ?? this.db;
-    const roleRows = await executor.query<{ role_id: string }>(
-      "SELECT role_id FROM core_user_roles WHERE user_id = ? AND organisation_id = ?",
-      [subject.userId, subject.organisationId],
-    );
-    const roles = Object.freeze(roleRows.map((r) => r.role_id));
-    const decision = await this.auth.can(
-      {
-        userId: subject.userId,
-        organisationId: subject.organisationId,
-        roles,
-      },
+    await this.auth.requireForSubject(
+      subject.userId,
+      subject.organisationId,
       permission,
       undefined,
       tx,
     );
-    if (!decision.granted) {
-      throw new Error(`Subject does not hold permission '${permission}': ${decision.reason}`);
-    }
   }
 
   async createNote(
@@ -77,12 +92,17 @@ export class NotesService {
     input: CreateNoteInput,
     tx?: TransactionClient,
   ): Promise<NoteRecord> {
-    await this.requirePermission(ctx, NOTES_PERMISSIONS.CREATE, tx);
-
-    if (!input.title || !input.title.trim()) {
+    if (typeof input.title !== "string" || !input.title.trim()) {
       throw new ValidationError({
         message: "Note title cannot be empty",
         userMessage: "Title is required",
+        correlationId: ctx.correlationId,
+      });
+    }
+    if (typeof input.content !== "string") {
+      throw new ValidationError({
+        message: "Note content must be a string",
+        userMessage: "Note content is invalid",
         correlationId: ctx.correlationId,
       });
     }
@@ -106,15 +126,13 @@ export class NotesService {
     };
 
     const doCreate = async (client: TransactionClient) => {
+      await this.requirePermission(ctx, NOTES_PERMISSIONS.CREATE, client);
+      await this.syncGroups.requireActiveMembership(ctx, input.syncGroupId, client);
       await this.repo.insert(noteRecord, client);
 
       const opId = generateCorrelationId("op_note_crt");
-      const envelope: SyncEnvelope = {
-        envelopeId: opId,
-        signedAt: now,
-        signerPublicKey: "ephemeral_local_signer",
-        signature: "ephemeral_local_signature",
-        operation: {
+      await this.enqueueOperation(
+        {
           operationId: opId,
           applicationId: "minimal-consumer",
           organisationId: subject.organisationId,
@@ -130,8 +148,8 @@ export class NotesService {
           schemaVersion: 1,
           protocolVersion: 1,
         },
-      };
-      await this.outbox.enqueue(envelope, client);
+        client,
+      );
       return noteRecord;
     };
 
@@ -150,9 +168,15 @@ export class NotesService {
     await this.requirePermission(ctx, NOTES_PERMISSIONS.READ, tx);
     const subject = extractContextSubject(ctx);
     if (syncGroupId) {
+      await this.syncGroups.requireActiveMembership(ctx, syncGroupId, tx);
       return this.repo.findBySyncGroup(syncGroupId, subject.organisationId, tx);
     }
-    return this.repo.findAll({ excludeDeleted: true }, tx);
+    return this.repo.findAllWithinOrganisation(
+      subject.organisationId,
+      subject.deviceId,
+      subject.userId,
+      tx,
+    );
   }
 
   async getNote(
@@ -162,7 +186,9 @@ export class NotesService {
   ): Promise<NoteRecord | null> {
     await this.requirePermission(ctx, NOTES_PERMISSIONS.READ, tx);
     const subject = extractContextSubject(ctx);
-    return this.repo.findByIdWithinOrganisation(id, subject.organisationId, tx);
+    const note = await this.repo.findByIdWithinOrganisation(id, subject.organisationId, tx);
+    if (note) await this.syncGroups.requireActiveMembership(ctx, note.syncGroupId, tx);
+    return note;
   }
 
   async updateNote(
@@ -170,10 +196,33 @@ export class NotesService {
     input: UpdateNoteInput,
     tx?: TransactionClient,
   ): Promise<NoteRecord> {
-    await this.requirePermission(ctx, NOTES_PERMISSIONS.UPDATE, tx);
+    const hasTitle = input.title !== undefined;
+    const hasContent = input.content !== undefined;
+    if (!hasTitle && !hasContent) {
+      throw new ValidationError({
+        message: "Note update must include at least one field",
+        userMessage: "Provide a title or content change",
+        correlationId: ctx.correlationId,
+      });
+    }
+    if (hasTitle && (typeof input.title !== "string" || !input.title.trim())) {
+      throw new ValidationError({
+        message: "Updated note title cannot be empty",
+        userMessage: "Title is required",
+        correlationId: ctx.correlationId,
+      });
+    }
+    if (hasContent && typeof input.content !== "string") {
+      throw new ValidationError({
+        message: "Updated note content must be a string",
+        userMessage: "Note content is invalid",
+        correlationId: ctx.correlationId,
+      });
+    }
     const subject = extractContextSubject(ctx);
 
     const doUpdate = async (client: TransactionClient) => {
+      await this.requirePermission(ctx, NOTES_PERMISSIONS.UPDATE, client);
       const existing = await this.repo.findByIdWithinOrganisation(
         input.id,
         subject.organisationId,
@@ -182,6 +231,7 @@ export class NotesService {
       if (!existing) {
         throw new Error(`Note '${input.id}' not found`);
       }
+      await this.syncGroups.requireActiveMembership(ctx, existing.syncGroupId, client);
 
       const now = getUtcIsoTimestamp();
       const updated: NoteRecord = {
@@ -194,12 +244,8 @@ export class NotesService {
       await this.repo.update(input.id, updated, client);
 
       const opId = generateCorrelationId("op_note_upd");
-      const envelope: SyncEnvelope = {
-        envelopeId: opId,
-        signedAt: now,
-        signerPublicKey: "ephemeral_local_signer",
-        signature: "ephemeral_local_signature",
-        operation: {
+      await this.enqueueOperation(
+        {
           operationId: opId,
           applicationId: "minimal-consumer",
           organisationId: subject.organisationId,
@@ -215,8 +261,8 @@ export class NotesService {
           schemaVersion: 1,
           protocolVersion: 1,
         },
-      };
-      await this.outbox.enqueue(envelope, client);
+        client,
+      );
       return updated;
     };
 
@@ -232,10 +278,10 @@ export class NotesService {
     id: string,
     tx?: TransactionClient,
   ): Promise<void> {
-    await this.requirePermission(ctx, NOTES_PERMISSIONS.DELETE, tx);
     const subject = extractContextSubject(ctx);
 
     const doDelete = async (client: TransactionClient) => {
+      await this.requirePermission(ctx, NOTES_PERMISSIONS.DELETE, client);
       const existing = await this.repo.findByIdWithinOrganisation(
         id,
         subject.organisationId,
@@ -244,29 +290,25 @@ export class NotesService {
       if (!existing) {
         return;
       }
+      await this.syncGroups.requireActiveMembership(ctx, existing.syncGroupId, client);
 
       const now = getUtcIsoTimestamp();
-      const delOpId = `op_del_${id}`;
+      const opId = generateCorrelationId("op_note_del");
       await this.tombstones.record(
         "notes",
         id,
         subject.userId ?? "system",
-        delOpId,
+        opId,
         subject.organisationId,
         existing.syncGroupId,
         "notes",
         client,
+        now,
       );
 
-      await this.repo.softDelete(id, subject.userId ?? "system", client);
-
-      const opId = generateCorrelationId("op_note_del");
-      const envelope: SyncEnvelope = {
-        envelopeId: opId,
-        signedAt: now,
-        signerPublicKey: "ephemeral_local_signer",
-        signature: "ephemeral_local_signature",
-        operation: {
+      await this.repo.softDeleteWithOperationId(id, subject.userId ?? "system", opId, now, client);
+      await this.enqueueOperation(
+        {
           operationId: opId,
           applicationId: "minimal-consumer",
           organisationId: subject.organisationId,
@@ -282,8 +324,8 @@ export class NotesService {
           schemaVersion: 1,
           protocolVersion: 1,
         },
-      };
-      await this.outbox.enqueue(envelope, client);
+        client,
+      );
     };
 
     if (tx) {

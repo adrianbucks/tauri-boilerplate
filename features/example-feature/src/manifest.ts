@@ -1,6 +1,7 @@
 import { WIDGET_PERMISSIONS } from "./permissions.js";
 import type { FeatureManifest } from "@platform/feature-system";
 import widgetsSchemaSql from "./migrations/widgets-schema.sql?raw";
+import widgetsSchemaV2Sql from "./migrations/widgets-schema-v2.sql?raw";
 
 export const exampleFeatureManifest: FeatureManifest = {
   id: "example-feature",
@@ -42,6 +43,12 @@ export const exampleFeatureManifest: FeatureManifest = {
       name: "create_widgets_table",
       sql: widgetsSchemaSql,
       checksum: "chk_widgets_001",
+    },
+    {
+      version: 2,
+      name: "scope_active_widget_skus_to_organisation",
+      sql: widgetsSchemaV2Sql,
+      checksum: "chk_widgets_002",
     },
   ],
   syncPolicies: [

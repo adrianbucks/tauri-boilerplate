@@ -41,6 +41,7 @@ async function applySchema(db: MemoryDatabaseConnection): Promise<void> {
       retry_delay_ms      INTEGER NOT NULL DEFAULT 1000,
       backoff_multiplier  REAL NOT NULL DEFAULT 2.0,
       max_retry_delay_ms  INTEGER NOT NULL DEFAULT 60000,
+      retry_jitter        REAL NOT NULL DEFAULT 0.25 CHECK (retry_jitter >= 0 AND retry_jitter <= 1),
       scheduled_at        TEXT NOT NULL,
       started_at          TEXT,
       completed_at        TEXT,
@@ -62,7 +63,7 @@ function makeEntry(overrides: Partial<OutboxEntry> = {}): OutboxEntry {
     envelopeId: generateCorrelationId("env"),
     organisationId: "org-123",
     syncGroupId: "grp-abc",
-    payloadJson: JSON.stringify({ op: "INSERT" }),
+    envelopeJson: JSON.stringify({ envelopeId: "env", operation: { payload: { op: "INSERT" } } }),
     signerPublicKey: "pk",
     signature: "sig",
     ...overrides,
@@ -120,7 +121,15 @@ describe("OutboxSyncWorker", () => {
 
     await worker.handle(payload, makeCtx());
 
+    expect(outbox.pendingBatch).toHaveBeenCalledWith("org-123", 50);
     expect(dispatchSpy).toHaveBeenCalledTimes(2);
+    expect(dispatchSpy).toHaveBeenNthCalledWith(
+      1,
+      entries[0]!.organisationId,
+      entries[0]!.syncGroupId,
+      entries[0]!.envelopeJson,
+      expect.any(AbortSignal),
+    );
     expect(markSentSpy).toHaveBeenCalledTimes(2);
     expect(markFailedSpy).not.toHaveBeenCalled();
   });
@@ -147,6 +156,25 @@ describe("OutboxSyncWorker", () => {
 
     await worker.handle({ organisationId: "org-123" }, makeCtx());
     expect(dispatchSpy).not.toHaveBeenCalled();
+  });
+
+  it("rejects a payload organisation that differs from the task context", async () => {
+    const outbox: OutboxBatchLoader = {
+      pendingBatch: vi.fn().mockResolvedValue([]),
+      markSent: vi.fn(),
+      markFailed: vi.fn(),
+    };
+    const worker = new OutboxSyncWorker({
+      outbox,
+      dispatcher: { dispatch: vi.fn() },
+      taskQueue,
+      db,
+    });
+
+    await expect(
+      worker.handle({ organisationId: "org-other" }, makeCtx({ organisationId: "org-123" })),
+    ).rejects.toThrow("does not match");
+    expect(outbox.pendingBatch).not.toHaveBeenCalled();
   });
 
   // -------------------------------------------------------------------------
@@ -207,7 +235,7 @@ describe("OutboxSyncWorker", () => {
   // AbortSignal — stops dispatch loop early
   // -------------------------------------------------------------------------
 
-  it("stops dispatching when the AbortSignal fires", async () => {
+  it("propagates cancellation without consuming the outbox retry budget", async () => {
     const controller = new AbortController();
     const ctx = makeCtx({ signal: controller.signal });
 
@@ -229,11 +257,36 @@ describe("OutboxSyncWorker", () => {
       taskQueue,
       db,
     });
+    const executeSpy = vi.spyOn(db, "execute");
 
-    await worker.handle({ organisationId: "org-123" }, ctx);
+    await expect(worker.handle({ organisationId: "org-123" }, ctx)).rejects.toThrow("aborted");
 
     // Only the first dispatch ran before abort
     expect(dispatchSpy).toHaveBeenCalledOnce();
+    expect(outbox.markFailed).not.toHaveBeenCalled();
+    expect(executeSpy.mock.calls.some(([sql]) => sql.includes("core_sync_cursors"))).toBe(false);
+  });
+
+  it("does not mark an envelope failed when dispatch rejects after cancellation", async () => {
+    const controller = new AbortController();
+    const outbox: OutboxBatchLoader = {
+      pendingBatch: vi.fn().mockResolvedValue([makeEntry()]),
+      markSent: vi.fn(),
+      markFailed: vi.fn(),
+    };
+    const dispatcher: SyncDispatcher = {
+      dispatch: vi.fn().mockImplementation(async () => {
+        controller.abort();
+        throw new Error("dispatch aborted");
+      }),
+    };
+    const worker = new OutboxSyncWorker({ outbox, dispatcher, taskQueue, db });
+
+    await expect(
+      worker.handle({ organisationId: "org-123" }, makeCtx({ signal: controller.signal })),
+    ).rejects.toThrow("dispatch aborted");
+    expect(outbox.markFailed).not.toHaveBeenCalled();
+    expect(outbox.markSent).not.toHaveBeenCalled();
   });
 
   // -------------------------------------------------------------------------

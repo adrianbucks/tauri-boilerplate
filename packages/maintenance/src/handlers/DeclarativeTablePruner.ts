@@ -1,4 +1,4 @@
-import { ValidationError } from "@platform/core";
+import { isSafePruningFilterCondition, ValidationError } from "@platform/core";
 import type { DatabaseConnection } from "@platform/database";
 import type {
   DeclarativePruningPolicy,
@@ -6,6 +6,7 @@ import type {
   PruningHandler,
   PruningResult,
 } from "../types.js";
+import { validatePruningContext } from "../validation.js";
 
 const IDENTIFIER_REGEX = /^[a-zA-Z0-9_]+$/;
 
@@ -17,6 +18,14 @@ export class DeclarativeTablePruner implements PruningHandler {
   readonly policy: DeclarativePruningPolicy;
 
   constructor(policy: DeclarativePruningPolicy) {
+    if (!Number.isFinite(policy.defaultRetentionDays) || policy.defaultRetentionDays <= 0) {
+      throw new ValidationError({
+        message: `Invalid defaultRetentionDays '${policy.defaultRetentionDays}' in declarative pruning policy '${policy.id}'. It must be a positive finite number.`,
+        userMessage: "Invalid pruning retention configuration",
+        correlationId: `val_prune_retention_${policy.id}`,
+      });
+    }
+
     if (!IDENTIFIER_REGEX.test(policy.tableName)) {
       throw new ValidationError({
         message: `Invalid table name '${policy.tableName}' in declarative pruning policy '${policy.id}'. Only alphanumeric characters and underscores are permitted.`,
@@ -34,16 +43,18 @@ export class DeclarativeTablePruner implements PruningHandler {
     }
 
     if (policy.filterCondition) {
-      if (/;|--|\/\*/.test(policy.filterCondition)) {
+      if (!isSafePruningFilterCondition(policy.filterCondition)) {
         throw new ValidationError({
-          message: `Unsafe characters detected in filterCondition for policy '${policy.id}'.`,
+          message: `Unsafe filterCondition in pruning policy '${policy.id}'. Use a single column comparison with a literal value.`,
           userMessage: "Invalid filter configuration",
           correlationId: `val_prune_filter_${policy.id}`,
         });
       }
     }
 
-    this.policy = policy;
+    // Snapshot the declarative input so a caller cannot mutate identifiers or
+    // filter SQL after constructor validation.
+    this.policy = Object.freeze({ ...policy });
     this.id = policy.id;
     this.displayName = policy.displayName;
     this.description =
@@ -64,6 +75,7 @@ export class DeclarativeTablePruner implements PruningHandler {
   }
 
   async prune(ctx: PruningContext): Promise<PruningResult> {
+    validatePruningContext(ctx);
     const start = performance.now();
     const filter = this.policy.filterCondition ? ` AND (${this.policy.filterCondition})` : "";
     const deleteSql = `DELETE FROM ${this.policy.tableName} WHERE rowid IN (

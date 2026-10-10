@@ -65,12 +65,14 @@ interface FeatureManifest {
 }
 
 interface SyncPolicyDefinition {
-  entityType: string; // Must match a table in this feature's schema
-  namespace: string; // "{application}/{organisation}/{syncGroup}/{feature}/{entityType}"
+  entityType: string;
+  namespacePattern: string; // Must include {application}, {organisation}, and {syncGroup}
   conflictPolicy: ConflictPolicy;
-  syncable: boolean; // Must be true to include in replication
+  syncable: boolean;
 }
 ```
+
+The runtime interfaces are readonly and also include optional description, pruning policies, and navigation metadata. The manifest validator checks their runtime structure and supported policy values before registration.
 
 ---
 
@@ -79,23 +81,22 @@ interface SyncPolicyDefinition {
 Features are registered **explicitly** at application startup. No magic file discovery.
 
 ```typescript
-// apps/demo/src/bootstrap/features.ts
-import { platform } from "@platform/platform";
-import { exampleFeatureManifest, exampleFeatureRoutes } from "@features/example-feature";
+// Application bootstrap (abbreviated; `db` is the configured DatabaseConnection)
+import { Platform } from "@platform/platform";
+import { exampleFeatureManifest } from "@features/example-feature";
 import { organisationsManifest } from "@features/organisations";
 import { identityAdminManifest } from "@features/identity-admin";
 
-platform.registerFeature({
-  manifest: exampleFeatureManifest,
-  routes: exampleFeatureRoutes,
-});
-
+const platform = new Platform({ db });
+platform.registerFeature({ manifest: exampleFeatureManifest });
 platform.registerFeature({ manifest: organisationsManifest });
 platform.registerFeature({ manifest: identityAdminManifest });
 
-// Platform validates dependency order, detects cycles, and rejects duplicates
-await platform.initialize();
+// Apply core and feature migrations and recover interrupted tasks.
+await platform.init();
 ```
+
+Feature registration accepts a manifest. Navigation metadata can be read with `platform.features.getAllNavigationItems()`, but the application owns route definitions, page rendering, and any mapping from flat navigation items into its shell's groups. The feature registry does not register route components.
 
 **Why explicit registration?** It is easier to validate, easier for AI agents to understand, and eliminates implicit filesystem-based loading that can silently fail.
 
@@ -137,7 +138,7 @@ Generate application feature registry (used at runtime)
 ```
 features/example-feature/
 ├── src/
-│   ├── index.ts                  ← Export manifest, routes
+│   ├── index.ts                  ← Export manifest and feature APIs
 │   ├── manifest.ts               ← Complete FeatureManifest
 │   ├── permissions.ts            ← Permission name constants
 │   ├── schema/
@@ -191,7 +192,7 @@ cp -r features/example-feature features/my-domain
 # 3. Replace "widget" with your domain entity throughout
 
 # 4. Register in your application
-# apps/my-app/src/bootstrap/features.ts: add registerFeature(myDomainManifest, routes)
+# Register the manifest with Platform, then connect the feature's pages and routes in the app.
 
 # 5. Add to pnpm workspace
 # pnpm-workspace.yaml already includes features/* — no change needed

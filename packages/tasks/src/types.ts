@@ -87,6 +87,8 @@ export interface TaskRecord<TPayload = unknown> {
   readonly retryDelayMs: number;
   readonly backoffMultiplier: number;
   readonly maxRetryDelayMs: number;
+  /** Randomisation fraction applied to retry delays, between 0 and 1. */
+  readonly retryJitter: number;
   readonly scheduledAt: string;
   readonly startedAt: string | null;
   readonly completedAt: string | null;

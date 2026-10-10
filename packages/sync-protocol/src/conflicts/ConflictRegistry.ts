@@ -39,7 +39,16 @@ export class ConflictRegistry {
   }
 
   registerEntityPolicy(entityType: string, policy: ConflictPolicy): void {
+    if (this.entityPolicies.has(entityType)) {
+      throw new Error(
+        `[ConflictRegistry] Entity policy for '${entityType}' is already registered.`,
+      );
+    }
     this.entityPolicies.set(entityType, policy);
+  }
+
+  hasEntityPolicy(entityType: string): boolean {
+    return this.entityPolicies.has(entityType);
   }
 
   /**

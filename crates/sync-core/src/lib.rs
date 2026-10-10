@@ -101,5 +101,22 @@ mod tests {
 
         assert_eq!(received_by_b.sender_endpoint_id, node_a.endpoint_id());
         assert_eq!(received_by_b.payload_json, response_payload);
+
+        node_b
+            .disconnect(&node_a.endpoint_id())
+            .await
+            .expect("disconnect should remove the local connection");
+        assert!(!node_b.is_connected(&node_a.endpoint_id()).await);
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while node_a.is_connected(&node_b.endpoint_id()).await {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("remote connection should be removed after close");
+
+        node_a.shutdown().await;
+        node_b.shutdown().await;
+        assert!(node_a.next_inbound_envelope().await.is_none());
     }
 }

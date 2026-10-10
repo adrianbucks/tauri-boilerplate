@@ -188,6 +188,15 @@ describe("Cross-Package Integration Suite — End-to-End Pipeline", () => {
     );
   }
 
+  async function seedSyncGroup(groupId: string, organisationId: string) {
+    await db.execute(
+      `INSERT INTO core_sync_groups
+         (id, created_at, updated_at, organisation_id, name, status)
+       VALUES (?, '2026-08-30T10:00:00Z', '2026-08-30T10:00:00Z', ?, ?, 'ACTIVE')`,
+      [groupId, organisationId, groupId],
+    );
+  }
+
   afterEach(async () => {
     await db.close();
   });
@@ -230,6 +239,31 @@ describe("Cross-Package Integration Suite — End-to-End Pipeline", () => {
     );
     expect(userId).toBeDefined();
 
+    await seedSyncGroup("grp_main", org.id);
+    await db.execute(
+      `INSERT INTO core_devices
+         (id, created_at, updated_at, user_id, device_id, public_key, platform, application_id, status, registered_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        "device_scanner_101",
+        "2026-08-30T10:00:00Z",
+        "2026-08-30T10:00:00Z",
+        userId,
+        "dev_scanner_101",
+        "test-public-key",
+        "desktop",
+        "integration-test",
+        "PENDING",
+        "2026-08-30T10:00:00Z",
+      ],
+    );
+    await db.execute(
+      `INSERT INTO core_sync_group_members
+         (id, group_id, device_id, user_id, status, joined_at)
+       VALUES (?, ?, ?, ?, 'APPROVED', '2026-08-30T10:00:00Z')`,
+      ["member_admin_main", "grp_main", "dev_primary", userId],
+    );
+
     // 3. Register Device & Request Membership
     const syncGroupService = platform.syncGroups;
     const reqId = await syncGroupService.requestMembership("grp_main", "dev_scanner_101", userId);
@@ -266,6 +300,13 @@ describe("Cross-Package Integration Suite — End-to-End Pipeline", () => {
     });
 
     await grantAllPermissions("usr_operator", "org_warehouse");
+    await seedSyncGroup("grp_wh_1", "org_warehouse");
+    await db.execute(
+      `INSERT INTO core_sync_group_members
+         (id, group_id, device_id, user_id, status, joined_at)
+       VALUES (?, ?, ?, ?, 'APPROVED', '2026-08-30T10:00:00Z')`,
+      ["member_operator_wh", "grp_wh_1", "dev_scanner", "usr_operator"],
+    );
 
     const widgetService = new WidgetService(db);
     const importEngine = new ImportEngine(db);
@@ -291,7 +332,7 @@ describe("Cross-Package Integration Suite — End-to-End Pipeline", () => {
           quantity: parseInt(String(row["quantity"] || row["Quantity"]), 10),
         },
       }),
-      commit: async (records, dbConn, opCtx) => {
+      commit: async (records, _operationContext, tx) => {
         for (const r of records) {
           await widgetService.createWidget(
             {
@@ -300,7 +341,8 @@ describe("Cross-Package Integration Suite — End-to-End Pipeline", () => {
               quantity: r.quantity,
               syncGroupId: "grp_wh_1",
             },
-            opCtx,
+            ctx,
+            tx,
           );
         }
         return { importedCount: records.length };

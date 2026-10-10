@@ -44,15 +44,49 @@ struct DbTransactionRequest {
     operations: Vec<DbOperation>,
 }
 
-fn example_feature_migration() -> native_core::NativeMigration {
-    native_core::NativeMigration {
-        owner: "feature.example-feature".to_string(),
-        version: 1,
-        name: "create_widgets_table".to_string(),
-        checksum: "chk_widgets_001".to_string(),
-        sql: include_str!("../../../../features/example-feature/src/migrations/widgets-schema.sql")
+#[derive(Debug, Serialize)]
+struct DiagnosticsCounts {
+    outbox_pending: u64,
+    inbox_total: u64,
+    audit_events: u64,
+    widgets_total: u64,
+}
+
+fn count_query_rows(database: &DurableDatabase, sql: &str) -> Result<u64, PlatformError> {
+    let result = database.query_json(sql, Vec::new())?;
+    result["rows"][0]["cnt"].as_u64().ok_or_else(|| {
+        PlatformError::new(
+            "DATABASE_ERROR",
+            "Diagnostics count query returned an invalid result",
+            "Unable to load database diagnostics",
+            "diagnostics_count_result",
+        )
+    })
+}
+
+fn example_feature_migrations() -> Vec<native_core::NativeMigration> {
+    vec![
+        native_core::NativeMigration {
+            owner: "feature.example-feature".to_string(),
+            version: 1,
+            name: "create_widgets_table".to_string(),
+            checksum: "chk_widgets_001".to_string(),
+            sql: include_str!(
+                "../../../../features/example-feature/src/migrations/widgets-schema.sql"
+            )
             .to_string(),
-    }
+        },
+        native_core::NativeMigration {
+            owner: "feature.example-feature".to_string(),
+            version: 2,
+            name: "scope_active_widget_skus_to_organisation".to_string(),
+            checksum: "chk_widgets_002".to_string(),
+            sql: include_str!(
+                "../../../../features/example-feature/src/migrations/widgets-schema-v2.sql"
+            )
+            .to_string(),
+        },
+    ]
 }
 
 #[tauri::command]
@@ -67,6 +101,24 @@ fn get_database_health(
     database: tauri::State<'_, DurableDatabase>,
 ) -> Result<DatabaseHealth, PlatformError> {
     database.health_check()
+}
+
+#[tauri::command]
+fn get_diagnostics_counts(
+    database: tauri::State<'_, DurableDatabase>,
+) -> Result<DiagnosticsCounts, PlatformError> {
+    Ok(DiagnosticsCounts {
+        outbox_pending: count_query_rows(
+            &database,
+            "SELECT COUNT(*) AS cnt FROM core_sync_outbox WHERE status = 'pending'",
+        )?,
+        inbox_total: count_query_rows(&database, "SELECT COUNT(*) AS cnt FROM core_sync_inbox")?,
+        audit_events: count_query_rows(&database, "SELECT COUNT(*) AS cnt FROM core_audit_events")?,
+        widgets_total: count_query_rows(
+            &database,
+            "SELECT COUNT(*) AS cnt FROM widgets WHERE deleted_at IS NULL",
+        )?,
+    })
 }
 
 #[tauri::command]
@@ -196,6 +248,14 @@ fn sign_message(
     request: SignMessageRequest,
     key_provider: tauri::State<'_, DeviceKeyProvider>,
 ) -> Result<String, PlatformError> {
+    DeviceKeyProvider::validate_message_hex_length(request.message_hex.len()).map_err(|error| {
+        PlatformError::new(
+            "message_too_large",
+            error.to_string(),
+            "Signing message exceeds the supported size",
+            "sign_message_err",
+        )
+    })?;
     let message_bytes = hex::decode(&request.message_hex).map_err(|e| {
         PlatformError::new(
             "invalid_hex",
@@ -204,11 +264,26 @@ fn sign_message(
             "sign_message_err",
         )
     })?;
-    Ok(key_provider.sign_hex(&message_bytes))
+    key_provider.sign_hex(&message_bytes).map_err(|error| {
+        PlatformError::new(
+            "signing_error",
+            error.to_string(),
+            "Signing message could not be processed",
+            "sign_message_err",
+        )
+    })
 }
 
 #[tauri::command]
 fn verify_message(request: VerifyMessageRequest) -> Result<bool, PlatformError> {
+    DeviceKeyProvider::validate_message_hex_length(request.message_hex.len()).map_err(|error| {
+        PlatformError::new(
+            "message_too_large",
+            error.to_string(),
+            "Verification message exceeds the supported size",
+            "verify_message_err",
+        )
+    })?;
     let message_bytes = hex::decode(&request.message_hex).map_err(|e| {
         PlatformError::new(
             "invalid_hex",
@@ -381,6 +456,15 @@ async fn sync_disconnect_peer(
 }
 
 #[tauri::command]
+async fn sync_stop_endpoint(state: tauri::State<'_, SyncState>) -> Result<(), PlatformError> {
+    let mut endpoint_state = state.endpoint.write().await;
+    if let Some(endpoint) = endpoint_state.take() {
+        endpoint.shutdown().await;
+    }
+    Ok(())
+}
+
+#[tauri::command]
 async fn sync_send_envelope(
     request: SyncSendRequest,
     state: tauri::State<'_, SyncState>,
@@ -469,7 +553,7 @@ pub fn run() {
             let database = DurableDatabase::open(database_path)
                 .map_err(|error| std::io::Error::other(error.message))?;
             database
-                .apply_migrations(&[core_migrations(), vec![example_feature_migration()]].concat())
+                .apply_migrations(&[core_migrations(), example_feature_migrations()].concat())
                 .map_err(|error| std::io::Error::other(error.message))?;
             let key_provider = database
                 .load_or_create_device_key_provider(APPLICATION_ID, std::env::consts::OS)
@@ -579,6 +663,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_device_identity,
             get_database_health,
+            get_diagnostics_counts,
             authenticate_user,
             get_current_session,
             logout_user,
@@ -595,6 +680,7 @@ pub fn run() {
             sync_start_endpoint,
             sync_connect_peer,
             sync_disconnect_peer,
+            sync_stop_endpoint,
             sync_send_envelope,
             sync_is_connected,
             background_start,
@@ -607,7 +693,7 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{example_feature_migration, APPLICATION_ID};
+    use super::{example_feature_migrations, APPLICATION_ID};
 
     #[test]
     fn identity_namespace_is_application_owned() {
@@ -615,11 +701,18 @@ mod tests {
     }
 
     #[test]
-    fn example_feature_migration_keeps_feature_ownership() {
-        let migration = example_feature_migration();
-        assert_eq!(migration.owner, "feature.example-feature");
-        assert_eq!(migration.version, 1);
-        assert_eq!(migration.checksum, "chk_widgets_001");
-        assert!(migration.sql.contains("CREATE TABLE IF NOT EXISTS widgets"));
+    fn example_feature_migrations_keep_feature_ownership_and_order() {
+        let migrations = example_feature_migrations();
+        assert_eq!(migrations.len(), 2);
+        assert_eq!(migrations[0].owner, "feature.example-feature");
+        assert_eq!(migrations[0].version, 1);
+        assert_eq!(migrations[0].checksum, "chk_widgets_001");
+        assert!(migrations[0]
+            .sql
+            .contains("CREATE TABLE IF NOT EXISTS widgets"));
+        assert_eq!(migrations[1].owner, "feature.example-feature");
+        assert_eq!(migrations[1].version, 2);
+        assert_eq!(migrations[1].checksum, "chk_widgets_002");
+        assert!(migrations[1].sql.contains("idx_widgets_org_active_sku"));
     }
 }

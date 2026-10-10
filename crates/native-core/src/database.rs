@@ -22,6 +22,15 @@ const MAX_AUTHENTICATION_FAILURES: i64 = 5;
 const LOCKOUT_SECONDS: u64 = 300;
 
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
+const MAX_QUERY_RESULT_ROWS: usize = 10_000;
+const MAX_QUERY_RESULT_BYTES: usize = 10 * 1024 * 1024;
+const MAX_QUERY_RESULT_COLUMNS: usize = 256;
+const MAX_SQL_STATEMENT_BYTES: usize = 1024 * 1024;
+const MAX_SQL_PARAMETERS: usize = 999;
+const MAX_SQL_PARAMETER_BYTES: usize = 1024 * 1024;
+const MAX_SQL_REQUEST_BYTES: usize = 10 * 1024 * 1024;
+const MAX_SQL_TRANSACTION_OPERATIONS: usize = 1_000;
+const MAX_SQL_PARAMETER_NESTING: usize = 64;
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct DatabaseHealth {
@@ -178,57 +187,100 @@ impl DurableDatabase {
             .lock()
             .map_err(|_| database_error_message("db_lock", "Database connection lock poisoned"))?;
 
-        let existing = connection
+        let transaction = connection
+            .unchecked_transaction()
+            .map_err(|error| database_error("device_identity_begin", error))?;
+        let matching_identity = transaction
             .query_row(
-                "SELECT device_id, public_key
-                 FROM core_devices
-                 WHERE application_id = ?1 AND platform = ?2 AND user_id IS NULL
-                 ORDER BY created_at ASC
-                 LIMIT 1",
-                params![application_id, platform],
-                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+                "SELECT id FROM core_devices WHERE device_id = ?1 AND public_key = ?2",
+                params![provider.device_id(), provider.public_key()],
+                |row| row.get::<_, String>(0),
             )
             .optional()
             .map_err(|error| database_error("device_identity_lookup", error))?;
+        let local_record_id = transaction
+            .query_row(
+                "SELECT id FROM core_devices WHERE is_local = 1 ORDER BY created_at ASC LIMIT 1",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(|error| database_error("device_identity_local_lookup", error))?;
+        let now = current_epoch_seconds().to_string();
 
-        if let Some((existing_id, existing_pk)) = existing {
-            if existing_id == provider.device_id() && existing_pk == provider.public_key() {
-                return Ok(provider);
-            }
-            connection
+        if let Some(matching_id) = matching_identity {
+            // Clear the prior local marker first so the partial unique index is
+            // respected when an already-registered peer becomes this app's key.
+            transaction
+                .execute(
+                    "UPDATE core_devices SET is_local = 0 WHERE is_local = 1 AND id <> ?1",
+                    [&matching_id],
+                )
+                .map_err(|error| database_error("device_identity_unmark_local", error))?;
+            transaction
                 .execute(
                     "UPDATE core_devices
-                     SET device_id = ?1, public_key = ?2, updated_at = ?3
-                     WHERE application_id = ?4 AND platform = ?5 AND user_id IS NULL",
-                    params![
-                        provider.device_id(),
-                        provider.public_key(),
-                        current_epoch_seconds().to_string(),
-                        application_id,
-                        platform
-                    ],
+                     SET is_local = 1, application_id = ?1, platform = ?2, updated_at = ?3
+                     WHERE id = ?4",
+                    params![application_id, platform, now, matching_id],
                 )
-                .map_err(|error| database_error("device_identity_update", error))?;
-            return Ok(provider);
-        }
+                .map_err(|error| database_error("device_identity_mark_local", error))?;
+        } else {
+            let conflicting_device_id = transaction
+                .query_row(
+                    "SELECT 1 FROM core_devices WHERE device_id = ?1 LIMIT 1",
+                    [provider.device_id()],
+                    |_| Ok(()),
+                )
+                .optional()
+                .map_err(|error| database_error("device_identity_conflict_lookup", error))?
+                .is_some();
+            if conflicting_device_id {
+                return Err(database_error_message(
+                    "device_identity_conflict",
+                    "Stored device ID is bound to a different public key",
+                ));
+            }
 
-        let now = current_epoch_seconds().to_string();
-        connection
-            .execute(
-                "INSERT INTO core_devices
-                 (id, created_at, updated_at, device_id, public_key, platform,
-                  application_id, status, registered_at)
-                 VALUES (?1, ?2, ?2, ?3, ?4, ?5, ?6, 'APPROVED', ?2)",
-                params![
-                    format!("device_record_{}", provider.device_id()),
-                    now,
-                    provider.device_id(),
-                    provider.public_key(),
-                    provider.identity().platform,
-                    provider.identity().application_id
-                ],
-            )
-            .map_err(|error| database_error("device_identity_bind", error))?;
+            if let Some(local_id) = local_record_id {
+                transaction
+                    .execute(
+                        "UPDATE core_devices
+                         SET device_id = ?1, public_key = ?2, application_id = ?3,
+                             platform = ?4, updated_at = ?5
+                         WHERE id = ?6",
+                        params![
+                            provider.device_id(),
+                            provider.public_key(),
+                            application_id,
+                            platform,
+                            now,
+                            local_id
+                        ],
+                    )
+                    .map_err(|error| database_error("device_identity_update", error))?;
+            } else {
+                transaction
+                    .execute(
+                        "INSERT INTO core_devices
+                         (id, created_at, updated_at, device_id, public_key, platform,
+                          application_id, status, registered_at, is_local)
+                         VALUES (?1, ?2, ?2, ?3, ?4, ?5, ?6, 'APPROVED', ?2, 1)",
+                        params![
+                            format!("device_record_{}", provider.device_id()),
+                            now,
+                            provider.device_id(),
+                            provider.public_key(),
+                            provider.identity().platform,
+                            provider.identity().application_id
+                        ],
+                    )
+                    .map_err(|error| database_error("device_identity_bind", error))?;
+            }
+        }
+        transaction
+            .commit()
+            .map_err(|error| database_error("device_identity_commit", error))?;
         Ok(provider)
     }
 
@@ -534,7 +586,7 @@ impl DurableDatabase {
         if let Some(domain) = domain.as_deref() {
             let exists: i64 = transaction
                 .query_row(
-                    "SELECT COUNT(*) FROM core_organisations WHERE domain = ?1",
+                    "SELECT COUNT(*) FROM core_organisations WHERE lower(trim(domain)) = ?1",
                     [domain],
                     |row| row.get(0),
                 )
@@ -1122,18 +1174,11 @@ impl DurableDatabase {
     }
 
     pub fn validate_safe_sql(sql: &str) -> Result<(), PlatformError> {
-        let clean = sql
-            .lines()
-            .filter(|line| !line.trim().starts_with("--"))
-            .collect::<Vec<&str>>()
-            .join(" ");
-        let upper = clean.trim().to_uppercase();
+        let (command, rest) = Self::next_sql_keyword(sql).unwrap_or_default();
 
-        // Disallow ATTACH / DETACH (arbitrary filesystem mounting)
-        if upper.starts_with("ATTACH ")
-            || upper.starts_with("ATTACH\t")
-            || upper.contains(" ATTACH ")
-        {
+        // SQLite treats comments as whitespace, so inspect tokens rather than raw prefixes.
+        // Disallow ATTACH / DETACH (arbitrary filesystem mounting).
+        if command == "ATTACH" {
             return Err(PlatformError::new(
                 "disallowed_sql",
                 "ATTACH DATABASE is disallowed over client database bridge",
@@ -1141,10 +1186,7 @@ impl DurableDatabase {
                 "sql_safety_err",
             ));
         }
-        if upper.starts_with("DETACH ")
-            || upper.starts_with("DETACH\t")
-            || upper.contains(" DETACH ")
-        {
+        if command == "DETACH" {
             return Err(PlatformError::new(
                 "disallowed_sql",
                 "DETACH DATABASE is disallowed over client database bridge",
@@ -1153,8 +1195,10 @@ impl DurableDatabase {
             ));
         }
 
-        // Disallow VACUUM INTO (arbitrary file export)
-        if upper.contains("VACUUM") && upper.contains("INTO") {
+        // Disallow VACUUM INTO (arbitrary file export), including comments between tokens.
+        if command == "VACUUM"
+            && Self::next_sql_keyword(rest).is_some_and(|(keyword, _)| keyword == "INTO")
+        {
             return Err(PlatformError::new(
                 "disallowed_sql",
                 "VACUUM INTO is disallowed over client database bridge",
@@ -1164,11 +1208,7 @@ impl DurableDatabase {
         }
 
         // Disallow PRAGMA manipulation from webview (pragmas must be controlled by native platform)
-        if upper.starts_with("PRAGMA ")
-            || upper.starts_with("PRAGMA\t")
-            || upper.contains(";PRAGMA")
-            || upper.contains("; PRAGMA")
-        {
+        if command == "PRAGMA" {
             return Err(PlatformError::new(
                 "disallowed_sql",
                 "PRAGMA execution is disallowed over client database bridge",
@@ -1177,7 +1217,74 @@ impl DurableDatabase {
             ));
         }
 
+        // Transaction boundaries are owned by the database bridge. Allowing callers to
+        // issue them directly could leave the shared connection in a caller-managed
+        // transaction or commit/rollback the bridge's atomic transaction early.
+        if matches!(
+            command.as_str(),
+            "BEGIN" | "COMMIT" | "END" | "ROLLBACK" | "SAVEPOINT" | "RELEASE"
+        ) {
+            return Err(PlatformError::new(
+                "disallowed_sql",
+                "Transaction control statements are disallowed over the client database bridge",
+                "Unauthorized database operation",
+                "sql_safety_err",
+            ));
+        }
+
         Ok(())
+    }
+
+    fn next_sql_keyword(sql: &str) -> Option<(String, &str)> {
+        let bytes = sql.as_bytes();
+        let mut offset = 0;
+
+        loop {
+            while bytes
+                .get(offset)
+                .is_some_and(|byte| byte.is_ascii_whitespace() || *byte == b';')
+            {
+                offset += 1;
+            }
+
+            if bytes.get(offset..offset + 3) == Some(b"\xEF\xBB\xBF") {
+                offset += 3;
+                continue;
+            }
+
+            if bytes.get(offset..offset + 2) == Some(b"--") {
+                offset += 2;
+                while bytes
+                    .get(offset)
+                    .is_some_and(|byte| *byte != b'\n' && *byte != b'\r')
+                {
+                    offset += 1;
+                }
+                continue;
+            }
+
+            if bytes.get(offset..offset + 2) == Some(b"/*") {
+                let end = sql[offset + 2..].find("*/")?;
+                offset += end + 4;
+                continue;
+            }
+
+            break;
+        }
+
+        let start = offset;
+        while bytes
+            .get(offset)
+            .is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'_')
+        {
+            offset += 1;
+        }
+
+        if start == offset {
+            return None;
+        }
+
+        Some((sql[start..offset].to_ascii_uppercase(), &sql[offset..]))
     }
 
     pub fn query_json(
@@ -1186,6 +1293,7 @@ impl DurableDatabase {
         params: Vec<serde_json::Value>,
     ) -> Result<serde_json::Value, PlatformError> {
         Self::validate_safe_sql(sql)?;
+        validate_sql_request(sql, &params)?;
         let connection = self
             .connection
             .lock()
@@ -1194,9 +1302,21 @@ impl DurableDatabase {
         let mut statement = connection
             .prepare(sql)
             .map_err(|error| database_error("db_query_prepare", error))?;
+        if !statement.readonly() {
+            return Err(database_error_message(
+                "db_query_readonly",
+                "Database query command only accepts read-only SQL statements",
+            ));
+        }
 
         // Get column names first
         let col_count = statement.column_count();
+        if col_count > MAX_QUERY_RESULT_COLUMNS {
+            return Err(database_error_message(
+                "db_result_limit",
+                "Query result exceeds the maximum column count",
+            ));
+        }
         let mut col_names = Vec::new();
         for i in 0..col_count {
             let col_name = statement
@@ -1217,30 +1337,54 @@ impl DurableDatabase {
             .map_err(|error| database_error("db_query_execute", error))?;
 
         let mut results = Vec::new();
+        let mut estimated_result_bytes = 0usize;
         while let Some(row) = rows
             .next()
             .map_err(|error| database_error("db_query_next", error))?
         {
+            if results.len() >= MAX_QUERY_RESULT_ROWS {
+                return Err(database_error_message(
+                    "db_result_limit",
+                    "Query result exceeds the maximum row count",
+                ));
+            }
             let mut obj = serde_json::json!({});
             for (i, col_name) in col_names.iter().enumerate() {
-                let value: serde_json::Value = match row.get_ref(i) {
-                    Ok(val) => match val {
-                        rusqlite::types::ValueRef::Null => serde_json::Value::Null,
-                        rusqlite::types::ValueRef::Integer(i) => {
-                            serde_json::Value::Number(i.into())
-                        }
-                        rusqlite::types::ValueRef::Real(f) => serde_json::Number::from_f64(f)
-                            .map(serde_json::Value::Number)
-                            .unwrap_or(serde_json::Value::Null),
-                        rusqlite::types::ValueRef::Text(t) => {
-                            serde_json::Value::String(String::from_utf8_lossy(t).into_owned())
-                        }
-                        rusqlite::types::ValueRef::Blob(b) => {
-                            // Encode blob as base64 JSON string
-                            serde_json::Value::String(format!("blob:{}", base64_encode(b)))
-                        }
-                    },
-                    Err(_) => serde_json::Value::Null,
+                let raw_value = row
+                    .get_ref(i)
+                    .map_err(|error| database_error("db_query_value", error))?;
+                let raw_size = match raw_value {
+                    rusqlite::types::ValueRef::Text(value)
+                    | rusqlite::types::ValueRef::Blob(value) => value.len(),
+                    _ => 8,
+                };
+                // JSON escaping can expand control characters; use a conservative upper bound
+                // before allocating the converted string or base64 representation.
+                estimated_result_bytes = estimated_result_bytes
+                    .saturating_add(raw_size.saturating_mul(6))
+                    .saturating_add(col_name.len().saturating_mul(6))
+                    .saturating_add(16);
+                if raw_size > MAX_QUERY_RESULT_BYTES
+                    || estimated_result_bytes > MAX_QUERY_RESULT_BYTES
+                {
+                    return Err(database_error_message(
+                        "db_result_limit",
+                        "Query result exceeds the maximum response size",
+                    ));
+                }
+                let value: serde_json::Value = match raw_value {
+                    rusqlite::types::ValueRef::Null => serde_json::Value::Null,
+                    rusqlite::types::ValueRef::Integer(i) => serde_json::Value::Number(i.into()),
+                    rusqlite::types::ValueRef::Real(f) => serde_json::Number::from_f64(f)
+                        .map(serde_json::Value::Number)
+                        .unwrap_or(serde_json::Value::Null),
+                    rusqlite::types::ValueRef::Text(t) => {
+                        serde_json::Value::String(String::from_utf8_lossy(t).into_owned())
+                    }
+                    rusqlite::types::ValueRef::Blob(b) => {
+                        // Encode blob as base64 JSON string
+                        serde_json::Value::String(format!("blob:{}", base64_encode(b)))
+                    }
                 };
                 obj[col_name.clone()] = value;
             }
@@ -1256,6 +1400,7 @@ impl DurableDatabase {
         params: Vec<serde_json::Value>,
     ) -> Result<serde_json::Value, PlatformError> {
         Self::validate_safe_sql(sql)?;
+        validate_sql_request(sql, &params)?;
         let connection = self
             .connection
             .lock()
@@ -1278,8 +1423,23 @@ impl DurableDatabase {
     }
 
     pub fn transaction_json(&self, operations: Vec<DbJsonOperation>) -> Result<(), PlatformError> {
+        if operations.len() > MAX_SQL_TRANSACTION_OPERATIONS {
+            return Err(database_error_message(
+                "db_input_limit",
+                "Database transaction exceeds the maximum operation count",
+            ));
+        }
+        let mut request_bytes = 0usize;
         for op in &operations {
             Self::validate_safe_sql(&op.sql)?;
+            request_bytes =
+                request_bytes.saturating_add(validate_sql_request(&op.sql, &op.params)?);
+            if request_bytes > MAX_SQL_REQUEST_BYTES {
+                return Err(database_error_message(
+                    "db_input_limit",
+                    "Database transaction exceeds the maximum request size",
+                ));
+            }
         }
         let connection = self
             .connection
@@ -1307,6 +1467,12 @@ impl DurableDatabase {
 
             match op.op_type.as_str() {
                 "query" => {
+                    if !statement.readonly() {
+                        return Err(database_error_message(
+                            "db_transaction_query_readonly",
+                            "Database transaction query operations must be read-only",
+                        ));
+                    }
                     let mut rows = statement
                         .query(param_refs.as_slice())
                         .map_err(|error| database_error("db_transaction_query", error))?;
@@ -1356,6 +1522,97 @@ fn normalize_widget_item(
         ));
     }
     Ok((name, sku, item.quantity, item.description))
+}
+
+fn validate_sql_request(sql: &str, params: &[serde_json::Value]) -> Result<usize, PlatformError> {
+    if sql.len() > MAX_SQL_STATEMENT_BYTES {
+        return Err(database_error_message(
+            "db_input_limit",
+            "SQL statement exceeds the maximum allowed size",
+        ));
+    }
+    if params.len() > MAX_SQL_PARAMETERS {
+        return Err(database_error_message(
+            "db_input_limit",
+            "SQL request exceeds the maximum parameter count",
+        ));
+    }
+
+    let mut request_bytes = sql.len();
+    for value in params {
+        if value
+            .as_u64()
+            .is_some_and(|unsigned| unsigned > i64::MAX as u64)
+        {
+            return Err(database_error_message(
+                "db_parameter_invalid",
+                "Unsigned integer SQL parameters must fit in SQLite's signed 64-bit integer range",
+            ));
+        }
+        let Some(value_bytes) = estimate_json_value_bytes(value, 0) else {
+            return Err(database_error_message(
+                "db_input_limit",
+                "SQL parameter exceeds the supported size or nesting depth",
+            ));
+        };
+        if value_bytes > MAX_SQL_PARAMETER_BYTES {
+            return Err(database_error_message(
+                "db_input_limit",
+                "SQL parameter exceeds the maximum allowed size",
+            ));
+        }
+        request_bytes = request_bytes.saturating_add(value_bytes);
+        if request_bytes > MAX_SQL_REQUEST_BYTES {
+            return Err(database_error_message(
+                "db_input_limit",
+                "SQL request exceeds the maximum allowed size",
+            ));
+        }
+    }
+
+    Ok(request_bytes)
+}
+
+/// Estimates serialized JSON size conservatively without first allocating a serialized copy.
+fn estimate_json_value_bytes(value: &serde_json::Value, depth: usize) -> Option<usize> {
+    if depth > MAX_SQL_PARAMETER_NESTING {
+        return None;
+    }
+
+    let estimate = match value {
+        serde_json::Value::Null => 4,
+        serde_json::Value::Bool(true) => 4,
+        serde_json::Value::Bool(false) => 5,
+        serde_json::Value::Number(number) => number.to_string().len(),
+        serde_json::Value::String(string) => string.len().saturating_mul(6).saturating_add(2),
+        serde_json::Value::Array(items) => {
+            let mut size = 2usize;
+            for item in items {
+                size = size
+                    .saturating_add(1)
+                    .saturating_add(estimate_json_value_bytes(item, depth + 1)?);
+                if size > MAX_SQL_PARAMETER_BYTES {
+                    return None;
+                }
+            }
+            size
+        }
+        serde_json::Value::Object(items) => {
+            let mut size = 2usize;
+            for (key, item) in items {
+                size = size
+                    .saturating_add(key.len().saturating_mul(6))
+                    .saturating_add(estimate_json_value_bytes(item, depth + 1)?)
+                    .saturating_add(4);
+                if size > MAX_SQL_PARAMETER_BYTES {
+                    return None;
+                }
+            }
+            size
+        }
+    };
+
+    (estimate <= MAX_SQL_PARAMETER_BYTES).then_some(estimate)
 }
 
 fn database_error_message(code: &str, message: &str) -> PlatformError {
@@ -1535,7 +1792,9 @@ mod tests {
             .load_or_create_device_key_provider("app.test", "windows")
             .expect("key provider should load");
         let message = b"canonical native message for restart verification";
-        let signature = provider.sign(message);
+        let signature = provider
+            .sign(message)
+            .expect("signing message should be within limit");
         assert!(DeviceKeyProvider::verify(&first.public_key, message, &signature).unwrap());
 
         let connection = database.connection.lock().unwrap();
@@ -2450,6 +2709,197 @@ mod tests {
         ];
         let tx_res = db.transaction_json(tx_ops);
         assert!(tx_res.is_ok(), "Safe transaction must succeed");
+
+        drop(db);
+        let _ = fs::remove_file(&path);
+        let _ = fs::remove_file(path.with_extension("db-wal"));
+        let _ = fs::remove_file(path.with_extension("db-shm"));
+    }
+
+    #[test]
+    fn sql_safety_guard_blocks_dangerous_commands_with_comments() {
+        let path = test_path("wp020-sql-comment-bypass");
+        let db = DurableDatabase::open(&path).expect("open");
+        db.apply_migrations(&crate::core_migrations())
+            .expect("migrations");
+
+        for sql in [
+            "/* leading comment */ PRAGMA/* split token */ foreign_keys = OFF;",
+            "; PRAGMA foreign_keys = OFF;",
+            "\u{feff}PRAGMA foreign_keys = OFF;",
+            "BEGIN TRANSACTION;",
+            "COMMIT;",
+            "END TRANSACTION;",
+            "ROLLBACK;",
+            "SAVEPOINT client_savepoint;",
+            "RELEASE SAVEPOINT client_savepoint;",
+            "ATTACH/* split token */ DATABASE 'outside.db' AS external;",
+            "DETACH/* split token */ DATABASE external;",
+            "VACUUM/* split token */ INTO 'outside.db';",
+        ] {
+            assert_eq!(
+                DurableDatabase::validate_safe_sql(sql)
+                    .expect_err("comment-obfuscated command must be rejected")
+                    .code,
+                "disallowed_sql",
+                "SQL was unexpectedly allowed: {sql}"
+            );
+        }
+
+        let _ = fs::remove_file(&path);
+        let _ = fs::remove_file(path.with_extension("db-wal"));
+        let _ = fs::remove_file(path.with_extension("db-shm"));
+    }
+
+    #[test]
+    fn query_json_rejects_results_above_bridge_limits() {
+        let path = test_path("db-query-result-limits");
+        let db = DurableDatabase::open(&path).expect("open");
+
+        let too_many_rows = db
+            .query_json(
+                "WITH RECURSIVE rows(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM rows WHERE n < 10001) SELECT n FROM rows;",
+                vec![],
+            )
+            .expect_err("row count must be bounded");
+        assert_eq!(too_many_rows.correlation_id, "db_result_limit");
+
+        let too_many_bytes = db
+            .query_json("SELECT randomblob(2097152) AS payload;", vec![])
+            .expect_err("cell size must be bounded before encoding");
+        assert_eq!(too_many_bytes.correlation_id, "db_result_limit");
+
+        drop(db);
+        let _ = fs::remove_file(&path);
+        let _ = fs::remove_file(path.with_extension("db-wal"));
+        let _ = fs::remove_file(path.with_extension("db-shm"));
+    }
+
+    #[test]
+    fn sql_bridge_rejects_multiple_statements_before_execution() {
+        let path = test_path("db-query-statement-tail");
+        let db = DurableDatabase::open(&path).expect("open");
+        db.execute_batch("CREATE TABLE tail_guard (value TEXT NOT NULL);")
+            .expect("fixture table should be created");
+
+        let execute = db.execute_json(
+            "INSERT INTO tail_guard (value) VALUES ('first'); PRAGMA foreign_keys = OFF;",
+            vec![],
+        );
+        assert!(execute.is_err(), "a second statement must be rejected");
+
+        let query = db.query_json("SELECT 1; SELECT 2;", vec![]);
+        assert!(query.is_err(), "a second query statement must be rejected");
+
+        let count: i64 = db
+            .connection
+            .lock()
+            .expect("connection lock")
+            .query_row("SELECT COUNT(*) FROM tail_guard", [], |row| row.get(0))
+            .expect("query fixture");
+        assert_eq!(count, 0, "the first statement must not run either");
+
+        drop(db);
+        let _ = fs::remove_file(&path);
+        let _ = fs::remove_file(path.with_extension("db-wal"));
+        let _ = fs::remove_file(path.with_extension("db-shm"));
+    }
+
+    #[test]
+    fn sql_bridge_rejects_oversized_inputs_before_database_execution() {
+        let path = test_path("db-query-input-limits");
+        let db = DurableDatabase::open(&path).expect("open");
+
+        let long_sql = format!("SELECT 1{}", " ".repeat(MAX_SQL_STATEMENT_BYTES));
+        let error = db
+            .query_json(&long_sql, vec![])
+            .expect_err("SQL statement size must be bounded");
+        assert_eq!(error.correlation_id, "db_input_limit");
+
+        let too_many_parameters = db
+            .query_json(
+                "SELECT 1",
+                vec![serde_json::Value::Null; MAX_SQL_PARAMETERS + 1],
+            )
+            .expect_err("parameter count must be bounded");
+        assert_eq!(too_many_parameters.correlation_id, "db_input_limit");
+
+        let oversized_parameter = db
+            .query_json(
+                "SELECT ?",
+                vec![serde_json::Value::String("x".repeat(200_000))],
+            )
+            .expect_err("individual parameter size must be bounded");
+        assert_eq!(oversized_parameter.correlation_id, "db_input_limit");
+
+        let oversized_request = db
+            .query_json(
+                "SELECT 1",
+                vec![serde_json::Value::String("x".repeat(2_000)); MAX_SQL_PARAMETERS],
+            )
+            .expect_err("aggregate parameter size must be bounded");
+        assert_eq!(oversized_request.correlation_id, "db_input_limit");
+
+        let too_many_operations = db
+            .transaction_json(
+                (0..=MAX_SQL_TRANSACTION_OPERATIONS)
+                    .map(|_| crate::DbJsonOperation {
+                        op_type: "execute".to_string(),
+                        sql: "SELECT 1".to_string(),
+                        params: vec![],
+                    })
+                    .collect(),
+            )
+            .expect_err("transaction operation count must be bounded");
+        assert_eq!(too_many_operations.correlation_id, "db_input_limit");
+
+        let oversized_integer = db
+            .query_json("SELECT ?", vec![serde_json::Value::Number(u64::MAX.into())])
+            .expect_err("out-of-range unsigned integer must not wrap to a negative value");
+        assert_eq!(oversized_integer.correlation_id, "db_parameter_invalid");
+
+        drop(db);
+        let _ = fs::remove_file(&path);
+        let _ = fs::remove_file(path.with_extension("db-wal"));
+        let _ = fs::remove_file(path.with_extension("db-shm"));
+    }
+
+    #[test]
+    fn query_operations_reject_writes_even_when_sql_returns_rows() {
+        let path = test_path("db-query-readonly");
+        let db = DurableDatabase::open(&path).expect("open");
+        db.execute_batch(
+            "CREATE TABLE query_guard (id INTEGER PRIMARY KEY, value TEXT NOT NULL);
+             INSERT INTO query_guard (id, value) VALUES (1, 'preserve');",
+        )
+        .expect("fixture should be created");
+
+        let direct = db
+            .query_json("DELETE FROM query_guard WHERE id = 1 RETURNING id;", vec![])
+            .expect_err("query command must reject DML with RETURNING");
+        assert_eq!(direct.correlation_id, "db_query_readonly");
+
+        let transaction = db
+            .transaction_json(vec![crate::DbJsonOperation {
+                op_type: "query".to_string(),
+                sql: "DELETE FROM query_guard WHERE id = 1 RETURNING id;".to_string(),
+                params: vec![],
+            }])
+            .expect_err("transaction query operation must reject DML");
+        assert_eq!(transaction.correlation_id, "db_transaction_query_readonly");
+
+        let remaining: i64 = db
+            .connection
+            .lock()
+            .expect("connection lock")
+            .query_row("SELECT COUNT(*) FROM query_guard WHERE id = 1", [], |row| {
+                row.get(0)
+            })
+            .expect("read fixture row");
+        assert_eq!(
+            remaining, 1,
+            "rejected query operations must not mutate rows"
+        );
 
         drop(db);
         let _ = fs::remove_file(&path);

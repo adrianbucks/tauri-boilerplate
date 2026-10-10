@@ -30,14 +30,6 @@ export interface AuthenticateUserRequest {
   password: string;
 }
 
-export interface CreateSessionOptions {
-  userId: string;
-  organisationId: string;
-  /** Retained for source compatibility; persisted role bindings are authoritative. */
-  roles?: readonly string[] | undefined;
-  expiresAt?: string | null | undefined;
-}
-
 export class UserSessionService {
   private readonly db: DatabaseConnection;
   private readonly deviceService: DeviceIdentityService;
@@ -81,10 +73,10 @@ export class UserSessionService {
         user_id: request.userId,
         password: request.password,
       });
-    } catch (cause) {
+    } catch {
       this.invalidateSession();
       throw new AuthenticationError({
-        message: cause instanceof Error ? cause.message : "Native authentication failed",
+        message: "Native authentication failed",
         userMessage: "Invalid credentials or account locked",
         correlationId: "auth_native_failed",
       });
@@ -94,9 +86,30 @@ export class UserSessionService {
   }
 
   /**
-   * Establishes a TypeScript session from an already verified native session view.
+   * Restores the TypeScript session from the native session store after app startup.
    */
-  async establishFromNativeSession(
+  async restoreNativeSession(
+    gateway: NativeAuthenticator,
+    tx?: TransactionClient,
+  ): Promise<Session | null> {
+    if (!gateway.getCurrentSession) {
+      throw new AuthenticationError({
+        message: "Native session restoration is not supported by this gateway",
+        userMessage: "Unable to restore your sign-in session",
+        correlationId: "sess_restore_unsupported",
+      });
+    }
+
+    const nativeView = await gateway.getCurrentSession();
+    if (!nativeView) {
+      this.invalidateSession();
+      return null;
+    }
+
+    return this.establishFromNativeSession(nativeView, tx);
+  }
+
+  private async establishFromNativeSession(
     nativeView: {
       user_id: string;
       device_id: string;
@@ -127,6 +140,36 @@ export class UserSessionService {
       });
     }
 
+    if (user.organisation_id !== nativeView.organisation_id) {
+      this.invalidateSession();
+      throw new AuthorizationError({
+        message: `Native session organisation does not match user '${nativeView.user_id}'`,
+        userMessage: "Your sign-in session does not match this account",
+        correlationId: "sess_org_mismatch",
+      });
+    }
+
+    const deviceRows = await executor.query<{
+      device_id: string;
+      user_id: string | null;
+      status: string;
+    }>("SELECT device_id, user_id, status FROM core_devices WHERE device_id = ? LIMIT 1", [
+      nativeView.device_id,
+    ]);
+    const device = deviceRows[0];
+    if (
+      !device ||
+      (device.user_id !== null && device.user_id !== nativeView.user_id) ||
+      (device.status !== "APPROVED" && device.status !== "ACTIVE")
+    ) {
+      this.invalidateSession();
+      throw new AuthorizationError({
+        message: `Native session device '${nativeView.device_id}' is missing, unbound, or inactive`,
+        userMessage: "This device is not approved for sign-in",
+        correlationId: "sess_device_invalid",
+      });
+    }
+
     const roleRows = await executor.query<{ role_id: string }>(
       `SELECT role_id
        FROM core_user_roles
@@ -138,7 +181,7 @@ export class UserSessionService {
     const sessionId = generateCorrelationId("sess");
     const now = getUtcIsoTimestamp();
 
-    const session: Session = {
+    const session: Session = Object.freeze({
       sessionId,
       userId: nativeView.user_id,
       deviceId: nativeView.device_id,
@@ -146,104 +189,15 @@ export class UserSessionService {
       roles: Object.freeze(roleRows.map((row) => row.role_id)),
       establishedAt: now,
       expiresAt: null,
-    };
-
-    this.currentSession = session;
-    return session;
-  }
-
-  /**
-   * @deprecated Identifier-only session creation bypasses credential verification (CS-003).
-   * Prefer `authenticate(request, gateway)` or `establishFromNativeSession(nativeView)`.
-   */
-  async createSession(options: CreateSessionOptions, tx?: TransactionClient): Promise<Session> {
-    const executor = tx ?? this.db;
-    const device = await this.deviceService.getLocalDevice(tx);
-
-    if (!device) {
-      throw new AuthenticationError({
-        message: "No device registered on this system",
-        userMessage: "Device identity missing",
-        correlationId: "sess_nodev_err",
-      });
-    }
-
-    if (device.status === "REVOKED") {
-      throw new AuthorizationError({
-        message: "Device has been revoked and cannot start a session",
-        userMessage: "This device has been revoked",
-        correlationId: "sess_dev_revoked",
-      });
-    }
-
-    if (device.status === "SUSPENDED") {
-      throw new AuthorizationError({
-        message: "Device is suspended and cannot start a session",
-        userMessage: "This device has been suspended. Contact your administrator.",
-        correlationId: "sess_dev_suspended",
-      });
-    }
-
-    if (device.status !== "APPROVED" && device.status !== "ACTIVE") {
-      throw new AuthorizationError({
-        message: `Device is not approved for sessions (state '${device.status}')`,
-        userMessage: "This device has not been approved for sign-in.",
-        correlationId: "sess_dev_unapproved",
-      });
-    }
-
-    // Verify User Status
-    const userRows = await executor.query<{
-      id: string;
-      organisation_id: string;
-      display_name: string;
-      status: string;
-    }>("SELECT * FROM core_users WHERE id = ? LIMIT 1", [options.userId]);
-
-    const user = userRows[0];
-    if (!user || user.status === "REVOKED" || user.status === "SUSPENDED") {
-      throw new AuthenticationError({
-        message: `User '${options.userId}' is inactive or revoked`,
-        userMessage: "User account is inactive",
-        correlationId: "sess_user_inactive",
-      });
-    }
-
-    if (user.organisation_id !== options.organisationId) {
-      throw new AuthorizationError({
-        message: `User '${options.userId}' does not belong to organisation '${options.organisationId}'`,
-        userMessage: "You are not a member of the selected organisation.",
-        correlationId: "sess_org_mismatch",
-      });
-    }
-
-    const roleRows = await executor.query<{ role_id: string }>(
-      `SELECT role_id
-       FROM core_user_roles
-       WHERE user_id = ? AND organisation_id = ?
-       ORDER BY role_id ASC`,
-      [user.id, user.organisation_id],
-    );
-
-    const sessionId = generateCorrelationId("sess");
-    const now = getUtcIsoTimestamp();
-
-    const session: Session = {
-      sessionId,
-      userId: options.userId,
-      deviceId: device.deviceId,
-      organisationId: user.organisation_id,
-      roles: Object.freeze(roleRows.map((row) => row.role_id)),
-      establishedAt: now,
-      expiresAt: options.expiresAt ?? null,
-    };
+    });
 
     this.currentSession = session;
     return session;
   }
 
   async validateCurrentSession(tx?: TransactionClient): Promise<Session> {
-    if (!this.currentSession) {
+    const session = this.currentSession;
+    if (!session) {
       throw new AuthenticationError({
         message: "No active session found",
         userMessage: "Please log in to continue",
@@ -251,7 +205,15 @@ export class UserSessionService {
       });
     }
 
-    const device = await this.deviceService.getLocalDevice(tx);
+    const device = await this.deviceService.getDeviceById(session.deviceId, tx);
+    if (this.currentSession !== session) {
+      throw new AuthenticationError({
+        message: "Session changed during validation",
+        userMessage: "Your session changed. Please try again.",
+        correlationId: "sess_changed",
+      });
+    }
+
     if (!device || device.status === "REVOKED" || device.status === "SUSPENDED") {
       this.invalidateSession();
       throw new AuthorizationError({
@@ -261,9 +223,9 @@ export class UserSessionService {
       });
     }
 
-    if (this.currentSession.expiresAt) {
+    if (session.expiresAt) {
       const now = new Date();
-      const expires = new Date(this.currentSession.expiresAt);
+      const expires = new Date(session.expiresAt);
       if (now > expires) {
         this.invalidateSession();
         throw new AuthenticationError({
@@ -274,7 +236,7 @@ export class UserSessionService {
       }
     }
 
-    return this.currentSession;
+    return session;
   }
 
   async getTrustedOperationContext(tx?: TransactionClient): Promise<TrustedOperationContext> {

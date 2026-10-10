@@ -15,7 +15,7 @@ This repository is a **GitHub Template Repository** designed to serve as the pla
 
 ## Development Workflow
 
-1. Read [`docs/README.md`](./docs/README.md) and [`docs/verification/status.md`](./docs/verification/status.md). Architecture docs keep target patterns; status.md is the evidence-backed current view. Then read [`docs/development/06-agent-and-developer-guidelines.md`](./docs/development/06-agent-and-developer-guidelines.md).
+1. Read [`docs/README.md`](./docs/README.md), [`docs/06-status/current-state.md`](./docs/06-status/current-state.md), [`docs/04-guides/agent-guide.md`](./docs/04-guides/agent-guide.md), and [`docs/04-guides/developer-guide.md`](./docs/04-guides/developer-guide.md). Status registers are under review; verify claims against source and executable evidence.
 2. Install dependencies: `pnpm install`.
 3. Ensure all tests pass: `pnpm test`, `pnpm typecheck`, `pnpm lint`.
 4. If adding new architecture decisions or changing protocols, document them in an ADR in `docs/decisions/`.

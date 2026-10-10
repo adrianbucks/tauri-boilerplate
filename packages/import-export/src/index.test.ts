@@ -1,12 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import * as XLSX from "xlsx";
 import { MemoryDatabaseConnection } from "@platform/database";
-import { createOperationContext } from "@platform/core";
+import { createOperationContext, ValidationError } from "@platform/core";
 import {
   ImportEngine,
   ExportEngine,
   type ImportDefinition,
   type ExportDefinition,
+  type RowValidationError,
 } from "./index.js";
 
 interface TestItem {
@@ -58,13 +59,14 @@ describe("@platform/import-export", () => {
         data: { id: `item_${sku.toLowerCase()}`, sku, name, quantity: qty },
       };
     },
-    commit: async (records, dbConn, _ctx, tx) => {
-      const executor = tx ?? dbConn;
+    commit: async (records, _ctx, tx) => {
       for (const rec of records) {
-        await executor.execute(
-          "INSERT INTO test_items (id, sku, name, quantity) VALUES (?, ?, ?, ?)",
-          [rec.id, rec.sku, rec.name, rec.quantity],
-        );
+        await tx.execute("INSERT INTO test_items (id, sku, name, quantity) VALUES (?, ?, ?, ?)", [
+          rec.id,
+          rec.sku,
+          rec.name,
+          rec.quantity,
+        ]);
       }
       return { importedCount: records.length };
     },
@@ -145,6 +147,85 @@ describe("@platform/import-export", () => {
     expect(XLSX.utils.sheet_to_json<{ Value: string }>(sheet)[0]?.Value).toBe("'=SUM(A1:A2)");
   });
 
+  it("neutralizes formula markers preceded by whitespace", () => {
+    const definition: ExportDefinition<{ value: string }> = {
+      columns: [{ header: "Value", accessor: (record) => record.value }],
+    };
+    const records = [{ value: " \t=SUM(A1:A2)" }];
+
+    expect(ExportEngine.toCsv(records, definition)).toContain("' \t=SUM(A1:A2)");
+
+    const workbook = XLSX.read(ExportEngine.toXlsx(records, definition), {
+      type: "array",
+      raw: false,
+    });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]!]!;
+    expect(XLSX.utils.sheet_to_json<{ Value: string }>(sheet)[0]?.Value).toBe("' \t=SUM(A1:A2)");
+  });
+
+  it.each(["\f", "\v", "\u00a0", "\ufeff"])(
+    "neutralizes formula markers preceded by non-ASCII whitespace (%s)",
+    (whitespace) => {
+      const definition: ExportDefinition<{ value: string }> = {
+        columns: [{ header: "Value", accessor: (record) => record.value }],
+      };
+
+      expect(ExportEngine.toCsv([{ value: `${whitespace}=1+1` }], definition)).toContain(
+        `'${whitespace}=1+1`,
+      );
+    },
+  );
+
+  it("rejects duplicate or empty export headers and invalid worksheet names", () => {
+    const duplicateHeaders: ExportDefinition<{ value: string }> = {
+      columns: [
+        { header: "Value", accessor: (record) => record.value },
+        { header: "Value", accessor: (record) => record.value },
+      ],
+    };
+    const emptyHeader: ExportDefinition<{ value: string }> = {
+      columns: [{ header: "  ", accessor: (record) => record.value }],
+    };
+
+    expect(() => ExportEngine.toCsv([{ value: "x" }], duplicateHeaders)).toThrow(
+      "Duplicate export column header",
+    );
+    expect(() => ExportEngine.toXlsx([{ value: "x" }], duplicateHeaders)).toThrow(
+      "Duplicate export column header",
+    );
+    expect(() => ExportEngine.toCsv([{ value: "x" }], emptyHeader)).toThrow(
+      "Export column headers must not be empty",
+    );
+    expect(() =>
+      ExportEngine.toXlsx([{ value: "x" }], {
+        ...emptyHeader,
+        sheetName: "Invalid/Name",
+        columns: [{ header: "Value", accessor: (record) => record.value }],
+      }),
+    ).toThrow("Invalid XLSX worksheet name");
+  });
+
+  it("validates the worksheet name before evaluating export accessors", () => {
+    let accessorCalled = false;
+    const definition: ExportDefinition<{ value: string }> = {
+      sheetName: "Invalid/Name",
+      columns: [
+        {
+          header: "Value",
+          accessor: (record) => {
+            accessorCalled = true;
+            return record.value;
+          },
+        },
+      ],
+    };
+
+    expect(() => ExportEngine.toXlsx([{ value: "x" }], definition)).toThrow(
+      "Invalid XLSX worksheet name",
+    );
+    expect(accessorCalled).toBe(false);
+  });
+
   it("imports valid CSV buffer, commits atomically, and emits audit events", async () => {
     const csvContent = "SKU,Item Name,Quantity\r\nSKU-A1,Widget Alpha,25\r\nSKU-B2,Widget Beta,40";
     const buffer = new TextEncoder().encode(csvContent);
@@ -178,12 +259,150 @@ describe("@platform/import-export", () => {
     ]);
   });
 
+  it("treats missing validation results as row failures and preserves falsy valid data", () => {
+    const rejected = importEngine.validate([{ value: 1 }], {
+      validateRow: () => ({ valid: false }),
+    });
+    expect(rejected.validRows).toEqual([]);
+    expect(rejected.errors).toHaveLength(1);
+    expect(rejected.errors[0]?.rowIndex).toBe(2);
+
+    const accepted = importEngine.validate([{ value: 0 }], {
+      validateRow: () => ({ valid: true, data: 0 }),
+    });
+    expect(accepted.validRows).toEqual([0]);
+    expect(accepted.errors).toHaveLength(0);
+  });
+
+  it("rejects a row validator result that reports errors alongside valid data", () => {
+    const validation = importEngine.validate([{ value: 1 }], {
+      validateRow: (_row, rowIndex) => ({
+        valid: true,
+        data: { value: 1 },
+        errors: [
+          {
+            rowIndex,
+            columnKey: "value",
+            message: "Value is invalid",
+            invalidValue: 1,
+          },
+        ],
+      }),
+    });
+
+    expect(validation.validRows).toEqual([]);
+    expect(validation.errors).toHaveLength(1);
+    expect(validation.errors[0]?.message).toBe("Value is invalid");
+    expect(validation.errors[0]?.rowIndex).toBe(2);
+  });
+
+  it("converts malformed row validation error entries into safe row failures", () => {
+    const validation = importEngine.validate([{ value: 1 }], {
+      validateRow: () => ({
+        valid: false,
+        errors: [null] as unknown as RowValidationError[],
+      }),
+    });
+
+    expect(validation.validRows).toEqual([]);
+    expect(validation.errors).toHaveLength(1);
+    expect(validation.errors[0]?.rowIndex).toBe(2);
+    expect(validation.errors[0]?.message).toContain("malformed error entry");
+  });
+
+  it("converts row validator exceptions into validation errors", () => {
+    const validation = importEngine.validate([{ value: 1 }], {
+      validateRow: () => {
+        throw new Error("invalid row shape");
+      },
+    });
+
+    expect(validation.validRows).toEqual([]);
+    expect(validation.errors).toHaveLength(1);
+    expect(validation.errors[0]?.message).toContain("invalid row shape");
+  });
+
+  it("enforces the formats declared by an import definition", () => {
+    const csv = new TextEncoder().encode("SKU,Item Name,Quantity\nSKU-1,Widget,1");
+    const xlsx = ExportEngine.toXlsx(
+      [{ sku: "SKU-1", name: "Widget", quantity: 1, id: "item_1" }],
+      testExportDef,
+    );
+
+    expect(() =>
+      importEngine.validateBuffer(csv, { ...testImportDef, acceptedFormats: ["xlsx"] }),
+    ).toThrow("Import format is not accepted");
+    expect(() =>
+      importEngine.validateBuffer(xlsx, { ...testImportDef, acceptedFormats: ["csv"] }),
+    ).toThrow("Import format is not accepted");
+  });
+
+  it("rolls back when an import commit reports an impossible imported count", async () => {
+    const definition: ImportDefinition<TestItem> = {
+      ...testImportDef,
+      commit: async (records, _context, tx) => {
+        await tx.execute("INSERT INTO test_items (id, sku, name, quantity) VALUES (?, ?, ?, ?)", [
+          records[0]!.id,
+          records[0]!.sku,
+          records[0]!.name,
+          records[0]!.quantity,
+        ]);
+        return { importedCount: records.length + 1 };
+      },
+    };
+    const csv = new TextEncoder().encode("SKU,Item Name,Quantity\nSKU-1,Widget,1");
+
+    await expect(importEngine.executeImport(csv, definition, ctx)).rejects.toThrow(
+      "invalid importedCount",
+    );
+    expect(await db.query("SELECT id FROM test_items")).toHaveLength(0);
+    expect(
+      await db.query<{ event_type: string }>(
+        "SELECT event_type FROM core_audit_events WHERE event_type = ?",
+        ["IMPORT_FAILED"],
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("records commit failures after rolling back imported data", async () => {
+    const definition: ImportDefinition<TestItem> = {
+      ...testImportDef,
+      commit: async (records, _context, tx) => {
+        await tx.execute("INSERT INTO test_items (id, sku, name, quantity) VALUES (?, ?, ?, ?)", [
+          records[0]!.id,
+          records[0]!.sku,
+          records[0]!.name,
+          records[0]!.quantity,
+        ]);
+        throw new Error("simulated import failure");
+      },
+    };
+    const csv = new TextEncoder().encode("SKU,Item Name,Quantity\nSKU-1,Widget,1");
+
+    await expect(importEngine.executeImport(csv, definition, ctx)).rejects.toThrow(
+      "simulated import failure",
+    );
+    expect(await db.query("SELECT id FROM test_items")).toHaveLength(0);
+    expect(
+      await db.query<{ event_type: string }>(
+        "SELECT event_type FROM core_audit_events ORDER BY rowid",
+      ),
+    ).toEqual([{ event_type: "IMPORT_STARTED" }, { event_type: "IMPORT_FAILED" }]);
+  });
+
   it("rejects files above the configured size limit before parsing", () => {
     const oversized = new Uint8Array(10 * 1024 * 1024 + 1);
 
     expect(() => importEngine.parseBuffer(oversized)).toThrow(
       "Import file exceeds the maximum allowed size",
     );
+  });
+
+  it("converts malformed workbook parser failures to ValidationError", () => {
+    const malformedXlsx = new Uint8Array([0x50, 0x4b, 0x03, 0x04]);
+
+    expect(() => importEngine.parseBuffer(malformedXlsx)).toThrow(ValidationError);
+    expect(() => importEngine.parseBuffer(malformedXlsx)).toThrow("Spreadsheet parsing failed");
   });
 
   it("rejects worksheets above the configured row limit", () => {
@@ -194,6 +413,23 @@ describe("@platform/import-export", () => {
 
     expect(() => importEngine.parseBuffer(new TextEncoder().encode(csvContent))).toThrow(
       "Worksheet exceeds the maximum row count",
+    );
+  });
+
+  it("rejects oversized worksheet dimensions before converting rows", () => {
+    const csv = `${Array.from({ length: 100_001 }, (_, index) => `column_${index}`).join(",")}\n`;
+
+    expect(() => importEngine.parseBuffer(new TextEncoder().encode(csv))).toThrow(
+      "Worksheet range exceeds the maximum cell count",
+    );
+  });
+
+  it("rejects duplicate and empty import headers before row conversion", () => {
+    expect(() => importEngine.parseBuffer(new TextEncoder().encode("SKU,SKU\nA,B"))).toThrow(
+      "duplicate header",
+    );
+    expect(() => importEngine.parseBuffer(new TextEncoder().encode("SKU,\nA,B"))).toThrow(
+      "empty header",
     );
   });
 

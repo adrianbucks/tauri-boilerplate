@@ -1,6 +1,6 @@
 import { Platform, type PlatformOptions } from "@platform/platform";
 import { notesFeatureManifest } from "./notes/NotesManifest.js";
-import { NotesService } from "./notes/NotesService.js";
+import { NotesService, type NotesSyncSigner } from "./notes/NotesService.js";
 
 export * from "./notes/NotesTypes.js";
 export * from "./notes/NotesManifest.js";
@@ -12,8 +12,12 @@ export interface MinimalConsumerApp {
   notes: NotesService;
 }
 
+export interface MinimalConsumerAppOptions extends PlatformOptions {
+  readonly notesSigner: NotesSyncSigner;
+}
+
 export async function createMinimalConsumerApp(
-  options: PlatformOptions,
+  options: MinimalConsumerAppOptions,
 ): Promise<MinimalConsumerApp> {
   const platform = new Platform(options);
 
@@ -26,6 +30,7 @@ export async function createMinimalConsumerApp(
 
   const notes = new NotesService({
     db: platform.db,
+    signer: options.notesSigner,
     auth: platform.auth,
     sync: platform.isSyncConfigured() ? platform.sync : undefined,
   });

@@ -1,5 +1,5 @@
 import type { OperationContext } from "@platform/core";
-import type { DatabaseConnection, TransactionClient } from "@platform/database";
+import type { TransactionClient } from "@platform/database";
 
 export type ColumnType = "string" | "number" | "boolean" | "date";
 
@@ -39,9 +39,8 @@ export interface ImportDefinition<TRecord> {
   };
   commit: (
     records: TRecord[],
-    db: DatabaseConnection,
     ctx: OperationContext,
-    tx?: TransactionClient,
+    tx: TransactionClient,
   ) => Promise<{ importedCount: number }>;
 }
 

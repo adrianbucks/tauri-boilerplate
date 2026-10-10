@@ -64,19 +64,35 @@ export function OrganisationsPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    (async () => {
-      if (nativeGateway && nativeSession) {
+    let cancelled = false;
+    setOrgs([]);
+    setError(null);
+
+    void (async () => {
+      if (!nativeGateway || !nativeSession) return;
+
+      try {
         const nativeOrgs = await nativeGateway.listOrganisations();
-        setOrgs(
-          nativeOrgs.map((organisation) => ({
-            ...organisation,
-            created_by: null,
-            updated_by: null,
-            settings_json: null,
-          })),
-        );
+        if (!cancelled) {
+          setOrgs(
+            nativeOrgs.map((organisation) => ({
+              ...organisation,
+              created_by: null,
+              updated_by: null,
+              settings_json: null,
+            })),
+          );
+        }
+      } catch (cause) {
+        if (!cancelled) {
+          setError(cause instanceof Error ? cause.message : String(cause));
+        }
       }
     })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [nativeGateway, nativeSession]);
 
   const loadOrgs = useCallback(async () => {
@@ -114,7 +130,12 @@ export function OrganisationsPage() {
       setSuccess(`Organisation "${org.name}" created successfully`);
       setName("");
       setDomain("");
-      await loadOrgs();
+      try {
+        await loadOrgs();
+      } catch (cause) {
+        const message = cause instanceof Error ? cause.message : String(cause);
+        setError(`Organisation was created, but the list could not be refreshed: ${message}`);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -172,7 +193,7 @@ export function OrganisationsPage() {
               <Button
                 onClick={handleCreate}
                 isLoading={loading}
-                disabled={!nativeGateway || !nativeSession || !name.trim()}
+                disabled={loading || !nativeGateway || !nativeSession || !name.trim()}
               >
                 <Plus className="h-4 w-4 mr-1" />
                 Create

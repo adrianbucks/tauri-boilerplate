@@ -89,7 +89,33 @@ describe("@platform/sync", () => {
           application_id TEXT NOT NULL,
           status TEXT NOT NULL,
           registered_at TEXT NOT NULL,
-          last_seen_at TEXT
+          last_seen_at TEXT,
+          is_local INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE core_permissions (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL UNIQUE,
+          description TEXT
+        );
+        CREATE TABLE core_roles (
+          id TEXT PRIMARY KEY,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          organisation_id TEXT NOT NULL,
+          name TEXT NOT NULL
+        );
+        CREATE TABLE core_role_permissions (
+          id TEXT PRIMARY KEY,
+          role_id TEXT NOT NULL,
+          permission_id TEXT NOT NULL,
+          scope_constraints_json TEXT
+        );
+        CREATE TABLE core_user_roles (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          role_id TEXT NOT NULL,
+          organisation_id TEXT NOT NULL,
+          granted_at TEXT NOT NULL
         );
         CREATE TABLE core_sync_groups (
           id TEXT PRIMARY KEY,
@@ -143,6 +169,13 @@ describe("@platform/sync", () => {
 
         INSERT INTO core_sync_groups (id, created_at, updated_at, organisation_id, name)
         VALUES ('grp_warehouse', '2026-08-30T10:00:00Z', '2026-08-30T10:00:00Z', 'org_acme', 'Warehouse Sync Group');
+        INSERT INTO core_permissions (id, name) VALUES ('perm_sync_manage', 'sync.manage');
+        INSERT INTO core_roles (id, created_at, updated_at, organisation_id, name)
+        VALUES ('role_admin', 'now', 'now', 'org_acme', 'Admin');
+        INSERT INTO core_role_permissions (id, role_id, permission_id)
+        VALUES ('role_perm_sync_manage', 'role_admin', 'perm_sync_manage');
+        INSERT INTO core_user_roles (id, user_id, role_id, organisation_id, granted_at)
+        VALUES ('user_role_admin', 'user_admin', 'role_admin', 'org_acme', 'now');
       `);
 
       pairingService = new PairingService(db);
@@ -229,7 +262,7 @@ describe("@platform/sync", () => {
       expect(idleMgr.getState()).toBe("IDLE");
     });
 
-    it("notifies onStateChange listeners during connect and disconnect", async () => {
+    it("does not mark caller-provided peer metadata as authorised", async () => {
       const mgr = new SyncManager({
         db,
         deviceId: "dev_1",
@@ -248,11 +281,12 @@ describe("@platform/sync", () => {
         supportedSyncGroups: ["grp_1"],
       });
 
-      expect(observedStates).toContain("CONNECTING");
-      expect(observedStates).toContain("CONNECTED");
-      expect(observedStates).toContain("AUTHORISED");
-      expect(observedStates).toContain("IDLE");
-      expect(mgr.getState()).toBe("IDLE");
+      expect(observedStates).not.toContain("CONNECTING");
+      expect(observedStates).not.toContain("CONNECTED");
+      expect(observedStates).toContain("ERROR");
+      expect(observedStates).not.toContain("AUTHORISED");
+      expect(mgr.getState()).toBe("ERROR");
+      expect(mgr.getPeerState("peer_1")).toBe("ERROR");
 
       await mgr.disconnect("peer_1");
       expect(mgr.getState()).toBe("DISCONNECTED");

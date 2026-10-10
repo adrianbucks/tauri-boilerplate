@@ -1,4 +1,4 @@
-import { generateCorrelationId, getUtcIsoTimestamp } from "@platform/core";
+import { generateCorrelationId, getUtcIsoTimestamp, ValidationError } from "@platform/core";
 import type { DatabaseConnection, TransactionClient } from "@platform/database";
 import type { SyncEnvelope, VerifyFn } from "@platform/sync-protocol";
 import { SyncEnvelopeBuilder } from "@platform/sync-protocol";
@@ -58,41 +58,20 @@ export class InboxService {
     verifyFn: VerifyFn,
     tx?: TransactionClient,
   ): Promise<InboxRecord> {
+    try {
+      SyncEnvelopeBuilder.validateEnvelope(envelope);
+    } catch (error) {
+      throw new ValidationError({
+        message: `Invalid inbound sync envelope: ${error instanceof Error ? error.message : String(error)}`,
+        userMessage: "The received sync operation is invalid",
+        correlationId: generateCorrelationId("inbox_invalid"),
+      });
+    }
+
     const executor = tx ?? this.db;
     const id = generateCorrelationId("inbox");
     const now = getUtcIsoTimestamp();
     const op = envelope.operation;
-
-    // Check for existing record (idempotency)
-    const existing = await executor.query<{ id: string }>(
-      `SELECT id FROM core_sync_inbox WHERE envelope_id = ? LIMIT 1`,
-      [envelope.envelopeId],
-    );
-    if (existing[0]) {
-      const rows = await executor.query<{
-        id: string;
-        created_at: string;
-        envelope_id: string;
-        organisation_id: string;
-        from_device_id: string;
-        sync_group_id: string;
-        feature_id: string;
-        entity_type: string;
-        entity_id: string;
-        operation: string;
-        payload_json: string;
-        logical_timestamp: string;
-        schema_version: number;
-        protocol_version: number;
-        signer_public_key: string;
-        signature: string;
-        verification_status: VerificationStatus;
-        apply_status: ApplyStatus;
-        applied_at: string | null;
-        conflict_id: string | null;
-      }>(`SELECT * FROM core_sync_inbox WHERE envelope_id = ? LIMIT 1`, [envelope.envelopeId]);
-      return mapRow(rows[0]!);
-    }
 
     // Verify the signature
     let verificationStatus: VerificationStatus;
@@ -109,7 +88,8 @@ export class InboxService {
         sync_group_id, feature_id, entity_type, entity_id, operation,
         payload_json, logical_timestamp, schema_version, protocol_version,
         signer_public_key, signature, verification_status, apply_status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')
+      ON CONFLICT(envelope_id) DO NOTHING`,
       [
         id,
         now,
@@ -131,28 +111,31 @@ export class InboxService {
       ],
     );
 
-    return {
-      id,
-      createdAt: now,
-      envelopeId: envelope.envelopeId,
-      organisationId: op.organisationId,
-      fromDeviceId: op.deviceId,
-      syncGroupId: op.syncGroupId,
-      featureId: op.featureId,
-      entityType: op.entityType,
-      entityId: op.entityId,
-      operation: op.operation,
-      payloadJson: JSON.stringify(op.payload),
-      logicalTimestamp: op.logicalTimestamp,
-      schemaVersion: op.schemaVersion,
-      protocolVersion: op.protocolVersion,
-      signerPublicKey: envelope.signerPublicKey,
-      signature: envelope.signature,
-      verificationStatus,
-      applyStatus: "PENDING",
-      appliedAt: null,
-      conflictId: null,
-    };
+    const rows = await executor.query<InboxRow>(
+      "SELECT * FROM core_sync_inbox WHERE envelope_id = ? LIMIT 1",
+      [envelope.envelopeId],
+    );
+    const stored = rows[0];
+    if (!stored) {
+      throw new ValidationError({
+        message: `Inbox insert for envelope '${envelope.envelopeId}' completed without a stored row`,
+        userMessage: "The received sync operation could not be stored",
+        correlationId: generateCorrelationId("inbox_store"),
+      });
+    }
+    if (
+      stored.signer_public_key !== envelope.signerPublicKey ||
+      stored.signature !== envelope.signature ||
+      (stored.id !== id && verificationStatus !== "VERIFIED")
+    ) {
+      throw new ValidationError({
+        message: `Envelope ID '${envelope.envelopeId}' is already bound to a different signed operation`,
+        userMessage: "The received sync operation conflicts with an existing operation",
+        correlationId: generateCorrelationId("inbox_collision"),
+      });
+    }
+
+    return mapRow(stored);
   }
 
   /**
@@ -262,7 +245,7 @@ export class InboxService {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function mapRow(r: {
+interface InboxRow {
   id: string;
   created_at: string;
   envelope_id: string;
@@ -283,7 +266,9 @@ function mapRow(r: {
   apply_status: ApplyStatus;
   applied_at: string | null;
   conflict_id: string | null;
-}): InboxRecord {
+}
+
+function mapRow(r: InboxRow): InboxRecord {
   return {
     id: r.id,
     createdAt: r.created_at,

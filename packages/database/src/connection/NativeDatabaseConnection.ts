@@ -8,17 +8,32 @@ import type {
 // Tauri invoke types (defined locally to avoid dependency)
 type InvokeArgs = Record<string, unknown>;
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 interface NativeQueryRequest extends Record<string, unknown> {
   sql: string;
   params?: unknown[];
 }
 
-interface NativeQueryResponse<T> {
-  rows: T[];
+interface NativeHealthResponse {
+  db_path: string;
+  sqlite_version: string;
+  journal_mode: string;
+  foreign_keys_enabled: boolean;
+  integrity_check: string;
 }
 
-interface NativeExecuteResponse {
-  rows_affected: number;
+function isNativeHealthResponse(value: unknown): value is NativeHealthResponse {
+  return (
+    isRecord(value) &&
+    typeof value.db_path === "string" &&
+    typeof value.sqlite_version === "string" &&
+    typeof value.journal_mode === "string" &&
+    typeof value.foreign_keys_enabled === "boolean" &&
+    typeof value.integrity_check === "string"
+  );
 }
 
 interface NativeTransactionRequest extends Record<string, unknown> {
@@ -46,7 +61,10 @@ export class NativeDatabaseConnection implements DatabaseConnection {
     if (this.isInitialised) return;
     try {
       // Verify native database is accessible by checking health
-      await this.healthCheck();
+      const health = await this.healthCheck();
+      if (!health.healthy) {
+        throw new Error(`Native database health check failed: ${health.integrityCheck}`);
+      }
       this.isInitialised = true;
     } catch (err) {
       throw new DatabaseError({
@@ -61,11 +79,18 @@ export class NativeDatabaseConnection implements DatabaseConnection {
   async query<T>(sql: string, params: unknown[] = []): Promise<T[]> {
     await this.init();
     try {
-      const response = (await this.invoke("db_query", {
+      const response = await this.invoke("db_query", {
         sql,
         params,
-      })) as NativeQueryResponse<T>;
-      return response.rows;
+      });
+      if (
+        !isRecord(response) ||
+        !Array.isArray(response.rows) ||
+        !response.rows.every(isRecord)
+      ) {
+        throw new Error("Native database returned an invalid query response");
+      }
+      return response.rows as T[];
     } catch (err) {
       throw new DatabaseError({
         message: `Database query failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -80,11 +105,19 @@ export class NativeDatabaseConnection implements DatabaseConnection {
   async execute(sql: string, params: unknown[] = []): Promise<{ rowsAffected: number }> {
     await this.init();
     try {
-      const response = (await this.invoke("db_execute", {
+      const response = await this.invoke("db_execute", {
         sql,
         params,
-      })) as NativeExecuteResponse;
-      return { rowsAffected: response.rows_affected };
+      });
+      if (
+        !isRecord(response) ||
+        typeof response.rows_affected !== "number" ||
+        !Number.isSafeInteger(response.rows_affected) ||
+        (response.rows_affected as number) < 0
+      ) {
+        throw new Error("Native database returned an invalid execute response");
+      }
+      return { rowsAffected: response.rows_affected as number };
     } catch (err) {
       throw new DatabaseError({
         message: `Database execute failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -109,30 +142,63 @@ export class NativeDatabaseConnection implements DatabaseConnection {
       params?: unknown[];
     }> = [];
 
-    const txClient: TransactionClient = {
-      query: async (_sql: string, _params: unknown[] = []) => {
-        // Reads inside a transaction are not supported by the Tauri IPC bridge.
-        // All reads must be performed outside the transaction boundary.
-        throw new DatabaseError({
-          message:
-            "db.transaction(): query() is not supported inside a transaction callback. " +
-            "The Tauri IPC bridge collects operations and executes them atomically on the " +
-            "Rust side — intermediate reads cannot be returned across the IPC boundary. " +
-            "Perform all reads before calling db.transaction().",
-          userMessage: "A database read was attempted inside a write transaction.",
-          correlationId: generateCorrelationId("db-tx-read"),
-          technicalDetails: `SQL attempted: ${_sql}`,
-        });
-      },
-      execute: async (sql: string, params: unknown[] = []) => {
-        operations.push({ type: "execute", sql, params });
-        return { rowsAffected: 0 };
-      },
+    type TransactionOperation = NativeTransactionRequest["operations"][number];
+    const createTransactionClient = (targetOperations: TransactionOperation[]) => {
+      let isActive = true;
+      const close = () => {
+        isActive = false;
+      };
+      const assertActive = () => {
+        if (!isActive) {
+          throw new DatabaseError({
+            message: "Transaction client is no longer active",
+            userMessage: "The database transaction has already completed",
+            correlationId: generateCorrelationId("db-tx-closed"),
+          });
+        }
+      };
+      const client: TransactionClient = {
+        query: async (_sql: string, _params: unknown[] = []) => {
+          assertActive();
+          throw new DatabaseError({
+            message:
+              "db.transaction(): query() is not supported inside a transaction callback. " +
+              "The Tauri IPC bridge collects operations and executes them atomically on the " +
+              "Rust side — intermediate reads cannot be returned across the IPC boundary. " +
+              "Perform all reads before calling db.transaction().",
+            userMessage: "A database read was attempted inside a write transaction.",
+            correlationId: generateCorrelationId("db-tx-read"),
+            technicalDetails: `SQL attempted: ${_sql}`,
+          });
+        },
+        execute: async (sql: string, params: unknown[] = []) => {
+          assertActive();
+          targetOperations.push({ type: "execute", sql, params });
+          return {};
+        },
+        savepoint: async <R>(fn: (tx: TransactionClient) => Promise<R>) => {
+          assertActive();
+          const nestedOperations: TransactionOperation[] = [];
+          const nestedClient = createTransactionClient(nestedOperations);
+          try {
+            const result = await fn(nestedClient.client);
+            nestedClient.close();
+            targetOperations.push(...nestedOperations);
+            return result;
+          } catch (error) {
+            nestedClient.close();
+            throw error;
+          }
+        },
+      };
+      return { client, close };
     };
+    const txClient = createTransactionClient(operations);
 
     try {
       // Run the function to collect write operations
-      const result = await fn(txClient);
+      const result = await fn(txClient.client);
+      txClient.close();
 
       // Execute all collected operations atomically on the native side
       await this.invoke("db_transaction", {
@@ -141,6 +207,7 @@ export class NativeDatabaseConnection implements DatabaseConnection {
 
       return result;
     } catch (error) {
+      txClient.close();
       // Re-throw DatabaseErrors (e.g. the query() guard) as-is
       if (error instanceof DatabaseError) throw error;
       throw new DatabaseError({
@@ -154,16 +221,14 @@ export class NativeDatabaseConnection implements DatabaseConnection {
 
   async healthCheck(): Promise<DatabaseHealth> {
     try {
-      const health = (await this.invoke("get_database_health")) as {
-        db_path: string;
-        sqlite_version: string;
-        journal_mode: string;
-        foreign_keys_enabled: boolean;
-        integrity_check: string;
-      };
+      const response = await this.invoke("get_database_health");
+      if (!isNativeHealthResponse(response)) {
+        throw new Error("Native database returned an invalid health response");
+      }
+      const health = response;
 
       return {
-        healthy: health.integrity_check === "ok",
+        healthy: health.integrity_check === "ok" && health.foreign_keys_enabled,
         dbName: health.db_path,
         walEnabled: health.journal_mode === "wal",
         foreignKeysEnabled: health.foreign_keys_enabled,

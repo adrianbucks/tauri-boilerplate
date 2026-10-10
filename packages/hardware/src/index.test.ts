@@ -36,6 +36,32 @@ describe("@platform/hardware", () => {
     expect(onScan).not.toHaveBeenCalled();
   });
 
+  it("ignores a terminator that arrives after the scan timing window", () => {
+    const scanner = new KeyboardWedgeScanner({ maxInterKeyDelayMs: 40 });
+    const onScan = vi.fn();
+    scanner.startListening(onScan);
+
+    let timestamp = 1000;
+    for (const char of "MANUAL") {
+      scanner.handleKeyEvent(char, (timestamp += 10));
+    }
+    scanner.handleKeyEvent("Enter", (timestamp += 100));
+
+    expect(onScan).not.toHaveBeenCalled();
+  });
+
+  it("rejects invalid scanner timing and length options", () => {
+    expect(() => new KeyboardWedgeScanner({ maxInterKeyDelayMs: 0 })).toThrow(
+      "maxInterKeyDelayMs must be a positive finite number",
+    );
+    expect(() => new KeyboardWedgeScanner({ minScanLength: 1.5 })).toThrow(
+      "minScanLength must be a positive safe integer",
+    );
+    expect(() => new KeyboardWedgeScanner({ terminatorKey: "" })).toThrow(
+      "terminatorKey must not be empty",
+    );
+  });
+
   it("accepts custom terminator characters (Tab)", () => {
     const scanner = new KeyboardWedgeScanner({
       maxInterKeyDelayMs: 50,
@@ -67,5 +93,50 @@ describe("@platform/hardware", () => {
     scanner.handleKeyEvent("Enter", (t += 10));
 
     expect(onScan).not.toHaveBeenCalled();
+  });
+
+  it("does not carry a partial scan across listener replacement", () => {
+    const scanner = new KeyboardWedgeScanner({ maxInterKeyDelayMs: 50 });
+    const previousListener = vi.fn();
+    const nextListener = vi.fn();
+    scanner.startListening(previousListener);
+    scanner.handleKeyEvent("O", 1000);
+    scanner.handleKeyEvent("L", 1010);
+    scanner.handleKeyEvent("D", 1020);
+
+    scanner.startListening(nextListener);
+    scanner.handleKeyEvent("N", 1030);
+    scanner.handleKeyEvent("E", 1040);
+    scanner.handleKeyEvent("W", 1050);
+    scanner.handleKeyEvent("Enter", 1060);
+
+    expect(previousListener).not.toHaveBeenCalled();
+    expect(nextListener).toHaveBeenCalledTimes(1);
+    expect(nextListener.mock.calls[0]![0].text).toBe("NEW");
+  });
+
+  it("clears completed scan state before invoking a throwing listener", () => {
+    const scanner = new KeyboardWedgeScanner({ maxInterKeyDelayMs: 50 });
+    const throwingListener = vi.fn(() => {
+      throw new Error("consumer failed");
+    });
+    scanner.startListening(throwingListener);
+
+    expect(() => {
+      scanner.handleKeyEvent("O", 1000);
+      scanner.handleKeyEvent("L", 1010);
+      scanner.handleKeyEvent("D", 1020);
+      scanner.handleKeyEvent("Enter", 1030);
+    }).toThrow("consumer failed");
+
+    const nextListener = vi.fn();
+    scanner.startListening(nextListener);
+    scanner.handleKeyEvent("N", 1040);
+    scanner.handleKeyEvent("E", 1050);
+    scanner.handleKeyEvent("W", 1060);
+    scanner.handleKeyEvent("Enter", 1070);
+
+    expect(nextListener).toHaveBeenCalledTimes(1);
+    expect(nextListener.mock.calls[0]![0].text).toBe("NEW");
   });
 });

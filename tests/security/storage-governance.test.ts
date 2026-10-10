@@ -4,10 +4,11 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { MemoryDatabaseConnection } from "@platform/database";
 import { Platform } from "@platform/platform";
-import type { FeatureManifest } from "@platform/feature-system";
+import { ManifestValidator, type FeatureManifest } from "@platform/feature-system";
 import {
   MaintenanceOrchestrator,
   MaintenanceRegistry,
+  DeclarativeTablePruner,
   SyncOutboxPruner,
   SyncInboxPruner,
   BackgroundTasksPruner,
@@ -140,6 +141,41 @@ describe("Security Regression Suite — Storage Governance & Compaction (Gate G-
     await db.close();
   });
 
+  it("rejects pruning filters that broaden deletion with boolean SQL", () => {
+    const maliciousFilter = "status = 'ARCHIVED' OR 1 = 1";
+    const manifest: FeatureManifest = {
+      id: "domain-telemetry",
+      name: "Domain Telemetry",
+      version: "1.0.0",
+      dependencies: [],
+      permissions: [],
+      migrations: [],
+      pruningPolicies: [
+        {
+          id: "domain.telemetry_events",
+          displayName: "Telemetry Events",
+          tableName: "domain_telemetry_events",
+          timestampColumn: "logged_at",
+          defaultRetentionDays: 30,
+          filterCondition: maliciousFilter,
+        },
+      ],
+    };
+
+    expect(() => ManifestValidator.validate(manifest)).toThrow("unsafe filterCondition");
+    expect(
+      () =>
+        new DeclarativeTablePruner({
+          id: "domain.telemetry_events",
+          displayName: "Telemetry Events",
+          tableName: "domain_telemetry_events",
+          timestampColumn: "logged_at",
+          defaultRetentionDays: 30,
+          filterCondition: maliciousFilter,
+        }),
+    ).toThrow("single column comparison");
+  });
+
   // -------------------------------------------------------------------------
   // Test 1: Outbox Compaction Invariant (Invariants #3 & #4)
   // -------------------------------------------------------------------------
@@ -159,8 +195,8 @@ describe("Security Regression Suite — Storage Governance & Compaction (Gate G-
       [prehistoricDate, prehistoricDate, prehistoricDate, prehistoricDate],
     );
 
-    // Run pruning with aggressive cutoff (0 days retention override)
-    orchestrator.setRetentionOverride("core.sync.outbox", 0);
+    // Run pruning with an aggressive, valid one-day retention override.
+    orchestrator.setRetentionOverride("core.sync.outbox", 1);
     const report = await orchestrator.pruneAll({ skipVacuum: true });
     expect(report.success).toBe(true);
 
@@ -189,7 +225,7 @@ describe("Security Regression Suite — Storage Governance & Compaction (Gate G-
       [prehistoricDate, prehistoricDate, prehistoricDate, prehistoricDate, prehistoricDate],
     );
 
-    orchestrator.setRetentionOverride("core.sync.tombstones", 0);
+    orchestrator.setRetentionOverride("core.sync.tombstones", 1);
     const report = await orchestrator.pruneAll({ skipVacuum: true });
     expect(report.success).toBe(true);
 
@@ -233,7 +269,7 @@ describe("Security Regression Suite — Storage Governance & Compaction (Gate G-
       ],
     );
 
-    orchestrator.setRetentionOverride("core.tasks", 0);
+    orchestrator.setRetentionOverride("core.tasks", 1);
     const report = await orchestrator.pruneAll({ skipVacuum: true });
     expect(report.success).toBe(true);
 

@@ -204,7 +204,11 @@ export function WidgetsPage() {
 
     try {
       const buffer = await file.arrayBuffer();
-      const widgetImportDef: Pick<ImportDefinition<WidgetImportRecord>, "validateRow"> = {
+      const widgetImportDef: Pick<
+        ImportDefinition<WidgetImportRecord>,
+        "acceptedFormats" | "validateRow"
+      > = {
+        acceptedFormats: ["csv", "xlsx", "xls"],
         validateRow: (rawRow, rowIndex) => {
           const rawSku = String(rawRow["sku"] ?? rawRow["SKU"] ?? "").trim();
           const rawName = String(rawRow["name"] ?? rawRow["Name"] ?? "").trim();

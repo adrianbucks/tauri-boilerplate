@@ -1,6 +1,7 @@
 import { getUtcIsoTimestamp, generateCorrelationId } from "@platform/core";
 import type { DatabaseConnection, TransactionClient } from "@platform/database";
 import type { AuditEvent, EmitAuditEventInput, AuditEventType } from "../types.js";
+import { AuditRepository } from "../repositories/AuditRepository.js";
 
 export interface QueryAuditOptions {
   eventType?: AuditEventType | undefined;
@@ -12,34 +13,30 @@ export interface QueryAuditOptions {
 }
 
 export class AuditService {
-  private readonly db: DatabaseConnection;
+  private readonly repository: AuditRepository;
 
   constructor(db: DatabaseConnection) {
-    this.db = db;
+    this.repository = new AuditRepository(db);
   }
 
   async emit(input: EmitAuditEventInput, tx?: TransactionClient): Promise<AuditEvent> {
-    const executor = tx ?? this.db;
     const id = generateCorrelationId("aud");
     const timestamp = getUtcIsoTimestamp();
     const metadataJson = input.metadata ? JSON.stringify(input.metadata) : null;
 
-    const sql = `
-      INSERT INTO core_audit_events (
-        id, event_type, user_id, device_id, organisation_id, correlation_id, timestamp, metadata_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `;
-
-    await executor.execute(sql, [
-      id,
-      input.eventType,
-      input.userId ?? null,
-      input.deviceId,
-      input.organisationId,
-      input.correlationId,
-      timestamp,
-      metadataJson,
-    ]);
+    await this.repository.insert(
+      [
+        id,
+        input.eventType,
+        input.userId ?? null,
+        input.deviceId,
+        input.organisationId,
+        input.correlationId,
+        timestamp,
+        metadataJson,
+      ],
+      tx,
+    );
 
     return {
       id,
@@ -58,48 +55,7 @@ export class AuditService {
     options?: QueryAuditOptions,
     tx?: TransactionClient,
   ): Promise<AuditEvent[]> {
-    const executor = tx ?? this.db;
-    let sql = "SELECT * FROM core_audit_events WHERE organisation_id = ?";
-    const params: unknown[] = [organisationId];
-
-    if (options?.eventType) {
-      sql += " AND event_type = ?";
-      params.push(options.eventType);
-    }
-    if (options?.userId) {
-      sql += " AND user_id = ?";
-      params.push(options.userId);
-    }
-    if (options?.deviceId) {
-      sql += " AND device_id = ?";
-      params.push(options.deviceId);
-    }
-    if (options?.correlationId) {
-      sql += " AND correlation_id = ?";
-      params.push(options.correlationId);
-    }
-
-    sql += " ORDER BY timestamp DESC";
-
-    if (typeof options?.limit === "number") {
-      sql += " LIMIT ?";
-      params.push(options.limit);
-      if (typeof options?.offset === "number") {
-        sql += " OFFSET ?";
-        params.push(options.offset);
-      }
-    }
-
-    const rows = await executor.query<{
-      id: string;
-      event_type: AuditEventType;
-      user_id: string | null;
-      device_id: string;
-      organisation_id: string;
-      correlation_id: string;
-      timestamp: string;
-      metadata_json: string | null;
-    }>(sql, params);
+    const rows = await this.repository.findByOrganisation(organisationId, options, tx);
 
     return rows.map((r) => {
       let metadata: Record<string, unknown> | undefined = undefined;

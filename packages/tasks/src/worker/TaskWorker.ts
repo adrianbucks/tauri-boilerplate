@@ -16,7 +16,7 @@
  */
 
 import type { Logger } from "@platform/core";
-import { ConsoleLogger } from "@platform/core";
+import { ConsoleLogger, ValidationError } from "@platform/core";
 import type { DatabaseConnection } from "@platform/database";
 import type { TaskExecutionContext, TaskHandler, TaskRecord, TaskWorkerOptions } from "../types.js";
 import { TaskQueueService } from "../queue/TaskQueueService.js";
@@ -34,10 +34,32 @@ export class TaskWorker {
 
   private running = false;
   private pollTimer: ReturnType<typeof setTimeout> | null = null;
+  private polling: Promise<void> | null = null;
   /** Active execution promises keyed by task id */
   private readonly inFlight = new Map<string, Promise<void>>();
 
+  private static validateOptions(options: TaskWorkerOptions): void {
+    const invalid = (field: string, value: number): never => {
+      throw new ValidationError({
+        message: `TaskWorker option ${field} must be a positive safe integer; received ${value}`,
+        userMessage: "The background worker configuration is invalid.",
+        correlationId: `task_worker_${field}`,
+      });
+    };
+
+    for (const [field, value] of [
+      ["concurrency", options.concurrency],
+      ["pollIntervalMs", options.pollIntervalMs],
+      ["gracefulShutdownTimeoutMs", options.gracefulShutdownTimeoutMs],
+    ] as const) {
+      if (value !== undefined && (!Number.isSafeInteger(value) || value <= 0)) {
+        invalid(field, value);
+      }
+    }
+  }
+
   constructor(db: DatabaseConnection, options: TaskWorkerOptions = {}, logger?: Logger) {
+    TaskWorker.validateOptions(options);
     this.queue = new TaskQueueService(db);
     this.logger = logger ?? new ConsoleLogger("info");
     this.concurrency = options.concurrency ?? 3;
@@ -67,6 +89,7 @@ export class TaskWorker {
    * polling behaviour after construction.
    */
   reconfigure(options: TaskWorkerOptions): void {
+    TaskWorker.validateOptions(options);
     if (options.concurrency !== undefined) {
       this.concurrency = options.concurrency;
     }
@@ -118,12 +141,22 @@ export class TaskWorker {
       `[TaskWorker] Stopping — waiting for ${this.inFlight.size} in-flight task(s).`,
     );
 
+    // A poll may already have claimed tasks but not yet registered their
+    // execution promises. Let it finish dispatching before taking the
+    // shutdown snapshot, otherwise stop() can resolve while work is running.
+    await this.polling;
+
     if (this.inFlight.size > 0) {
       const allSettled = Promise.allSettled([...this.inFlight.values()]);
-      const timeout = new Promise<void>((resolve) =>
-        setTimeout(resolve, this.gracefulShutdownTimeoutMs),
-      );
-      await Promise.race([allSettled, timeout]);
+      let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+      const timeout = new Promise<void>((resolve) => {
+        timeoutHandle = setTimeout(resolve, this.gracefulShutdownTimeoutMs);
+      });
+      try {
+        await Promise.race([allSettled, timeout]);
+      } finally {
+        if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
+      }
     }
 
     this.logger.info("[TaskWorker] Shutdown complete.");
@@ -135,8 +168,20 @@ export class TaskWorker {
 
   private schedulePoll(delayMs: number): void {
     this.pollTimer = setTimeout(() => {
-      void this.poll();
+      const polling = this.poll();
+      this.polling = polling;
+      void polling.finally(() => {
+        if (this.polling === polling) this.polling = null;
+      });
     }, delayMs);
+  }
+
+  private notifyPollComplete(claimed: number): void {
+    try {
+      this.onPollComplete(claimed);
+    } catch (error) {
+      this.logger.error("[TaskWorker] onPollComplete callback failed:", error);
+    }
   }
 
   private async poll(): Promise<void> {
@@ -144,23 +189,31 @@ export class TaskWorker {
 
     try {
       const available = this.concurrency - this.inFlight.size;
-      if (available > 0) {
-        // Only claim task types we have handlers for
-        const registeredTypes = this.handlers.size > 0 ? [...this.handlers.keys()] : undefined;
+      if (available > 0 && this.handlers.size > 0) {
+        // Never claim tasks before a handler has been registered. This keeps
+        // startup ordering from cancelling work that the application can handle.
+        const registeredTypes = [...this.handlers.keys()];
 
         const claimed = await this.queue.claimNextBatch(available, registeredTypes);
-        this.onPollComplete(claimed.length);
 
         for (const task of claimed) {
           if (!this.inFlight.has(task.id)) {
-            const execution = this.executeTask(task).finally(() => {
-              this.inFlight.delete(task.id);
-            });
+            const execution = this.executeTask(task)
+              .finally(() => {
+                this.inFlight.delete(task.id);
+              })
+              .catch((error: unknown) => {
+                this.logger.error(
+                  `[TaskWorker] Unexpected execution failure for ${task.id}:`,
+                  error,
+                );
+              });
             this.inFlight.set(task.id, execution);
           }
         }
+        this.notifyPollComplete(claimed.length);
       } else {
-        this.onPollComplete(0);
+        this.notifyPollComplete(0);
       }
     } catch (err) {
       this.logger.error("[TaskWorker] Poll error:", err);
@@ -205,6 +258,9 @@ export class TaskWorker {
         `[TaskWorker] Executing task ${task.id} (type=${task.taskType}, attempt=${task.attemptCount}).`,
       );
       await handler(task.payload, ctx);
+      if (controller.signal.aborted) {
+        throw new Error(`Task timed out after ${task.timeoutMs}ms`);
+      }
       await this.queue.markCompleted(task.id);
       this.logger.info(`[TaskWorker] Task ${task.id} completed.`);
     } catch (err) {
@@ -216,7 +272,11 @@ export class TaskWorker {
 
       const { willRetry } = await this.queue.markFailed(task.id, err);
       if (!willRetry) {
-        this.onNonRetryableError(task.id, task.taskType, err);
+        try {
+          this.onNonRetryableError(task.id, task.taskType, err);
+        } catch (callbackError) {
+          this.logger.error("[TaskWorker] onNonRetryableError callback failed:", callbackError);
+        }
       }
     } finally {
       clearTimeout(timeoutHandle);

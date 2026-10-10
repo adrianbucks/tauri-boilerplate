@@ -1,6 +1,6 @@
 # Known Limitations & Gaps to 1.0
 
-This document tracks known architectural limitations, technical debt, and pending optimizations in the current release.
+This document tracks reported architectural limitations, technical debt, and pending optimizations. Its statements and resolution paths have not yet been reconciled against the current source tree; in particular, WP-016 is described here as pending while other status documents call it resolved. See the [review plan](./codebase-review-plan.md).
 
 ---
 
@@ -46,8 +46,8 @@ This document tracks known architectural limitations, technical debt, and pendin
 
 ## 6. Native Transaction Read Constraint (B-01)
 
-- **Limitation**: `db.transaction()` callbacks use a two-phase IPC model: SQL `execute()` operations are collected during the callback, then dispatched atomically to the Rust `rusqlite` layer in a single IPC call. Calling `txClient.query()` (a read) inside the callback is not supported and will throw a `DatabaseError`.
-- **Impact**: Any code that attempts to read data within a `db.transaction()` callback will fail at runtime with a clear error message. All reads must be performed **before** entering the transaction boundary.
+- **Limitation**: `db.transaction()` callbacks use a two-phase IPC model: SQL `execute()` operations are collected during the callback, then dispatched atomically to the Rust `rusqlite` layer in a single IPC call. Calling `txClient.query()` inside the callback throws a `DatabaseError`. Queued `tx.execute()` calls return no `rowsAffected` value before native execution; the native batch currently does not return per-operation affected-row counts afterward.
+- **Impact**: This is not only an API constraint: `PairingService.requestPairing()` performs an identity lookup through the transaction client, and `approvePairing()` reads the membership request inside the callback, so both flows fail with the native driver. `DeviceIdentityService.updateDeviceStatus()` checks for an explicit zero-row result, but an undefined result from the native queue cannot confirm that a device row was updated. Existing tests use `MemoryDatabaseConnection`, whose transaction client has different behavior. See the [platform package review plan](./review-platform-packages.md). The membership decision APIs now require permission-bearing context, but their production transaction path remains affected by B-01.
 - **Correct pattern**:
   ```typescript
   // ✅ Read first, then write in transaction
@@ -59,4 +59,4 @@ This document tracks known architectural limitations, technical debt, and pendin
     await tx.execute("INSERT INTO core_audit_log ...", [...]);
   });
   ```
-- **Path to Resolution**: If a read-then-write sequence must be strictly atomic (to prevent race conditions), create a dedicated Rust Tauri command that executes the full read-then-write sequence inside a single `rusqlite` transaction on the Rust side.
+- **Path to Resolution**: The review must choose between a native interactive transaction protocol and typed native commands for operations requiring read/modify/write. Either option must preserve atomicity and return meaningful write results; simply moving reads before the transaction can introduce races.

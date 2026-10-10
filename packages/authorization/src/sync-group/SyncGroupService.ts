@@ -9,6 +9,7 @@ import {
 } from "@platform/core";
 import type { DatabaseConnection, TransactionClient } from "@platform/database";
 import { AuthorizationEngine } from "../engine/AuthorizationEngine.js";
+import { SyncGroupRepository } from "../repositories/SyncGroupRepository.js";
 
 export type MembershipStatus =
   "REQUESTED" | "APPROVED" | "ACTIVE" | "SUSPENDED" | "EXPIRED" | "REVOKED" | "REJECTED";
@@ -40,10 +41,12 @@ export interface CreateSyncGroupInput {
 export class SyncGroupService {
   private readonly db: DatabaseConnection;
   private readonly auth: AuthorizationEngine;
+  private readonly repository: SyncGroupRepository;
 
   constructor(db: DatabaseConnection, auth?: AuthorizationEngine) {
     this.db = db;
     this.auth = auth ?? new AuthorizationEngine(db);
+    this.repository = new SyncGroupRepository(db);
   }
 
   private async requirePermission(
@@ -65,14 +68,30 @@ export class SyncGroupService {
       });
     }
 
-    const executor = tx ?? this.db;
-    const roleRows = await executor.query<{ role_id: string }>(
-      `SELECT role_id FROM core_user_roles WHERE user_id = ? AND organisation_id = ?`,
-      [userId, organisationId],
-    );
-    const roles = Object.freeze(roleRows.map((r) => r.role_id));
+    await this.auth.requireForSubject(userId, organisationId, permission, undefined, tx);
+  }
 
-    await this.auth.require({ userId, organisationId, roles }, permission, undefined, tx);
+  private async requireGroupOrganisation(
+    groupId: string,
+    ctx: OperationContext | TrustedOperationContext,
+    tx?: TransactionClient,
+  ): Promise<void> {
+    const { organisationId } = extractContextSubject(ctx);
+    const group = await this.repository.findGroup(groupId, tx);
+    if (!group) {
+      throw new ValidationError({
+        message: `Sync group '${groupId}' does not exist`,
+        userMessage: "Sync group not found",
+        correlationId: ctx.correlationId,
+      });
+    }
+    if (group.organisation_id !== organisationId) {
+      throw new AuthorizationError({
+        message: `Cannot manage sync group '${groupId}' outside organisation '${organisationId}'`,
+        userMessage: "You are not authorized to manage this sync group",
+        correlationId: ctx.correlationId,
+      });
+    }
   }
 
   async createGroup(
@@ -80,8 +99,6 @@ export class SyncGroupService {
     ctx: OperationContext | TrustedOperationContext,
     tx?: TransactionClient,
   ): Promise<SyncGroup> {
-    const executor = tx ?? this.db;
-
     if (!input.name || input.name.trim().length === 0) {
       throw new ValidationError({
         message: "Sync group name is required",
@@ -105,22 +122,19 @@ export class SyncGroupService {
     const id = generateCorrelationId("grp");
     const now = getUtcIsoTimestamp();
 
-    const sql = `
-      INSERT INTO core_sync_groups (
-        id, created_at, updated_at, created_by, updated_by, organisation_id, name, description, status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE')
-    `;
-
-    await executor.execute(sql, [
-      id,
-      now,
-      now,
-      userId,
-      userId,
-      input.organisationId,
-      input.name.trim(),
-      input.description ?? null,
-    ]);
+    await this.repository.insertGroup(
+      [
+        id,
+        now,
+        now,
+        userId,
+        userId,
+        input.organisationId,
+        input.name.trim(),
+        input.description ?? null,
+      ],
+      tx,
+    );
 
     return {
       id,
@@ -137,50 +151,50 @@ export class SyncGroupService {
     userId: string | null,
     tx?: TransactionClient,
   ): Promise<string> {
-    const executor = tx ?? this.db;
     const now = getUtcIsoTimestamp();
     const requestId = generateCorrelationId("req_mbr");
 
-    const sql = `
-      INSERT INTO core_membership_requests (
-        id, device_id, group_id, user_id, requested_at, status
-      ) VALUES (?, ?, ?, ?, ?, 'PENDING')
-    `;
-    await executor.execute(sql, [requestId, deviceId, groupId, userId, now]);
+    await this.repository.insertMembershipRequest([requestId, deviceId, groupId, userId, now], tx);
     return requestId;
   }
 
   async approveMembership(
     requestId: string,
-    approver: string | OperationContext | TrustedOperationContext,
+    approver: OperationContext | TrustedOperationContext,
     signature?: string,
     tx?: TransactionClient,
+    expectedDeviceId?: string,
   ): Promise<void> {
-    const executor = tx ?? this.db;
-    let approverUserId: string;
-
-    if (typeof approver === "object" && approver !== null) {
-      await this.requirePermission(approver, "sync.manage", tx);
-      approverUserId =
-        "principal" in approver ? approver.principal.userId : (approver.userId ?? "system");
-    } else {
-      approverUserId = approver;
+    if (!tx) {
+      return this.db.transaction((transaction) =>
+        this.approveMembership(requestId, approver, signature, transaction, expectedDeviceId),
+      );
     }
+    await this.requirePermission(approver, "sync.manage", tx);
+    const approverUserId =
+      "principal" in approver ? approver.principal.userId : (approver.userId ?? "system");
 
-    const reqRows = await executor.query<{
-      id: string;
-      device_id: string;
-      group_id: string;
-      user_id: string | null;
-      status: string;
-    }>("SELECT * FROM core_membership_requests WHERE id = ? LIMIT 1", [requestId]);
-
-    const req = reqRows[0];
+    const req = await this.repository.findMembershipRequest(requestId, tx);
     if (!req) {
       throw new ValidationError({
         message: `Membership request '${requestId}' not found`,
         userMessage: "Request not found",
         correlationId: "mbr_appr_err",
+      });
+    }
+    await this.requireGroupOrganisation(req.group_id, approver, tx);
+    if (req.status !== "PENDING") {
+      throw new ValidationError({
+        message: `Membership request '${requestId}' is not pending`,
+        userMessage: "This membership request has already been decided",
+        correlationId: approver.correlationId,
+      });
+    }
+    if (expectedDeviceId !== undefined && req.device_id !== expectedDeviceId) {
+      throw new AuthorizationError({
+        message: `Membership request '${requestId}' is for a different device`,
+        userMessage: "The device does not match this membership request",
+        correlationId: approver.correlationId,
       });
     }
 
@@ -189,98 +203,167 @@ export class SyncGroupService {
     const memberId = generateCorrelationId("mbr");
 
     // Record decision
-    await executor.execute(
-      "INSERT INTO core_membership_decisions (id, request_id, decided_by, decision, decided_at, signature) VALUES (?, ?, ?, ?, ?, ?)",
+    await this.repository.insertDecision(
       [decisionId, requestId, approverUserId, "APPROVED", now, signature ?? null],
+      tx,
     );
 
     // Update request status
-    await executor.execute("UPDATE core_membership_requests SET status = 'APPROVED' WHERE id = ?", [
-      requestId,
-    ]);
+    await this.repository.setRequestStatus(requestId, "APPROVED", tx);
 
     // Insert or update member record
-    await executor.execute(
-      "INSERT INTO core_sync_group_members (id, group_id, device_id, user_id, status, joined_at) VALUES (?, ?, ?, ?, ?, ?)",
+    await this.repository.insertMember(
       [memberId, req.group_id, req.device_id, req.user_id, "APPROVED", now],
+      tx,
     );
   }
 
   async revokeMembership(
     deviceId: string,
     groupId: string,
-    revokedBy: string | OperationContext | TrustedOperationContext,
+    revokedBy: OperationContext | TrustedOperationContext,
     reason: string,
     tx?: TransactionClient,
   ): Promise<void> {
-    const executor = tx ?? this.db;
-    let revokedByUserId: string;
-
-    if (typeof revokedBy === "object" && revokedBy !== null) {
-      await this.requirePermission(revokedBy, "sync.manage", tx);
-      revokedByUserId =
-        "principal" in revokedBy ? revokedBy.principal.userId : (revokedBy.userId ?? "system");
-    } else {
-      revokedByUserId = revokedBy;
+    if (!tx) {
+      return this.db.transaction((transaction) =>
+        this.revokeMembership(deviceId, groupId, revokedBy, reason, transaction),
+      );
     }
+    await this.requirePermission(revokedBy, "sync.manage", tx);
+    await this.requireGroupOrganisation(groupId, revokedBy, tx);
+    if (!reason.trim()) {
+      throw new ValidationError({
+        message: "Membership revocation reason is required",
+        userMessage: "Provide a reason for revoking this device",
+        correlationId: revokedBy.correlationId,
+      });
+    }
+    const membershipStatus = await this.repository.findMembershipStatus(deviceId, groupId, tx);
+    if (membershipStatus !== "APPROVED" && membershipStatus !== "ACTIVE") {
+      throw new ValidationError({
+        message: `Device '${deviceId}' is not an active member of sync group '${groupId}'`,
+        userMessage: "This device is not an active member of the selected sync group",
+        correlationId: revokedBy.correlationId,
+      });
+    }
+    const revokedByUserId =
+      "principal" in revokedBy ? revokedBy.principal.userId : (revokedBy.userId ?? "system");
 
     const now = getUtcIsoTimestamp();
     const revId = generateCorrelationId("rev");
 
     // Update membership status
-    await executor.execute(
-      "UPDATE core_sync_group_members SET status = 'REVOKED', revoked_at = ?, revoked_by = ?, revocation_reason = ? WHERE device_id = ? AND group_id = ?",
-      [now, revokedByUserId, reason, deviceId, groupId],
-    );
+    await this.repository.revokeMember([now, revokedByUserId, reason], deviceId, groupId, tx);
 
     // Insert into core_revocations
-    await executor.execute(
-      "INSERT INTO core_revocations (id, device_id, group_id, revoked_by, revoked_at, reason) VALUES (?, ?, ?, ?, ?, ?)",
+    await this.repository.insertRevocation(
       [revId, deviceId, groupId, revokedByUserId, now, reason],
+      tx,
     );
   }
 
   async rejectMembership(
     requestId: string,
-    rejector: string | OperationContext | TrustedOperationContext,
+    rejector: OperationContext | TrustedOperationContext,
     reason: string,
     tx?: TransactionClient,
   ): Promise<void> {
-    const executor = tx ?? this.db;
-    let rejectorUserId: string;
+    if (!tx) {
+      return this.db.transaction((transaction) =>
+        this.rejectMembership(requestId, rejector, reason, transaction),
+      );
+    }
+    await this.requirePermission(rejector, "sync.manage", tx);
+    const rejectorUserId =
+      "principal" in rejector ? rejector.principal.userId : (rejector.userId ?? "system");
 
-    if (typeof rejector === "object" && rejector !== null) {
-      await this.requirePermission(rejector, "sync.manage", tx);
-      rejectorUserId =
-        "principal" in rejector ? rejector.principal.userId : (rejector.userId ?? "system");
-    } else {
-      rejectorUserId = rejector;
+    const request = await this.repository.findMembershipRequest(requestId, tx);
+    if (!request) {
+      throw new ValidationError({
+        message: `Membership request '${requestId}' not found`,
+        userMessage: "Request not found",
+        correlationId: rejector.correlationId,
+      });
+    }
+    await this.requireGroupOrganisation(request.group_id, rejector, tx);
+    if (request.status !== "PENDING") {
+      throw new ValidationError({
+        message: `Membership request '${requestId}' is not pending`,
+        userMessage: "This membership request has already been decided",
+        correlationId: rejector.correlationId,
+      });
     }
 
     const now = getUtcIsoTimestamp();
     const decisionId = generateCorrelationId("dec");
 
     // Record the REJECTED decision
-    await executor.execute(
-      "INSERT INTO core_membership_decisions (id, request_id, decided_by, decision, decided_at, signature) VALUES (?, ?, ?, ?, ?, ?)",
+    await this.repository.insertDecision(
       [decisionId, requestId, rejectorUserId, "REJECTED", now, null],
+      tx,
     );
 
     // Mark request as REJECTED
-    await executor.execute("UPDATE core_membership_requests SET status = 'REJECTED' WHERE id = ?", [
-      requestId,
-    ]);
+    await this.repository.setRequestStatus(requestId, "REJECTED", tx);
   }
 
   async canSync(deviceId: string, groupId: string, tx?: TransactionClient): Promise<boolean> {
-    const executor = tx ?? this.db;
-    const rows = await executor.query<{ status: MembershipStatus }>(
-      "SELECT status FROM core_sync_group_members WHERE device_id = ? AND group_id = ? LIMIT 1",
-      [deviceId, groupId],
-    );
+    const deviceStatus = await this.repository.findDeviceStatus(deviceId, tx);
+    if (deviceStatus !== "APPROVED" && deviceStatus !== "ACTIVE") return false;
+    const status = await this.repository.findMembershipStatus(deviceId, groupId, tx);
+    return status === "APPROVED" || status === "ACTIVE";
+  }
 
-    const member = rows[0];
-    if (!member) return false;
-    return member.status === "APPROVED" || member.status === "ACTIVE";
+  async requireActiveMembership(
+    ctx: OperationContext | TrustedOperationContext,
+    groupId: string,
+    tx?: TransactionClient,
+  ): Promise<void> {
+    const subject = extractContextSubject(ctx);
+    const group = await this.repository.findGroup(groupId, tx);
+
+    if (!group) {
+      throw new ValidationError({
+        message: `Sync group '${groupId}' does not exist`,
+        userMessage: "Sync group not found",
+        correlationId: ctx.correlationId,
+      });
+    }
+    if (group.organisation_id !== subject.organisationId) {
+      throw new AuthorizationError({
+        message: `Cannot write to sync group '${groupId}' outside organisation '${subject.organisationId}'`,
+        userMessage: "You are not authorized to use this sync group",
+        correlationId: ctx.correlationId,
+      });
+    }
+    if (group.status !== "ACTIVE") {
+      throw new AuthorizationError({
+        message: `Cannot write to inactive sync group '${groupId}'`,
+        userMessage: "This sync group is not active",
+        correlationId: ctx.correlationId,
+      });
+    }
+
+    const eligibility = await this.repository.findMembershipEligibility(
+      groupId,
+      subject.deviceId,
+      subject.userId,
+      tx,
+    );
+    if (!eligibility || !["APPROVED", "ACTIVE"].includes(eligibility.device_status)) {
+      throw new AuthorizationError({
+        message: `Device '${subject.deviceId}' is not active or approved for sync`,
+        userMessage: "This device is not approved for sync",
+        correlationId: ctx.correlationId,
+      });
+    }
+    if (!eligibility.membership_status) {
+      throw new AuthorizationError({
+        message: `Device '${subject.deviceId}' is not an approved member of sync group '${groupId}'`,
+        userMessage: "This device is not approved for the selected sync group",
+        correlationId: ctx.correlationId,
+      });
+    }
   }
 }

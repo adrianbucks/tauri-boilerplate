@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
@@ -24,12 +25,14 @@ pub struct NativeSessionView {
 
 pub struct NativeSessionStore {
     current: Mutex<Option<NativePrincipal>>,
+    generation: AtomicU64,
 }
 
 impl NativeSessionStore {
     pub fn new() -> Self {
         Self {
             current: Mutex::new(None),
+            generation: AtomicU64::new(0),
         }
     }
 
@@ -38,13 +41,31 @@ impl NativeSessionStore {
         database: &DurableDatabase,
         request: AuthenticateUserRequest,
     ) -> Result<NativeSessionView, PlatformError> {
+        let generation = self
+            .generation
+            .fetch_add(1, Ordering::AcqRel)
+            .wrapping_add(1);
         let principal =
             database.authenticate_user(&request.user_id, &request.device_id, &request.password)?;
+        self.commit_authentication(generation, principal)
+    }
+
+    fn commit_authentication(
+        &self,
+        generation: u64,
+        principal: NativePrincipal,
+    ) -> Result<NativeSessionView, PlatformError> {
         let view = session_view(&principal);
         let mut current = self
             .current
             .lock()
             .map_err(|_| session_error("session_lock", "Session state lock poisoned"))?;
+        if self.generation.load(Ordering::Acquire) != generation {
+            return Err(session_error(
+                "session_superseded",
+                "Authentication was superseded by a newer session transition",
+            ));
+        }
         *current = Some(principal);
         Ok(view)
     }
@@ -62,6 +83,7 @@ impl NativeSessionStore {
             .current
             .lock()
             .map_err(|_| session_error("session_lock", "Session state lock poisoned"))?;
+        self.generation.fetch_add(1, Ordering::AcqRel);
         *current = None;
         Ok(())
     }
@@ -163,5 +185,27 @@ mod tests {
             view.permissions,
             vec!["widget:read".to_string(), "widget:create".to_string()]
         );
+    }
+
+    #[test]
+    fn stale_authentication_cannot_restore_a_session_after_logout() {
+        let sessions = NativeSessionStore::new();
+        let authentication_generation = sessions
+            .generation
+            .fetch_add(1, Ordering::AcqRel)
+            .wrapping_add(1);
+
+        sessions.logout().expect("logout should succeed");
+
+        let principal = NativePrincipal::from_authenticated_device_session(
+            "user_alice",
+            "dev_crypto_123",
+            "org_test",
+            vec!["widget:read".to_string()],
+        );
+        assert!(sessions
+            .commit_authentication(authentication_generation, principal)
+            .is_err());
+        assert!(sessions.current_principal().is_err());
     }
 }

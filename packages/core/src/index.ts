@@ -19,3 +19,4 @@ export * from "./config/AppConfig.js";
 
 // Maintenance
 export * from "./maintenance/DeclarativePruningPolicy.js";
+export * from "./maintenance/PruningFilter.js";

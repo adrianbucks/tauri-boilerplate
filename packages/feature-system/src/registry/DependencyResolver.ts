@@ -56,42 +56,51 @@ export class DependencyResolver {
     const visited = new Map<string, "visiting" | "visited">();
     const order: FeatureManifest[] = [];
 
-    const visit = (featureId: string, path: string[] = []) => {
-      const state = visited.get(featureId);
-      if (state === "visiting") {
-        const cycle = [...path, featureId].join(" -> ");
-        throw new ValidationError({
-          message: `Circular dependency detected in feature graph: ${cycle}`,
-          userMessage: "Circular feature dependency error",
-          correlationId: `dep_cycle_${featureId}`,
-        });
-      }
-      if (state === "visited") return;
-
-      visited.set(featureId, "visiting");
-      const manifest = manifestMap.get(featureId)!;
-
-      // Visit hard dependencies first
-      for (const depId of manifest.dependencies) {
-        visit(depId, [...path, featureId]);
-      }
-
-      // Visit optional dependencies if present
-      if (manifest.optionalDependencies) {
-        for (const optId of manifest.optionalDependencies) {
-          if (manifestMap.has(optId)) {
-            visit(optId, [...path, featureId]);
-          }
-        }
-      }
-
-      visited.set(featureId, "visited");
-      order.push(manifest);
-    };
-
     for (const m of manifests) {
-      if (!visited.has(m.id)) {
-        visit(m.id);
+      if (visited.has(m.id)) continue;
+
+      const path: string[] = [m.id];
+      const dependencies = (featureId: string): string[] => {
+        const manifest = manifestMap.get(featureId)!;
+        return [
+          ...manifest.dependencies,
+          ...(manifest.optionalDependencies ?? []).filter((id) => manifestMap.has(id)),
+        ];
+      };
+      const stack = [{ id: m.id, dependencies: dependencies(m.id), nextDependency: 0 }];
+      visited.set(m.id, "visiting");
+
+      while (stack.length > 0) {
+        const frame = stack[stack.length - 1]!;
+        if (frame.nextDependency < frame.dependencies.length) {
+          const dependencyId = frame.dependencies[frame.nextDependency++]!;
+          const state = visited.get(dependencyId);
+
+          if (state === "visiting") {
+            const cycleStart = path.indexOf(dependencyId);
+            const cycle = [...path.slice(cycleStart), dependencyId].join(" -> ");
+            throw new ValidationError({
+              message: `Circular dependency detected in feature graph: ${cycle}`,
+              userMessage: "Circular feature dependency error",
+              correlationId: `dep_cycle_${dependencyId}`,
+            });
+          }
+          if (state === "visited") continue;
+
+          visited.set(dependencyId, "visiting");
+          path.push(dependencyId);
+          stack.push({
+            id: dependencyId,
+            dependencies: dependencies(dependencyId),
+            nextDependency: 0,
+          });
+          continue;
+        }
+
+        visited.set(frame.id, "visited");
+        order.push(manifestMap.get(frame.id)!);
+        stack.pop();
+        path.pop();
       }
     }
 

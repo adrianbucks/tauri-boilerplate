@@ -22,32 +22,49 @@ export interface Logger {
   error(message: string, error?: unknown, context?: Partial<LogEntry>): void;
 }
 
-const REDACTED_KEYS = new Set([
-  "privatekey",
-  "private_key",
+const REDACTED_KEY_FRAGMENTS = [
+  "private",
+  "seed",
   "password",
   "secret",
   "token",
   "credential",
   "keystore",
   "authorization",
-]);
+  "apikey",
+  "accesskey",
+  "signingkey",
+] as const;
+
+function isSensitiveKey(key: string): boolean {
+  const normalizedKey = key.toLowerCase().replace(/[^a-z0-9]/g, "");
+  return REDACTED_KEY_FRAGMENTS.some((fragment) => normalizedKey.includes(fragment));
+}
+
+function sanitizeValue(value: unknown, ancestors: WeakSet<object>): unknown {
+  if (typeof value === "bigint") return value.toString();
+  if (value === null || typeof value !== "object") return value;
+  if (ancestors.has(value)) return "[Circular]";
+
+  ancestors.add(value);
+  try {
+    if (Array.isArray(value)) {
+      return value.map((item) => sanitizeValue(item, ancestors));
+    }
+
+    const sanitized: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
+    for (const [key, nestedValue] of Object.entries(value)) {
+      sanitized[key] = isSensitiveKey(key) ? "[REDACTED]" : sanitizeValue(nestedValue, ancestors);
+    }
+    return sanitized;
+  } finally {
+    ancestors.delete(value);
+  }
+}
 
 function sanitizeData(data?: Record<string, unknown>): Record<string, unknown> | undefined {
   if (!data) return undefined;
-  const sanitized: Record<string, unknown> = {};
-
-  for (const [key, value] of Object.entries(data)) {
-    if (REDACTED_KEYS.has(key.toLowerCase())) {
-      sanitized[key] = "[REDACTED]";
-    } else if (value && typeof value === "object" && !Array.isArray(value)) {
-      sanitized[key] = sanitizeData(value as Record<string, unknown>);
-    } else {
-      sanitized[key] = value;
-    }
-  }
-
-  return sanitized;
+  return sanitizeValue(data, new WeakSet()) as Record<string, unknown>;
 }
 
 export class ConsoleLogger implements Logger {

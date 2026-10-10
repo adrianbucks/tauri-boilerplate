@@ -9,7 +9,7 @@ describe("IrohSyncTransport", () => {
     signerPublicKey: "ed25519_pk_" + "0".repeat(64),
     signature: "1".repeat(128),
     operation: {
-      operationId: "op_01",
+      operationId: "env_iroh_01",
       applicationId: "tauri-boilerplate-demo",
       organisationId: "org_acme",
       syncGroupId: "grp_warehouse",
@@ -46,6 +46,9 @@ describe("IrohSyncTransport", () => {
         return undefined;
       }
       if (cmd === "sync_disconnect_peer") {
+        return undefined;
+      }
+      if (cmd === "sync_stop_endpoint") {
         return undefined;
       }
       throw new Error(`Unexpected command: ${cmd}`);
@@ -117,8 +120,9 @@ describe("IrohSyncTransport", () => {
     });
 
     // 6. Dispose
-    transport.dispose();
+    await transport.dispose();
     expect(unlistenFn).toHaveBeenCalled();
+    expect(mockInvoke).toHaveBeenCalledWith("sync_stop_endpoint");
   });
 
   it("throws when sending to an unconnected peer", async () => {
@@ -128,5 +132,43 @@ describe("IrohSyncTransport", () => {
     });
 
     await expect(transport.send("unknown_peer", dummyEnvelope)).rejects.toThrow("is not connected");
+  });
+
+  it("retries event-listener registration after the endpoint starts", async () => {
+    const endpointInfo = { endpoint_id: "local_node_id", addr_json: "{}" };
+    const mockInvoke = vi.fn(async (command: string) => {
+      if (command === "sync_start_endpoint") return endpointInfo;
+      if (command === "sync_stop_endpoint") return undefined;
+      throw new Error(`Unexpected command: ${command}`);
+    });
+    const unlisten = vi.fn();
+    const mockListen = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("event listener unavailable"))
+      .mockResolvedValueOnce(unlisten);
+    const transport = new IrohSyncTransport({
+      invoke: mockInvoke as unknown as TauriInvokeFn,
+      listen: mockListen as any,
+    });
+
+    await expect(transport.init()).rejects.toThrow("event listener unavailable");
+    await expect(transport.init()).resolves.toEqual(endpointInfo);
+
+    expect(mockInvoke).toHaveBeenCalledTimes(1);
+    expect(mockListen).toHaveBeenCalledTimes(2);
+    await transport.dispose();
+  });
+
+  it("does not dispatch structurally invalid inbound envelopes", async () => {
+    const transport = new IrohSyncTransport({ invoke: vi.fn() as unknown as TauriInvokeFn });
+    const handler = vi.fn();
+    transport.onReceive(handler);
+
+    await transport.handleIncomingMessage({
+      sender_endpoint_id: "peer_1",
+      payload_json: JSON.stringify({ ...dummyEnvelope, envelopeId: "forged_id" }),
+    });
+
+    expect(handler).not.toHaveBeenCalled();
   });
 });

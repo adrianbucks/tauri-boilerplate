@@ -78,6 +78,8 @@ Native Storage Gateway (Bundled SQLite WAL + SQL Safety Guard)
 
 Audit logging provides non-repudiation and traceability for sensitive operations.
 
+Operational JSON logging is separate from the append-only audit trail. `ConsoleLogger` recursively redacts recognized secret-bearing keys in nested object and array data, replaces circular references with a marker, and serializes bigint values as strings. This is defense in depth; callers must still avoid placing secrets in log messages or arbitrary field values.
+
 ### Properties
 
 - **Strictly Append-Only**: The `core_audit_events` table permits only `INSERT` queries. `UPDATE` and `DELETE` operations are blocked by repository design and database triggers.

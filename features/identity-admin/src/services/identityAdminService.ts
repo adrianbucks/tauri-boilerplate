@@ -10,6 +10,7 @@ import {
 import type { DatabaseConnection, TransactionClient } from "@platform/database";
 import { AuditService } from "@platform/audit";
 import { AuthorizationEngine, SyncGroupService } from "@platform/authorization";
+import { IdentityAdminRepository } from "../repositories/identityAdminRepository.js";
 import { IDENTITY_ADMIN_PERMISSIONS, type IdentityAdminPermission } from "../permissions.js";
 
 export interface CreateUserInput {
@@ -24,6 +25,7 @@ export class IdentityAdminService {
   private readonly audit: AuditService;
   private readonly syncGroups: SyncGroupService;
   private readonly auth: AuthorizationEngine;
+  private readonly repository: IdentityAdminRepository;
 
   constructor(
     db: DatabaseConnection,
@@ -35,6 +37,7 @@ export class IdentityAdminService {
     this.audit = audit ?? new AuditService(db);
     this.auth = auth ?? new AuthorizationEngine(db);
     this.syncGroups = syncGroups ?? new SyncGroupService(db, this.auth);
+    this.repository = new IdentityAdminRepository(db);
   }
 
   private async requirePermission(
@@ -56,29 +59,41 @@ export class IdentityAdminService {
       });
     }
 
-    const executor = tx ?? this.db;
-    const roleRows = await executor.query<{ role_id: string }>(
-      `SELECT role_id FROM core_user_roles WHERE user_id = ? AND organisation_id = ?`,
-      [userId, organisationId],
-    );
-    const roles = Object.freeze(roleRows.map((r) => r.role_id));
-
-    await this.auth.require({ userId, organisationId, roles }, permission, undefined, tx);
+    await this.auth.requireForSubject(userId, organisationId, permission, undefined, tx);
   }
 
   async createUser(
     input: CreateUserInput,
     ctx: OperationContext | TrustedOperationContext,
   ): Promise<string> {
-    if (!input.displayName || input.displayName.trim().length === 0) {
+    if (typeof input.displayName !== "string" || input.displayName.trim().length === 0) {
       throw new ValidationError({
         message: "Display name is required",
         userMessage: "Please provide a user display name",
         correlationId: ctx.correlationId,
       });
     }
+    if (input.email !== undefined && typeof input.email !== "string") {
+      throw new ValidationError({
+        message: "Email must be a string",
+        userMessage: "Please provide a valid email address",
+        correlationId: ctx.correlationId,
+      });
+    }
+    if (
+      input.roleId !== undefined &&
+      (typeof input.roleId !== "string" || input.roleId.trim().length === 0)
+    ) {
+      throw new ValidationError({
+        message: "Role ID must be a non-empty string when provided",
+        userMessage: "Select a valid role",
+        correlationId: ctx.correlationId,
+      });
+    }
 
     const { userId: creatorUserId, deviceId, organisationId } = extractContextSubject(ctx);
+    const email = input.email?.trim().toLowerCase() || null;
+    const roleId = input.roleId?.trim();
 
     if (input.organisationId !== organisationId) {
       throw new AuthorizationError({
@@ -91,31 +106,46 @@ export class IdentityAdminService {
     return this.db.transaction(async (tx) => {
       await this.requirePermission(ctx, IDENTITY_ADMIN_PERMISSIONS.USERS_CREATE, tx);
 
+      if (roleId) {
+        await this.requirePermission(ctx, IDENTITY_ADMIN_PERMISSIONS.ROLES_MANAGE, tx);
+        if (!(await this.repository.roleExistsWithinOrganisation(roleId, organisationId, tx))) {
+          throw new ValidationError({
+            message: `Role '${roleId}' does not exist in organisation '${organisationId}'`,
+            userMessage: "The selected role is unavailable",
+            correlationId: ctx.correlationId,
+          });
+        }
+      }
+
       const userId = generateCorrelationId("usr");
       const now = getUtcIsoTimestamp();
 
-      // Insert User
-      await tx.execute(
-        "INSERT INTO core_users (id, created_at, updated_at, created_by, updated_by, organisation_id, display_name, email, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        [
-          userId,
-          now,
-          now,
-          creatorUserId,
-          creatorUserId,
-          input.organisationId,
-          input.displayName.trim(),
-          input.email ? input.email.trim().toLowerCase() : null,
-          "ACTIVE",
-        ],
+      await this.repository.insertUser(
+        {
+          id: userId,
+          createdAt: now,
+          updatedAt: now,
+          createdBy: creatorUserId,
+          organisationId: input.organisationId,
+          displayName: input.displayName.trim(),
+          email,
+        },
+        tx,
       );
 
       // Assign Role if specified
-      if (input.roleId) {
+      if (roleId) {
         const userRoleId = generateCorrelationId("ur");
-        await tx.execute(
-          "INSERT INTO core_user_roles (id, user_id, role_id, organisation_id, granted_by, granted_at) VALUES (?, ?, ?, ?, ?, ?)",
-          [userRoleId, userId, input.roleId, input.organisationId, creatorUserId, now],
+        await this.repository.assignRole(
+          {
+            id: userRoleId,
+            userId,
+            roleId,
+            organisationId: input.organisationId,
+            grantedBy: creatorUserId,
+            grantedAt: now,
+          },
+          tx,
         );
       }
 
@@ -150,15 +180,21 @@ export class IdentityAdminService {
     await this.db.transaction(async (tx) => {
       await this.requirePermission(ctx, IDENTITY_ADMIN_PERMISSIONS.DEVICES_APPROVE, tx);
 
+      const deviceStatus = await this.repository.findDeviceStatus(deviceId, tx);
+      if (!deviceStatus || !["PENDING_APPROVAL", "APPROVED", "ACTIVE"].includes(deviceStatus)) {
+        throw new ValidationError({
+          message: `Device '${deviceId}' is missing or ineligible for approval`,
+          userMessage: "This device cannot be approved",
+          correlationId: ctx.correlationId,
+        });
+      }
+
       // 1. Approve sync membership
-      await this.syncGroups.approveMembership(requestId, ctx, undefined, tx);
+      await this.syncGroups.approveMembership(requestId, ctx, undefined, tx, deviceId);
 
       // 2. Set device status to APPROVED
       const now = getUtcIsoTimestamp();
-      await tx.execute(
-        "UPDATE core_devices SET status = 'APPROVED', updated_at = ? WHERE device_id = ?",
-        [now, deviceId],
-      );
+      await this.repository.setDeviceStatus(deviceId, "APPROVED", now, tx);
 
       // 3. Emit Audit Event
       await this.audit.emit(
@@ -190,15 +226,20 @@ export class IdentityAdminService {
     await this.db.transaction(async (tx) => {
       await this.requirePermission(ctx, IDENTITY_ADMIN_PERMISSIONS.DEVICES_REVOKE, tx);
 
+      if (!(await this.repository.findDeviceStatus(deviceId, tx))) {
+        throw new ValidationError({
+          message: `Device '${deviceId}' does not exist`,
+          userMessage: "Device record not found",
+          correlationId: ctx.correlationId,
+        });
+      }
+
       // 1. Revoke membership in group
       await this.syncGroups.revokeMembership(deviceId, groupId, ctx, reason, tx);
 
       // 2. Update device status to REVOKED
       const now = getUtcIsoTimestamp();
-      await tx.execute(
-        "UPDATE core_devices SET status = 'REVOKED', updated_at = ? WHERE device_id = ?",
-        [now, deviceId],
-      );
+      await this.repository.setDeviceStatus(deviceId, "REVOKED", now, tx);
 
       // 3. Emit Audit Event
       await this.audit.emit(

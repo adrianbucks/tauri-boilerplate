@@ -72,9 +72,8 @@ export interface ImportDefinition<TRecord> {
   };
   commit: (
     records: TRecord[],
-    db: DatabaseConnection,
     ctx: OperationContext,
-    tx?: TransactionClient,
+    tx: TransactionClient,
   ) => Promise<{ importedCount: number }>;
 }
 ```
@@ -82,7 +81,7 @@ export interface ImportDefinition<TRecord> {
 ### Safety & Boundary Rules
 
 1. **Feature Owns Commit**: The generic import engine never executes direct `INSERT` queries into feature tables. It delegates commits to the feature's `commit()` implementation.
-2. **Transactional Atomicity**: All valid records in a batch are committed within a single database transaction. If an unhandled database error occurs, changes roll back completely.
+2. **Transactional Atomicity**: All valid records in a batch are committed within a single database transaction. The commit callback receives only the transaction client, rather than the base database connection, reducing accidental writes outside the transaction. If an unhandled database error occurs, changes roll back completely.
 3. **Resource Guardrails**:
    - Max file size: 50MB
    - Max rows: 50,000 per import

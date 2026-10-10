@@ -73,7 +73,11 @@ describe("@platform/core", () => {
     it("formats and validates UTC ISO timestamps", () => {
       const ts = getUtcIsoTimestamp();
       expect(isValidUtcIsoTimestamp(ts)).toBe(true);
+      expect(isValidUtcIsoTimestamp("2026-08-30T10:00:00Z")).toBe(true);
       expect(isValidUtcIsoTimestamp("invalid")).toBe(false);
+      expect(isValidUtcIsoTimestamp("2026-02-30T10:00:00Z")).toBe(false);
+      expect(isValidUtcIsoTimestamp("2026-08-30 10:00:00Z")).toBe(false);
+      expect(isValidUtcIsoTimestamp("2026-08-30T10:00:00+00:00")).toBe(false);
     });
   });
 
@@ -102,10 +106,16 @@ describe("@platform/core", () => {
     it("creates default configuration with override support", () => {
       const config = createDefaultConfig({
         environment: "production",
+        storage: { dbName: "custom.db" },
+        sync: { syncIntervalMs: 10000 },
       });
       expect(config.environment).toBe("production");
       expect(config.protocolVersion).toBe(1);
+      expect(config.storage.dbName).toBe("custom.db");
       expect(config.storage.enableWal).toBe(true);
+      expect(config.sync.syncIntervalMs).toBe(10000);
+      expect(config.sync.enableAutoSync).toBe(true);
+      expect(config.sync.maxRetryAttempts).toBe(5);
     });
   });
 });

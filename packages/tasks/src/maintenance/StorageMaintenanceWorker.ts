@@ -48,6 +48,10 @@ export class StorageMaintenanceWorker {
       `[StorageMaintenanceWorker] Maintenance finished: pruned=${report.totalRowsPruned}, vacuum=${report.vacuumExecuted}, success=${report.success}, duration=${report.durationMs}ms.`,
     );
 
+    if (report.aborted || ctx.signal.aborted) {
+      throw new Error("[StorageMaintenanceWorker] Maintenance was interrupted before completion.");
+    }
+
     if (!report.success) {
       const errors = report.results
         .filter((r) => r.error)

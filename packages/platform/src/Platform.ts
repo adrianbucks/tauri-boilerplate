@@ -1,5 +1,5 @@
 import type { AppConfig, Logger } from "@platform/core";
-import { ConsoleLogger, createDefaultConfig, SyncError } from "@platform/core";
+import { ConsoleLogger, createDefaultConfig, SyncError, ValidationError } from "@platform/core";
 import type { DatabaseConnection } from "@platform/database";
 import { MigrationEngine, type MigrationScript } from "@platform/database";
 import { DeviceIdentityService, UserSessionService } from "@platform/identity";
@@ -70,6 +70,7 @@ export class Platform {
   readonly maintenanceWorker: StorageMaintenanceWorker;
   private readonly migrationEngine: MigrationEngine;
   private isInitialised = false;
+  private initializationPromise: Promise<void> | null = null;
 
   constructor(options: PlatformOptions) {
     this.config = createDefaultConfig(options.config);
@@ -165,6 +166,32 @@ export class Platform {
   }
 
   registerFeature(options: RegisterFeatureOptions): void {
+    if (this.isInitialised || this.initializationPromise !== null) {
+      throw new ValidationError({
+        message: `Cannot register feature '${options.manifest.id}' after platform initialization has started`,
+        userMessage: "Features must be registered before platform startup",
+        correlationId: `platform_feature_lifecycle_${options.manifest.id}`,
+      });
+    }
+
+    const seenEntityTypes = new Set<string>();
+    for (const policy of options.manifest.syncPolicies ?? []) {
+      if (
+        seenEntityTypes.has(policy.entityType) ||
+        this.conflicts.hasEntityPolicy(policy.entityType)
+      ) {
+        throw new ValidationError({
+          message: `Sync conflict policy for entity '${policy.entityType}' is already registered or duplicated.`,
+          userMessage: "Duplicate sync conflict policy",
+          correlationId: `platform_sync_policy_dup_${policy.entityType}`,
+        });
+      }
+      seenEntityTypes.add(policy.entityType);
+    }
+
+    const preparedPruningPolicies = this.maintenanceRegistry.preparePolicies(
+      options.manifest.pruningPolicies ?? [],
+    );
     this.features.registerFeature(options);
 
     // Register any declared sync policies
@@ -175,11 +202,7 @@ export class Platform {
     }
 
     // Register any declared pruning policies
-    if (options.manifest.pruningPolicies) {
-      for (const policy of options.manifest.pruningPolicies) {
-        this.maintenanceRegistry.registerPolicy(policy);
-      }
-    }
+    this.maintenanceRegistry.registerPreparedPolicies(preparedPruningPolicies);
   }
 
   /**
@@ -192,37 +215,57 @@ export class Platform {
     return await this.maintenance.pruneAll(options);
   }
 
-  async init(): Promise<void> {
-    if (this.isInitialised) return;
+  init(): Promise<void> {
+    if (this.isInitialised) return Promise.resolve();
+    if (this.initializationPromise) return this.initializationPromise;
 
-    this.logger.info("Initializing platform baseline...");
+    const initialization = Promise.resolve().then(async () => {
+      this.logger.info("Initializing platform baseline...");
 
-    // 1. Ensure platform migrations table
-    await this.migrationEngine.ensureMigrationTable();
+      // 1. Ensure platform migrations table
+      await this.migrationEngine.ensureMigrationTable();
 
-    // 2. Apply platform schema before feature-owned migrations.
-    const orderedMigrations = this.features.getAllMigrations();
-    const featureMigrations: MigrationScript[] = orderedMigrations.map((m) => ({
-      ...m.migration,
-      owner: `feature.${m.featureId}`,
-    }));
-    if (coreMigrations.length > 0) {
-      this.logger.info(`Applying ${coreMigrations.length} platform migrations...`);
-      await this.migrationEngine.applyMigrations(coreMigrations);
-    }
-    if (featureMigrations.length > 0) {
-      this.logger.info(`Applying ${featureMigrations.length} feature migrations...`);
-      await this.migrationEngine.applyMigrations(featureMigrations);
-    }
+      // 2. Apply platform schema before feature-owned migrations.
+      const orderedMigrations = this.features.getAllMigrations();
+      const featureMigrations: MigrationScript[] = orderedMigrations.map((m) => ({
+        ...m.migration,
+        owner: `feature.${m.featureId}`,
+      }));
+      if (coreMigrations.length > 0) {
+        this.logger.info(`Applying ${coreMigrations.length} platform migrations...`);
+        await this.migrationEngine.applyMigrations(coreMigrations);
+      }
+      if (featureMigrations.length > 0) {
+        this.logger.info(`Applying ${featureMigrations.length} feature migrations...`);
+        // MigrationEngine sorts by owner for its general-purpose API. Apply each
+        // feature owner separately here so the dependency resolver's topological
+        // order remains authoritative across feature boundaries.
+        const migrationsByFeature = new Map<string, MigrationScript[]>();
+        for (const entry of orderedMigrations) {
+          const owner = `feature.${entry.featureId}`;
+          const group = migrationsByFeature.get(owner) ?? [];
+          group.push({ ...entry.migration, owner });
+          migrationsByFeature.set(owner, group);
+        }
+        for (const migrations of migrationsByFeature.values()) {
+          await this.migrationEngine.applyMigrations(migrations);
+        }
+      }
 
-    // 3. Crash recovery: reset any RUNNING tasks left over from a previous crash.
-    const recovered = await this.tasks.recoverHangingTasks();
-    if (recovered > 0) {
-      this.logger.warn(`Platform: recovered ${recovered} hanging task(s) from previous crash.`);
-    }
+      // 3. Crash recovery: reset any RUNNING tasks left over from a previous crash.
+      const recovered = await this.tasks.recoverHangingTasks();
+      if (recovered > 0) {
+        this.logger.warn(`Platform: recovered ${recovered} hanging task(s) from previous crash.`);
+      }
 
-    this.isInitialised = true;
-    this.logger.info("Platform initialization complete.");
+      this.isInitialised = true;
+      this.logger.info("Platform initialization complete.");
+    });
+
+    this.initializationPromise = initialization.finally(() => {
+      this.initializationPromise = null;
+    });
+    return this.initializationPromise;
   }
 
   /**

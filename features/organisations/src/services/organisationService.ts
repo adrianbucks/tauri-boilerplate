@@ -56,14 +56,7 @@ export class OrganisationService {
       });
     }
 
-    const executor = tx ?? this.db;
-    const roleRows = await executor.query<{ role_id: string }>(
-      `SELECT role_id FROM core_user_roles WHERE user_id = ? AND organisation_id = ?`,
-      [userId, organisationId],
-    );
-    const roles = Object.freeze(roleRows.map((r) => r.role_id));
-
-    await this.auth.require({ userId, organisationId, roles }, permission, undefined, tx);
+    await this.auth.requireForSubject(userId, organisationId, permission, undefined, tx);
   }
 
   async createOrganisation(
@@ -78,11 +71,13 @@ export class OrganisationService {
       });
     }
 
+    const domain = input.domain?.trim().toLowerCase() || null;
+
     return this.db.transaction(async (tx) => {
       await this.requirePermission(ctx, ORGANISATION_PERMISSIONS.CREATE, tx);
 
-      if (input.domain) {
-        const existing = await this.repo.findByDomain(input.domain.trim().toLowerCase(), tx);
+      if (domain) {
+        const existing = await this.repo.findByDomain(domain, tx);
         if (existing) {
           throw new ValidationError({
             message: `Organisation with domain '${input.domain}' already exists`,
@@ -103,7 +98,7 @@ export class OrganisationService {
         created_by: userId,
         updated_by: userId,
         name: input.name.trim(),
-        domain: input.domain ? input.domain.trim().toLowerCase() : null,
+        domain,
         status: "ACTIVE",
         settings_json: input.settings ? JSON.stringify(input.settings) : null,
       };
@@ -127,27 +122,52 @@ export class OrganisationService {
     input: UpdateOrganisationInput,
     ctx: OperationContext | TrustedOperationContext,
   ): Promise<OrganisationRecord> {
-    await this.requirePermission(ctx, ORGANISATION_PERMISSIONS.MANAGE);
-    const { userId, organisationId } = extractContextSubject(ctx);
-
-    const existing = await this.repo.findByIdWithinOrganisation(id, organisationId);
-    if (!existing) {
+    if (input.name === undefined && input.settings === undefined) {
       throw new ValidationError({
-        message: `Organisation '${id}' not found`,
-        userMessage: "Organisation not found",
+        message: "Organisation update must include at least one field",
+        userMessage: "Provide a name or settings change",
+        correlationId: ctx.correlationId,
+      });
+    }
+    if (input.name !== undefined && !input.name.trim()) {
+      throw new ValidationError({
+        message: "Organisation name cannot be empty",
+        userMessage: "Please provide an organisation name",
         correlationId: ctx.correlationId,
       });
     }
 
-    const updates: Partial<OrganisationRecord> = {
-      updated_at: getUtcIsoTimestamp(),
-      updated_by: userId,
-    };
-    if (input.name !== undefined) updates.name = input.name.trim();
-    if (input.settings !== undefined) updates.settings_json = JSON.stringify(input.settings);
+    const { userId, organisationId } = extractContextSubject(ctx);
+    return this.db.transaction(async (tx) => {
+      await this.requirePermission(ctx, ORGANISATION_PERMISSIONS.MANAGE, tx);
 
-    await this.repo.update(id, updates);
-    return (await this.repo.findByIdWithinOrganisation(id, organisationId))!;
+      const existing = await this.repo.findByIdWithinOrganisation(id, organisationId, tx);
+      if (!existing) {
+        throw new ValidationError({
+          message: `Organisation '${id}' not found`,
+          userMessage: "Organisation not found",
+          correlationId: ctx.correlationId,
+        });
+      }
+
+      const updates: Partial<OrganisationRecord> = {
+        updated_at: getUtcIsoTimestamp(),
+        updated_by: userId,
+      };
+      if (input.name !== undefined) updates.name = input.name.trim();
+      if (input.settings !== undefined) updates.settings_json = JSON.stringify(input.settings);
+
+      await this.repo.update(id, updates, tx);
+      const updated = await this.repo.findByIdWithinOrganisation(id, organisationId, tx);
+      if (!updated) {
+        throw new ValidationError({
+          message: `Organisation '${id}' disappeared during update`,
+          userMessage: "Organisation could not be updated",
+          correlationId: ctx.correlationId,
+        });
+      }
+      return updated;
+    });
   }
 
   async listOrganisations(

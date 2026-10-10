@@ -13,6 +13,15 @@ export class WidgetRepository extends BaseRepository<WidgetRecord> {
     super(db);
   }
 
+  private toWidgetRecord(row: Record<string, unknown>): WidgetRecord {
+    return Object.fromEntries(
+      Object.entries(row).map(([key, value]) => [
+        key.replace(/_([a-z])/g, (_match, letter: string) => letter.toUpperCase()),
+        value,
+      ]),
+    ) as WidgetRecord;
+  }
+
   async findBySku(
     sku: string,
     organisationId: string,
@@ -21,7 +30,7 @@ export class WidgetRepository extends BaseRepository<WidgetRecord> {
     const executor = this.getExecutor(tx);
     const sql = `SELECT * FROM widgets WHERE sku = ? AND organisation_id = ? AND deleted_at IS NULL LIMIT 1`;
     const rows = await executor.query<WidgetRecord>(sql, [sku, organisationId]);
-    return rows[0] ?? null;
+    return rows[0] ? this.toWidgetRecord(rows[0] as unknown as Record<string, unknown>) : null;
   }
 
   async findBySyncGroup(
@@ -31,7 +40,8 @@ export class WidgetRepository extends BaseRepository<WidgetRecord> {
   ): Promise<WidgetRecord[]> {
     const executor = this.getExecutor(tx);
     const sql = `SELECT * FROM widgets WHERE sync_group_id = ? AND organisation_id = ? AND deleted_at IS NULL ORDER BY name ASC`;
-    return executor.query<WidgetRecord>(sql, [syncGroupId, organisationId]);
+    const rows = await executor.query<WidgetRecord>(sql, [syncGroupId, organisationId]);
+    return rows.map((row) => this.toWidgetRecord(row as unknown as Record<string, unknown>));
   }
 
   async findByIdWithinOrganisation(
@@ -40,8 +50,8 @@ export class WidgetRepository extends BaseRepository<WidgetRecord> {
     tx?: TransactionClient,
   ): Promise<WidgetRecord | null> {
     const executor = this.getExecutor(tx);
-    const sql = `SELECT * FROM widgets WHERE id = ? AND organisation_id = ? LIMIT 1`;
+    const sql = `SELECT * FROM widgets WHERE id = ? AND organisation_id = ? AND deleted_at IS NULL LIMIT 1`;
     const rows = await executor.query<WidgetRecord>(sql, [id, organisationId]);
-    return rows[0] ?? null;
+    return rows[0] ? this.toWidgetRecord(rows[0] as unknown as Record<string, unknown>) : null;
   }
 }

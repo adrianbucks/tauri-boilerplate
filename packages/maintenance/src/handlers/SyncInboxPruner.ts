@@ -1,5 +1,6 @@
 import type { DatabaseConnection } from "@platform/database";
 import type { PruningContext, PruningHandler, PruningResult } from "../types.js";
+import { validatePruningContext } from "../validation.js";
 
 export class SyncInboxPruner implements PruningHandler {
   readonly id = "core.sync.inbox";
@@ -24,6 +25,7 @@ export class SyncInboxPruner implements PruningHandler {
   }
 
   async prune(ctx: PruningContext): Promise<PruningResult> {
+    validatePruningContext(ctx);
     const start = performance.now();
     const isoCutoff = ctx.cutoffDate.toISOString();
     const deleteSql = `

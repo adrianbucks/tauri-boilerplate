@@ -74,6 +74,15 @@ describe("InboxService", () => {
     expect(record.applyStatus).toBe("PENDING");
   });
 
+  it("rejects an envelope ID that is not bound to the signed operation before persistence", async () => {
+    await expect(
+      service.receive({ ...validEnvelope, envelopeId: "different_id" }, async () => true),
+    ).rejects.toThrow("Envelope ID must match operation ID");
+
+    const rows = await db.query<{ count: number }>("SELECT COUNT(*) AS count FROM core_sync_inbox");
+    expect(rows[0]?.count).toBe(0);
+  });
+
   it("marks verification_status as REJECTED if signature verification returns false", async () => {
     const record = await service.receive(validEnvelope, async (_pk, _bytes, _sig) => false);
 

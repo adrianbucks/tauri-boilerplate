@@ -33,6 +33,7 @@ async function applySchema(db: MemoryDatabaseConnection): Promise<void> {
       retry_delay_ms      INTEGER NOT NULL DEFAULT 1000,
       backoff_multiplier  REAL NOT NULL DEFAULT 2.0,
       max_retry_delay_ms  INTEGER NOT NULL DEFAULT 60000,
+      retry_jitter        REAL NOT NULL DEFAULT 0.25 CHECK (retry_jitter >= 0 AND retry_jitter <= 1),
       scheduled_at        TEXT NOT NULL,
       started_at          TEXT,
       completed_at        TEXT,
@@ -42,6 +43,9 @@ async function applySchema(db: MemoryDatabaseConnection): Promise<void> {
       correlation_id      TEXT NOT NULL
     )
   `);
+  await db.execute(`CREATE UNIQUE INDEX IF NOT EXISTS idx_bg_tasks_unique_key
+    ON core_background_tasks (unique_key)
+    WHERE unique_key IS NOT NULL AND state IN ('PENDING', 'RUNNING')`);
 }
 
 function makeDefinition(overrides: Partial<TaskDefinition> = {}): TaskDefinition {
@@ -93,17 +97,45 @@ describe("TaskQueueService", () => {
     it("applies custom retry policy overrides", async () => {
       const task = await service.enqueue(
         makeDefinition({
-          retryPolicy: { maxAttempts: 7, initialDelayMs: 500 },
+          retryPolicy: { maxAttempts: 7, initialDelayMs: 500, jitter: 0 },
         }),
       );
       expect(task.maxAttempts).toBe(7);
       expect(task.retryDelayMs).toBe(500);
+      expect(task.retryJitter).toBe(0);
+    });
+
+    it("rejects retry jitter outside the supported range", async () => {
+      await expect(
+        service.enqueue(makeDefinition({ retryPolicy: { jitter: 1.1 } })),
+      ).rejects.toThrow("Invalid task definition field retryPolicy");
     });
 
     it("uses scheduledAt override when provided", async () => {
       const future = new Date(Date.now() + 60_000).toISOString();
       const task = await service.enqueue(makeDefinition({ scheduledAt: future }));
       expect(task.scheduledAt).toBe(future);
+    });
+
+    it("rejects invalid retry policies and timeouts before writing", async () => {
+      await expect(
+        service.enqueue(makeDefinition({ retryPolicy: { maxAttempts: 0 } })),
+      ).rejects.toThrow("Invalid task definition field retryPolicy");
+      await expect(service.enqueue(makeDefinition({ timeoutMs: 0 }))).rejects.toThrow(
+        "Invalid task definition field timeoutMs",
+      );
+
+      expect(await service.listByState("org-123", "PENDING")).toHaveLength(0);
+    });
+
+    it("rejects payloads that cannot be represented as JSON", async () => {
+      const circular: Record<string, unknown> = {};
+      circular.self = circular;
+
+      await expect(service.enqueue(makeDefinition({ payload: circular }))).rejects.toThrow(
+        "Invalid task definition field payload",
+      );
+      expect(await service.listByState("org-123", "PENDING")).toHaveLength(0);
     });
   });
 
@@ -130,6 +162,17 @@ describe("TaskQueueService", () => {
       expect(second.id).not.toBe(first.id);
       expect(second.state).toBe("PENDING");
     });
+
+    it("returns one task when concurrent enqueue calls race on the same uniqueKey", async () => {
+      const [first, second] = await Promise.all([
+        service.enqueue(makeDefinition({ uniqueKey: "uq-concurrent" })),
+        service.enqueue(makeDefinition({ uniqueKey: "uq-concurrent" })),
+      ]);
+
+      expect(first.id).toBe(second.id);
+      const pending = await service.listByState("org-123", "PENDING");
+      expect(pending.filter((task) => task.uniqueKey === "uq-concurrent")).toHaveLength(1);
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -137,6 +180,30 @@ describe("TaskQueueService", () => {
   // -------------------------------------------------------------------------
 
   describe("claimNextBatch", () => {
+    it("claims tasks atomically when workers race", async () => {
+      const tasks = await Promise.all(
+        Array.from({ length: 3 }, (_, index) =>
+          service.enqueue(makeDefinition({ payload: { index } })),
+        ),
+      );
+
+      const [firstBatch, secondBatch] = await Promise.all([
+        service.claimNextBatch(3),
+        service.claimNextBatch(3),
+      ]);
+      const claimedIds = [...firstBatch, ...secondBatch].map((task) => task.id);
+
+      expect(new Set(claimedIds).size).toBe(claimedIds.length);
+      expect(claimedIds.sort()).toEqual(tasks.map((task) => task.id).sort());
+      expect([...firstBatch, ...secondBatch].every((task) => task.state === "RUNNING")).toBe(true);
+    });
+
+    it("rejects non-positive or non-integer batch limits", async () => {
+      await expect(service.claimNextBatch(0)).rejects.toThrow("positive safe integer");
+      await expect(service.claimNextBatch(-1)).rejects.toThrow("positive safe integer");
+      await expect(service.claimNextBatch(1.5)).rejects.toThrow("positive safe integer");
+    });
+
     it("transitions PENDING tasks to RUNNING and increments attempt_count", async () => {
       await service.enqueue(makeDefinition());
       await service.enqueue(makeDefinition());
@@ -205,6 +272,17 @@ describe("TaskQueueService", () => {
       expect(updated?.state).toBe("PENDING");
       expect(updated?.lastError).toBe("transient failure");
       expect(updated?.scheduledAt).toBeTruthy();
+    });
+
+    it("does not report a retry or mutate a task that is no longer RUNNING", async () => {
+      const task = await service.enqueue(makeDefinition());
+      await service.claimNextBatch(10);
+      await service.cancel(task.id, "cancelled before failure was persisted");
+
+      await expect(service.markFailed(task.id, new Error("late failure"))).resolves.toEqual({
+        willRetry: false,
+      });
+      expect((await service.findById(task.id))?.state).toBe("CANCELLED");
     });
   });
 
@@ -323,5 +401,14 @@ describe("TaskQueueService", () => {
       expect(result).toHaveLength(1);
       expect(result[0]!.organisationId).toBe("org-A");
     });
+
+    it.each([-1, 0, 1.5, 101, Number.NaN, Number.POSITIVE_INFINITY])(
+      "rejects invalid list limits (%s)",
+      async (limit) => {
+        await expect(service.listByState("org-A", "PENDING", limit)).rejects.toMatchObject({
+          code: "VALIDATION_ERROR",
+        });
+      },
+    );
   });
 });

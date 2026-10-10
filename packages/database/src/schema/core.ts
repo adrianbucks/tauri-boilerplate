@@ -41,6 +41,7 @@ export const coreDevices = sqliteTable("core_devices", {
   status: text("status").notNull().default("UNREGISTERED"),
   registeredAt: text("registered_at").notNull(),
   lastSeenAt: text("last_seen_at"),
+  isLocal: integer("is_local", { mode: "boolean" }).notNull().default(false),
 });
 
 // Memberships

@@ -87,7 +87,48 @@ describe("@features/example-feature", () => {
         granted_by TEXT,
         granted_at TEXT NOT NULL
       );
+      CREATE TABLE core_sync_groups (
+        id TEXT PRIMARY KEY,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        created_by TEXT,
+        updated_by TEXT,
+        organisation_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        description TEXT,
+        status TEXT NOT NULL DEFAULT 'ACTIVE'
+      );
+      CREATE TABLE core_sync_group_members (
+        id TEXT PRIMARY KEY,
+        group_id TEXT NOT NULL,
+        device_id TEXT NOT NULL,
+        user_id TEXT,
+        status TEXT NOT NULL,
+        joined_at TEXT NOT NULL
+      );
+      CREATE TABLE core_devices (
+        id TEXT PRIMARY KEY,
+        device_id TEXT NOT NULL UNIQUE,
+        status TEXT NOT NULL
+      );
     `);
+
+    await db.execute(
+      `INSERT INTO core_sync_groups (id, created_at, updated_at, organisation_id, name, status)
+       VALUES ('grp_coventry', 'now', 'now', 'org_acme', 'Coventry', 'ACTIVE'),
+              ('grp_other', 'now', 'now', 'org_other', 'Other', 'ACTIVE'),
+              ('grp_unapproved', 'now', 'now', 'org_acme', 'Unapproved', 'ACTIVE')`,
+    );
+    await db.execute(
+      `INSERT INTO core_sync_group_members (id, group_id, device_id, user_id, status, joined_at)
+       VALUES ('member_alice', 'grp_coventry', 'dev_laptop_1', 'user_alice', 'APPROVED', '2026-08-30T10:00:00Z'),
+              ('member_bob', 'grp_other', 'dev_laptop_2', 'user_bob', 'ACTIVE', '2026-08-30T10:00:00Z')`,
+    );
+    await db.execute(
+      `INSERT INTO core_devices (id, device_id, status)
+       VALUES ('device_alice', 'dev_laptop_1', 'ACTIVE'),
+              ('device_bob', 'dev_laptop_2', 'APPROVED')`,
+    );
 
     // Apply feature migration
     const engine = new MigrationEngine(db);
@@ -95,6 +136,7 @@ describe("@features/example-feature", () => {
 
     await grantWidgetPermissions(db, "user_alice", "org_acme");
     await grantWidgetPermissions(db, "user_bob", "org_other");
+    await grantWidgetPermissions(db, "user_other", "org_acme");
 
     service = new WidgetService(db);
   });
@@ -161,6 +203,41 @@ describe("@features/example-feature", () => {
       ).rejects.toThrow("cannot be negative");
     });
 
+    it("rejects fractional and non-finite quantities during creation", async () => {
+      for (const quantity of [1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+        await expect(
+          service.createWidget(
+            {
+              name: "Invalid quantity",
+              sku: `INVALID-${String(quantity)}`,
+              quantity,
+              syncGroupId: "grp_coventry",
+            },
+            ctx,
+          ),
+        ).rejects.toThrow("safe integer");
+      }
+    });
+
+    it("rejects empty updates and invalid quantities without mutating the widget", async () => {
+      const widget = await service.createWidget(
+        { name: "Valid Widget", sku: "VALID-01", quantity: 3, syncGroupId: "grp_coventry" },
+        ctx,
+      );
+
+      await expect(service.updateWidget(widget.id, {}, ctx)).rejects.toThrow("at least one field");
+      await expect(service.updateWidget(widget.id, { name: "  " }, ctx)).rejects.toThrow(
+        "cannot be empty",
+      );
+      await expect(service.updateWidget(widget.id, { quantity: 1.5 }, ctx)).rejects.toThrow(
+        "safe integer",
+      );
+
+      await expect(service.getWidgetById(widget.id, ctx)).resolves.toEqual(
+        expect.objectContaining({ name: "Valid Widget", quantity: 3 }),
+      );
+    });
+
     it("supports updates and soft-deletes via tombstone pattern", async () => {
       const widget = await service.createWidget(
         {
@@ -180,6 +257,7 @@ describe("@features/example-feature", () => {
       await service.deleteWidget(widget.id, ctx);
       const list = await service.listWidgets("grp_coventry", ctx);
       expect(list).toHaveLength(0); // Excluded from active list
+      await expect(service.getWidgetById(widget.id, ctx)).resolves.toBeNull();
     });
 
     it("does not read or mutate another organisation's widget", async () => {
@@ -199,7 +277,7 @@ describe("@features/example-feature", () => {
       );
       await service.deleteWidget(widget.id, ctx);
       await expect(service.getWidgetById(widget.id, otherOrganisationCtx)).resolves.toEqual(
-        expect.objectContaining({ quantity: 5, deleted_at: null }),
+        expect.objectContaining({ quantity: 5, deletedAt: null }),
       );
     });
 
@@ -221,6 +299,41 @@ describe("@features/example-feature", () => {
           unprivilegedCtx,
         ),
       ).rejects.toThrow("Authorization failed");
+    });
+
+    it("requires approved group membership for widget reads and writes", async () => {
+      const widget = await service.createWidget(
+        { name: "Member Widget", sku: "MEMBER-01", quantity: 1, syncGroupId: "grp_coventry" },
+        ctx,
+      );
+      const sameDeviceDifferentUser = createOperationContext({
+        deviceId: "dev_laptop_1",
+        organisationId: "org_acme",
+        userId: "user_other",
+      });
+
+      await expect(service.getWidgetById(widget.id, sameDeviceDifferentUser)).rejects.toThrow(
+        "not an approved member",
+      );
+      await expect(service.listWidgets("grp_unapproved", ctx)).rejects.toThrow(
+        "not an approved member",
+      );
+      await expect(
+        service.createWidget(
+          { name: "Denied Widget", sku: "DENIED-01", quantity: 1, syncGroupId: "grp_unapproved" },
+          ctx,
+        ),
+      ).rejects.toThrow("not an approved member");
+      await expect(
+        service.updateWidget(widget.id, { quantity: 99 }, sameDeviceDifferentUser),
+      ).rejects.toThrow("not an approved member");
+      await expect(service.deleteWidget(widget.id, sameDeviceDifferentUser)).rejects.toThrow(
+        "not an approved member",
+      );
+
+      await expect(service.getWidgetById(widget.id, ctx)).resolves.toEqual(
+        expect.objectContaining({ quantity: 1 }),
+      );
     });
   });
 });

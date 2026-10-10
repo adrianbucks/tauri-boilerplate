@@ -21,6 +21,26 @@ pub fn core_migrations() -> Vec<NativeMigration> {
             sql: include_str!("../../../packages/platform/src/migrations/core-authentication.sql")
                 .to_string(),
         },
+        NativeMigration {
+            owner: "platform".to_string(),
+            version: 6,
+            name: "distinguish_local_device_from_peer_identities".to_string(),
+            checksum: "chk_platform_core_006".to_string(),
+            sql: include_str!(
+                "../../../packages/platform/src/migrations/core-device-local-identity.sql"
+            )
+            .to_string(),
+        },
+        NativeMigration {
+            owner: "platform".to_string(),
+            version: 8,
+            name: "enforce_normalized_organisation_domain_uniqueness".to_string(),
+            checksum: "chk_platform_core_008".to_string(),
+            sql: include_str!(
+                "../../../packages/platform/src/migrations/core-organisation-domain-unique.sql"
+            )
+            .to_string(),
+        },
     ]
 }
 
@@ -41,7 +61,7 @@ mod tests {
         let path = std::env::temp_dir().join(format!("tauri-core-schema-{suffix}.db"));
         let database = DurableDatabase::open(&path).expect("database should open");
 
-        assert_eq!(database.apply_migrations(&core_migrations()).unwrap(), 2);
+        assert_eq!(database.apply_migrations(&core_migrations()).unwrap(), 4);
         for table in ["core_organisations", "core_users", "core_audit_events"] {
             assert!(
                 database.table_exists(table).unwrap(),
@@ -58,6 +78,7 @@ mod tests {
                 "expected core_users.{column} to exist"
             );
         }
+        assert!(database.column_exists("core_devices", "is_local").unwrap());
         drop(database);
         remove_database_files(&path);
     }

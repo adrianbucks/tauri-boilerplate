@@ -1,4 +1,4 @@
-import type { SyncEnvelope } from "@platform/sync-protocol";
+import { SyncEnvelopeBuilder, type SyncEnvelope } from "@platform/sync-protocol";
 import type { ReceiveHandler, SyncTransport } from "./SyncTransport.js";
 
 export type TauriInvokeFn = <T = unknown>(
@@ -51,21 +51,21 @@ export class IrohSyncTransport implements SyncTransport {
    * and attaches the event listener for inbound envelopes.
    */
   async init(): Promise<SyncEndpointInfo> {
-    if (this.endpointInfo) {
+    if (this.endpointInfo && (!this.listen || this.unlistenFn)) {
       return this.endpointInfo;
     }
     if (this.isInitializing) {
       while (this.isInitializing) {
         await new Promise((resolve) => setTimeout(resolve, 10));
       }
-      if (this.endpointInfo) {
+      if (this.endpointInfo && (!this.listen || this.unlistenFn)) {
         return this.endpointInfo;
       }
     }
 
     this.isInitializing = true;
     try {
-      this.endpointInfo = await this.invoke<SyncEndpointInfo>("sync_start_endpoint");
+      this.endpointInfo ??= await this.invoke<SyncEndpointInfo>("sync_start_endpoint");
 
       if (this.listen && !this.unlistenFn) {
         this.unlistenFn = await this.listen<InboundEnvelopeMessage>(
@@ -157,7 +157,9 @@ export class IrohSyncTransport implements SyncTransport {
    */
   async handleIncomingMessage(msg: InboundEnvelopeMessage): Promise<void> {
     try {
-      const envelope: SyncEnvelope = JSON.parse(msg.payload_json);
+      const parsed: unknown = JSON.parse(msg.payload_json);
+      SyncEnvelopeBuilder.validateEnvelope(parsed);
+      const envelope = parsed;
 
       // Resolve peerId from known mapped endpoint IDs, or fallback to sender's endpoint ID
       let peerId = msg.sender_endpoint_id;
@@ -179,10 +181,18 @@ export class IrohSyncTransport implements SyncTransport {
   /**
    * Cleanup any active event listeners.
    */
-  dispose(): void {
+  async dispose(): Promise<void> {
+    while (this.isInitializing) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
     if (this.unlistenFn) {
       this.unlistenFn();
       this.unlistenFn = undefined;
+    }
+    if (this.endpointInfo) {
+      this.endpointInfo = undefined;
+      this.connectedPeers.clear();
+      await this.invoke("sync_stop_endpoint");
     }
   }
 }

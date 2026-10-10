@@ -202,12 +202,15 @@ export const MyFeatureManifest: FeatureManifest = {
 
 ## 6. Step 5: Register Feature in the Application
 
-In `apps/demo/src/main.tsx` or application bootstrap:
+Register the manifest on the application's `Platform` before calling `init()`:
 
 ```typescript
-import { featureRegistry } from "@platform/feature-system";
-import { MyFeatureManifest } from "@features/my-feature";
+import { Platform } from "@platform/platform";
+import { myFeatureManifest } from "@features/my-feature";
 
-featureRegistry.register(MyFeatureManifest);
-await featureRegistry.initializeAll();
+const platform = new Platform({ db }); // db is the configured DatabaseConnection
+platform.registerFeature({ manifest: myFeatureManifest });
+await platform.init();
 ```
+
+The application owns route definitions and page rendering. `platform.features.getAllNavigationItems()` exposes manifest navigation metadata for an application-level adapter; it does not register routes.

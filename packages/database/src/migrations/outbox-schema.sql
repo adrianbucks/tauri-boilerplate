@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS core_sync_outbox (
   id                TEXT PRIMARY KEY,
   created_at        TEXT NOT NULL,
   envelope_id       TEXT NOT NULL UNIQUE,
+  envelope_json     TEXT,
   organisation_id   TEXT NOT NULL,
   sync_group_id     TEXT NOT NULL,
   feature_id        TEXT NOT NULL,

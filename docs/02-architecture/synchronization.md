@@ -26,7 +26,7 @@ The sync layer is responsible only for **how** authorised peers exchange data �
 ```
 Business mutation
     ↓ (same local transaction)
-core_sync_outbox (signed SyncEnvelope)
+core_sync_outbox (validated full signed SyncEnvelope, scoped by organisation)
     ↓ (async — OutboxSyncWorker)
 IrohSyncTransport
     ↓ (iroh QUIC stream, ALPN: tauri-boilerplate-sync/1.0)

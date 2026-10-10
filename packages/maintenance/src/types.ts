@@ -22,6 +22,7 @@ export interface PruningCandidateStats {
   retentionDays: number;
   cutoffDate: string;
   eligibleRowCount: number;
+  error?: string | undefined;
 }
 
 export interface PruningHandler {
@@ -33,7 +34,7 @@ export interface PruningHandler {
   /** Counts rows currently eligible for pruning */
   countEligible(connection: DatabaseConnection, cutoff: Date): Promise<number>;
 
-  /** Executes the pruning in safe transaction batches */
+  /** Executes pruning in bounded batches; each database statement is atomic. */
   prune(ctx: PruningContext): Promise<PruningResult>;
 }
 

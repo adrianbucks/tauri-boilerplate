@@ -1,5 +1,6 @@
 import type { DatabaseConnection } from "@platform/database";
 import type { PruningContext, PruningHandler, PruningResult } from "../types.js";
+import { validatePruningContext } from "../validation.js";
 
 export class AuditEventsPruner implements PruningHandler {
   readonly id = "core.audit.events";
@@ -22,6 +23,7 @@ export class AuditEventsPruner implements PruningHandler {
   }
 
   async prune(ctx: PruningContext): Promise<PruningResult> {
+    validatePruningContext(ctx);
     const start = performance.now();
     const isoCutoff = ctx.cutoffDate.toISOString();
     const deleteSql = `

@@ -25,7 +25,7 @@ export class OrganisationRepository extends BaseRepository<OrganisationRecord> {
 
   async findByDomain(domain: string, tx?: TransactionClient): Promise<OrganisationRecord | null> {
     const executor = this.getExecutor(tx);
-    const sql = `SELECT * FROM core_organisations WHERE domain = ? LIMIT 1`;
+    const sql = `SELECT * FROM core_organisations WHERE lower(trim(domain)) = ? LIMIT 1`;
     const rows = await executor.query<OrganisationRecord>(sql, [domain]);
     return rows[0] ?? null;
   }

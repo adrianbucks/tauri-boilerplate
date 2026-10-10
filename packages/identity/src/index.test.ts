@@ -1,6 +1,18 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { MemoryDatabaseConnection } from "@platform/database";
-import { DeviceIdentityService, UserSessionService } from "./index.js";
+import { DeviceIdentityService, UserSessionService, type NativeAuthenticator } from "./index.js";
+
+function nativeSessionGateway(view: {
+  user_id: string;
+  device_id: string;
+  organisation_id: string;
+  permissions: string[];
+}): NativeAuthenticator {
+  return {
+    authenticateUser: async () => view,
+    getCurrentSession: async () => view,
+  };
+}
 
 describe("@platform/identity", () => {
   let db: MemoryDatabaseConnection;
@@ -24,7 +36,8 @@ describe("@platform/identity", () => {
         application_id TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'UNREGISTERED',
         registered_at TEXT NOT NULL,
-        last_seen_at TEXT
+        last_seen_at TEXT,
+        is_local INTEGER NOT NULL DEFAULT 0
       );
       CREATE TABLE core_users (
         id TEXT PRIMARY KEY,
@@ -81,10 +94,83 @@ describe("@platform/identity", () => {
       const updated = await deviceService.getLocalDevice();
       expect(updated?.status).toBe("ACTIVE");
     });
+
+    it("registers an explicitly identified peer without returning the local device", async () => {
+      const local = await deviceService.registerDevice({
+        publicKey: "local-public-key",
+        platform: "windows",
+        applicationId: "demo",
+      });
+
+      const peer = await deviceService.registerDevice({
+        deviceId: "dev_peer_1",
+        publicKey: "peer-public-key",
+        platform: "linux",
+        applicationId: "peer-app",
+      });
+
+      expect(peer.deviceId).toBe("dev_peer_1");
+      expect(peer.publicKey).toBe("peer-public-key");
+      expect(peer.deviceId).not.toBe(local.deviceId);
+      await expect(deviceService.getLocalDevice()).resolves.toMatchObject({
+        deviceId: local.deviceId,
+      });
+      const devices = await db.query<{ device_id: string }>("SELECT device_id FROM core_devices");
+      expect(devices).toHaveLength(2);
+    });
+
+    it("rejects a device ID that is presented with a different public key", async () => {
+      await deviceService.registerDevice({
+        deviceId: "dev_peer_2",
+        publicKey: "expected-public-key",
+        platform: "linux",
+        applicationId: "peer-app",
+      });
+
+      await expect(
+        deviceService.registerDevice({
+          deviceId: "dev_peer_2",
+          publicKey: "attacker-public-key",
+          platform: "linux",
+          applicationId: "peer-app",
+        }),
+      ).rejects.toThrow("different public key");
+
+      const rows = await db.query<{ public_key: string }>(
+        "SELECT public_key FROM core_devices WHERE device_id = ?",
+        ["dev_peer_2"],
+      );
+      expect(rows[0]?.public_key).toBe("expected-public-key");
+    });
+
+    it("keeps local registration distinct when peer records already exist", async () => {
+      await deviceService.registerDevice({
+        deviceId: "dev_peer_first",
+        publicKey: "peer-first-key",
+        platform: "linux",
+        applicationId: "peer-app",
+      });
+
+      const local = await deviceService.registerDevice({
+        publicKey: "local-after-peer-key",
+        platform: "windows",
+        applicationId: "local-app",
+      });
+
+      await expect(deviceService.getLocalDevice()).resolves.toMatchObject({
+        deviceId: local.deviceId,
+        publicKey: "local-after-peer-key",
+      });
+      const peers = await db.query<{ is_local: number }>(
+        "SELECT is_local FROM core_devices WHERE device_id = ?",
+        ["dev_peer_first"],
+      );
+      expect(peers[0]?.is_local).toBe(0);
+    });
   });
 
   describe("UserSessionService", () => {
-    it("creates and validates session for an active user and approved device", async () => {
+    it("restores and validates session for an active user and approved device", async () => {
       const device = await deviceService.registerDevice({
         publicKey: "pub_key_123",
         platform: "windows",
@@ -102,12 +188,17 @@ describe("@platform/identity", () => {
         "INSERT INTO core_user_roles (id, user_id, role_id, organisation_id, granted_at) VALUES ('ur1', 'u_alice', 'role_admin', 'org_1', '2026-08-30T10:00:00Z');",
       );
 
-      const session = await sessionService.createSession({
-        userId: "u_alice",
-        organisationId: "org_1",
-        roles: ["role_admin"],
-      });
+      const session = await sessionService.restoreNativeSession(
+        nativeSessionGateway({
+          user_id: "u_alice",
+          device_id: device.deviceId,
+          organisation_id: "org_1",
+          permissions: [],
+        }),
+      );
 
+      expect(session).not.toBeNull();
+      if (!session) throw new Error("Expected restored session");
       expect(session.sessionId.startsWith("sess_")).toBe(true);
       expect(session.userId).toBe("u_alice");
       expect(session.roles).toContain("role_admin");
@@ -125,7 +216,7 @@ describe("@platform/identity", () => {
       });
     });
 
-    it("ignores caller-provided roles and uses persisted bindings", async () => {
+    it("uses persisted role bindings when restoring a native session", async () => {
       const device = await deviceService.registerDevice({
         publicKey: "pub_key_roles",
         platform: "windows",
@@ -139,12 +230,17 @@ describe("@platform/identity", () => {
         "INSERT INTO core_user_roles (id, user_id, role_id, organisation_id, granted_at) VALUES ('ur2', 'u_roles', 'role_reader', 'org_1', '2026-08-30T10:00:00Z');",
       );
 
-      const session = await sessionService.createSession({
-        userId: "u_roles",
-        organisationId: "org_1",
-        roles: ["role_admin"],
-      });
+      const session = await sessionService.restoreNativeSession(
+        nativeSessionGateway({
+          user_id: "u_roles",
+          device_id: device.deviceId,
+          organisation_id: "org_1",
+          permissions: [],
+        }),
+      );
 
+      expect(session).not.toBeNull();
+      if (!session) throw new Error("Expected restored session");
       expect(session.roles).toEqual(["role_reader"]);
     });
 
@@ -160,12 +256,15 @@ describe("@platform/identity", () => {
       );
 
       await expect(
-        sessionService.createSession({
-          userId: "u_org",
-          organisationId: "org_attacker",
-          roles: ["role_admin"],
-        }),
-      ).rejects.toThrow("does not belong to organisation");
+        sessionService.restoreNativeSession(
+          nativeSessionGateway({
+            user_id: "u_org",
+            device_id: device.deviceId,
+            organisation_id: "org_attacker",
+            permissions: [],
+          }),
+        ),
+      ).rejects.toThrow("does not match user");
     });
 
     it("rejects session if device is REVOKED", async () => {
@@ -181,12 +280,15 @@ describe("@platform/identity", () => {
       );
 
       await expect(
-        sessionService.createSession({
-          userId: "u_bob",
-          organisationId: "org_1",
-          roles: ["role_user"],
-        }),
-      ).rejects.toThrow("Device has been revoked");
+        sessionService.restoreNativeSession(
+          nativeSessionGateway({
+            user_id: "u_bob",
+            device_id: device.deviceId,
+            organisation_id: "org_1",
+            permissions: [],
+          }),
+        ),
+      ).rejects.toThrow("missing, unbound, or inactive");
     });
 
     it("rejects session if device is SUSPENDED", async () => {
@@ -202,12 +304,15 @@ describe("@platform/identity", () => {
       );
 
       await expect(
-        sessionService.createSession({
-          userId: "u_carol",
-          organisationId: "org_1",
-          roles: ["role_user"],
-        }),
-      ).rejects.toThrow();
+        sessionService.restoreNativeSession(
+          nativeSessionGateway({
+            user_id: "u_carol",
+            device_id: device.deviceId,
+            organisation_id: "org_1",
+            permissions: [],
+          }),
+        ),
+      ).rejects.toThrow("missing, unbound, or inactive");
     });
 
     it("returns null for validateCurrentSession when no session exists", async () => {
@@ -216,7 +321,7 @@ describe("@platform/identity", () => {
 
     it("delegates authentication to native gateway and establishes trusted session", async () => {
       // Setup local device and user
-      await deviceService.registerDevice({
+      const registeredDevice = await deviceService.registerDevice({
         publicKey: "pub_key_native_1",
         platform: "windows",
         applicationId: "demo",
@@ -236,7 +341,7 @@ describe("@platform/identity", () => {
           if (req.user_id === "u_native" && req.password === "secret123") {
             return {
               user_id: "u_native",
-              device_id: "dev_crypto_ed25519",
+              device_id: registeredDevice.deviceId,
               organisation_id: "org_1",
               permissions: ["widget:read", "widget:create"],
             };
@@ -252,14 +357,14 @@ describe("@platform/identity", () => {
       );
 
       expect(session.userId).toBe("u_native");
-      expect(session.deviceId).toBe("dev_crypto_ed25519");
+      expect(session.deviceId).toBe(registeredDevice.deviceId);
       expect(session.organisationId).toBe("org_1");
       expect(session.roles).toEqual(["role_operator"]);
 
       const trustedContext = await sessionService.getTrustedOperationContext();
       expect(trustedContext.principal).toMatchObject({
         userId: "u_native",
-        deviceId: "dev_crypto_ed25519",
+        deviceId: registeredDevice.deviceId,
         organisationId: "org_1",
         roles: ["role_operator"],
         authStrength: "offline-session",

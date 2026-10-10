@@ -38,7 +38,7 @@ export interface OutboxEntry {
   readonly envelopeId: string;
   readonly organisationId: string;
   readonly syncGroupId: string;
-  readonly payloadJson: string;
+  readonly envelopeJson: string;
   readonly signerPublicKey: string;
   readonly signature: string;
 }
@@ -67,7 +67,7 @@ export interface SyncDispatcher {
 // ---------------------------------------------------------------------------
 
 export interface OutboxBatchLoader {
-  pendingBatch(limit?: number): Promise<OutboxEntry[]>;
+  pendingBatch(organisationId: string, limit?: number): Promise<OutboxEntry[]>;
   markSent(envelopeId: string): Promise<void>;
   markFailed(envelopeId: string, maxAttempts?: number): Promise<void>;
 }
@@ -121,14 +121,25 @@ export class OutboxSyncWorker {
   handle = async (payload: OutboxSyncPayload, ctx: TaskExecutionContext): Promise<void> => {
     const { organisationId, batchLimit = 50 } = payload;
 
+    if (organisationId !== ctx.organisationId) {
+      throw new Error("Outbox sync organisation does not match the task execution context");
+    }
+
+    if (ctx.signal.aborted) {
+      throw new Error("Outbox sync was aborted before it started");
+    }
+
     this.logger.info(
       `[OutboxSyncWorker] Starting outbox sync (org=${organisationId}, attempt=${ctx.attempt}, correlation=${ctx.correlationId}).`,
     );
 
     // Step 1: Load pending batch
-    const batch = await this.outbox.pendingBatch(batchLimit);
+    const batch = await this.outbox.pendingBatch(organisationId, batchLimit);
     if (batch.length === 0) {
       this.logger.info("[OutboxSyncWorker] Outbox empty — nothing to sync.");
+      if (ctx.signal.aborted) {
+        throw new Error("Outbox sync was aborted before completion");
+      }
       await this.persistCursor(organisationId);
       return;
     }
@@ -141,20 +152,28 @@ export class OutboxSyncWorker {
 
     for (const entry of batch) {
       if (ctx.signal.aborted) {
-        this.logger.warn("[OutboxSyncWorker] AbortSignal fired — stopping dispatch loop early.");
-        break;
+        this.logger.warn(
+          "[OutboxSyncWorker] AbortSignal fired — leaving remaining envelopes pending.",
+        );
+        throw new Error("Outbox sync was aborted before the batch completed");
       }
 
       try {
         await this.dispatcher.dispatch(
           entry.organisationId,
           entry.syncGroupId,
-          entry.payloadJson,
+          entry.envelopeJson,
           ctx.signal,
         );
         await this.outbox.markSent(entry.envelopeId);
         dispatched++;
       } catch (err) {
+        if (ctx.signal.aborted) {
+          this.logger.warn(
+            `[OutboxSyncWorker] Dispatch aborted for ${entry.envelopeId}; leaving it pending.`,
+          );
+          throw err;
+        }
         this.logger.error(
           `[OutboxSyncWorker] Failed to dispatch envelope ${entry.envelopeId}:`,
           err,
@@ -162,6 +181,10 @@ export class OutboxSyncWorker {
         await this.outbox.markFailed(entry.envelopeId);
         failed++;
       }
+    }
+
+    if (ctx.signal.aborted) {
+      throw new Error("Outbox sync was aborted before the batch completed");
     }
 
     // Step 7: Persist diagnostics cursor

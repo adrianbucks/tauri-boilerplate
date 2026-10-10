@@ -8,7 +8,7 @@ import {
   type TrustedOperationContext,
 } from "@platform/core";
 import type { DatabaseConnection, TransactionClient } from "@platform/database";
-import { AuthorizationEngine } from "@platform/authorization";
+import { AuthorizationEngine, SyncGroupService } from "@platform/authorization";
 import { WidgetRepository } from "../repositories/widgetRepository.js";
 import type { WidgetRecord } from "../schema/widgets.js";
 import { WIDGET_PERMISSIONS, type WidgetPermission } from "../permissions.js";
@@ -31,11 +31,13 @@ export class WidgetService {
   private readonly repo: WidgetRepository;
   private readonly db: DatabaseConnection;
   private readonly auth: AuthorizationEngine;
+  private readonly syncGroups: SyncGroupService;
 
   constructor(db: DatabaseConnection, auth?: AuthorizationEngine) {
     this.db = db;
     this.repo = new WidgetRepository(db);
     this.auth = auth ?? new AuthorizationEngine(db);
+    this.syncGroups = new SyncGroupService(db, this.auth);
   }
 
   private async requirePermission(
@@ -56,19 +58,9 @@ export class WidgetService {
       });
     }
 
-    const executor = tx ?? this.db;
-    const roleRows = await executor.query<{ role_id: string }>(
-      `SELECT role_id FROM core_user_roles WHERE user_id = ? AND organisation_id = ?`,
-      [subject.userId, subject.organisationId],
-    );
-    const roles = Object.freeze(roleRows.map((r) => r.role_id));
-
-    await this.auth.require(
-      {
-        userId: subject.userId,
-        organisationId: subject.organisationId,
-        roles,
-      },
+    await this.auth.requireForSubject(
+      subject.userId,
+      subject.organisationId,
       permission,
       undefined,
       tx,
@@ -78,6 +70,7 @@ export class WidgetService {
   async createWidget(
     input: CreateWidgetInput,
     ctx: OperationContext | TrustedOperationContext,
+    tx?: TransactionClient,
   ): Promise<WidgetRecord> {
     // 1. Validation
     if (!input.name || input.name.trim().length === 0) {
@@ -103,15 +96,28 @@ export class WidgetService {
         correlationId: ctx.correlationId,
       });
     }
+    if (!Number.isSafeInteger(input.quantity)) {
+      throw new ValidationError({
+        message: "Widget quantity must be a safe integer",
+        userMessage: "Quantity must be a whole number",
+        correlationId: ctx.correlationId,
+      });
+    }
 
     const subject = extractContextSubject(ctx);
     const normalizedSku = input.sku.trim().toUpperCase();
 
-    // 2. Transaction execution
-    return this.db.transaction(async (tx) => {
-      await this.requirePermission(ctx, WIDGET_PERMISSIONS.CREATE, tx);
+    // 2. Execute in the caller's transaction when supplied, otherwise create
+    // an atomic transaction for this operation.
+    const create = async (transaction: TransactionClient) => {
+      await this.requirePermission(ctx, WIDGET_PERMISSIONS.CREATE, transaction);
+      await this.syncGroups.requireActiveMembership(ctx, input.syncGroupId, transaction);
 
-      const existing = await this.repo.findBySku(normalizedSku, subject.organisationId, tx);
+      const existing = await this.repo.findBySku(
+        normalizedSku,
+        subject.organisationId,
+        transaction,
+      );
       if (existing) {
         throw new ValidationError({
           message: `Widget with SKU '${normalizedSku}' already exists`,
@@ -144,9 +150,11 @@ export class WidgetService {
         description: input.description ?? null,
       };
 
-      await this.repo.insert(record, tx);
+      await this.repo.insert(record, transaction);
       return record;
-    });
+    };
+
+    return tx ? create(tx) : this.db.transaction(create);
   }
 
   async getWidgetById(
@@ -155,7 +163,9 @@ export class WidgetService {
   ): Promise<WidgetRecord | null> {
     await this.requirePermission(ctx, WIDGET_PERMISSIONS.READ);
     const subject = extractContextSubject(ctx);
-    return this.repo.findByIdWithinOrganisation(id, subject.organisationId);
+    const widget = await this.repo.findByIdWithinOrganisation(id, subject.organisationId);
+    if (widget) await this.syncGroups.requireActiveMembership(ctx, widget.syncGroupId);
+    return widget;
   }
 
   async listWidgets(
@@ -164,6 +174,7 @@ export class WidgetService {
   ): Promise<WidgetRecord[]> {
     await this.requirePermission(ctx, WIDGET_PERMISSIONS.READ);
     const subject = extractContextSubject(ctx);
+    await this.syncGroups.requireActiveMembership(ctx, syncGroupId);
     return this.repo.findBySyncGroup(syncGroupId, subject.organisationId);
   }
 
@@ -172,47 +183,67 @@ export class WidgetService {
     input: UpdateWidgetInput,
     ctx: OperationContext | TrustedOperationContext,
   ): Promise<void> {
-    await this.requirePermission(ctx, WIDGET_PERMISSIONS.UPDATE);
     const subject = extractContextSubject(ctx);
-
-    const existing = await this.repo.findByIdWithinOrganisation(id, subject.organisationId);
-    if (!existing || existing.deletedAt) {
+    if (
+      input.name === undefined &&
+      input.quantity === undefined &&
+      input.description === undefined
+    ) {
       throw new ValidationError({
-        message: `Widget with ID '${id}' not found`,
-        userMessage: "Widget not found",
+        message: "Widget update must include at least one field",
+        userMessage: "Provide a name, quantity, or description change",
+        correlationId: ctx.correlationId,
+      });
+    }
+    if (input.name !== undefined && !input.name.trim()) {
+      throw new ValidationError({
+        message: "Widget name cannot be empty",
+        userMessage: "Please provide a valid widget name",
+        correlationId: ctx.correlationId,
+      });
+    }
+    if (
+      input.quantity !== undefined &&
+      (!Number.isSafeInteger(input.quantity) || input.quantity < 0)
+    ) {
+      throw new ValidationError({
+        message: "Widget quantity must be a non-negative safe integer",
+        userMessage: "Quantity must be a whole number zero or greater",
         correlationId: ctx.correlationId,
       });
     }
 
-    const updates: Partial<WidgetRecord> = {
-      updatedAt: getUtcIsoTimestamp(),
-      updatedBy: subject.userId,
-    };
-
-    if (input.name !== undefined) updates.name = input.name.trim();
-    if (input.quantity !== undefined) {
-      if (input.quantity < 0) {
+    await this.db.transaction(async (tx) => {
+      await this.requirePermission(ctx, WIDGET_PERMISSIONS.UPDATE, tx);
+      const existing = await this.repo.findByIdWithinOrganisation(id, subject.organisationId, tx);
+      if (!existing || existing.deletedAt) {
         throw new ValidationError({
-          message: "Quantity cannot be negative",
-          userMessage: "Quantity must be zero or positive",
+          message: `Widget with ID '${id}' not found`,
+          userMessage: "Widget not found",
           correlationId: ctx.correlationId,
         });
       }
-      updates.quantity = input.quantity;
-    }
-    if (input.description !== undefined) updates.description = input.description;
+      await this.syncGroups.requireActiveMembership(ctx, existing.syncGroupId, tx);
 
-    await this.repo.update(id, updates);
+      const updates: Partial<WidgetRecord> = {
+        updatedAt: getUtcIsoTimestamp(),
+        updatedBy: subject.userId,
+      };
+      if (input.name !== undefined) updates.name = input.name.trim();
+      if (input.quantity !== undefined) updates.quantity = input.quantity;
+      if (input.description !== undefined) updates.description = input.description;
+      await this.repo.update(id, updates, tx);
+    });
   }
 
   async deleteWidget(id: string, ctx: OperationContext | TrustedOperationContext): Promise<void> {
-    await this.requirePermission(ctx, WIDGET_PERMISSIONS.DELETE);
     const subject = extractContextSubject(ctx);
-
-    const existing = await this.repo.findByIdWithinOrganisation(id, subject.organisationId);
-    if (!existing || existing.deletedAt) {
-      return;
-    }
-    await this.repo.softDelete(id, subject.userId ?? "system");
+    await this.db.transaction(async (tx) => {
+      await this.requirePermission(ctx, WIDGET_PERMISSIONS.DELETE, tx);
+      const existing = await this.repo.findByIdWithinOrganisation(id, subject.organisationId, tx);
+      if (!existing || existing.deletedAt) return;
+      await this.syncGroups.requireActiveMembership(ctx, existing.syncGroupId, tx);
+      await this.repo.softDelete(id, subject.userId ?? "system", tx);
+    });
   }
 }
